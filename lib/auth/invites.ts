@@ -16,8 +16,19 @@ export async function mayCreateSession(
 
   // Allow only invited emails for first login.
   if (!email?.includes("@")) return false;
-  const inviteSnap = await getAdminDb().collection("invites").doc(email.trim().toLowerCase()).get();
+  const normalized = email.trim().toLowerCase();
+
+  // 1) Try deterministic docId lookup (preferred)
+  const inviteSnap = await getAdminDb().collection("invites").doc(normalized).get();
   if (inviteSnap.exists) return true;
+
+  // 2) Fallback: look for a document by `email` field (tolerant to docId mismatch)
+  const byEmailField = await getAdminDb()
+    .collection("invites")
+    .where("email", "==", normalized)
+    .limit(1)
+    .get();
+  if (!byEmailField.empty) return true;
 
   return false;
 }

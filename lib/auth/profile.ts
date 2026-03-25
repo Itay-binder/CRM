@@ -24,7 +24,15 @@ async function inviteExists(email: string | undefined): Promise<boolean> {
   if (!email) return false;
   const normalized = normalizeEmail(email);
   const snap = await getAdminDb().collection("invites").doc(normalized).get();
-  return snap.exists;
+  if (snap.exists) return true;
+
+  // Fallback: search by `email` field.
+  const byEmailField = await getAdminDb()
+    .collection("invites")
+    .where("email", "==", normalized)
+    .limit(1)
+    .get();
+  return !byEmailField.empty;
 }
 
 export async function getUserProfile(

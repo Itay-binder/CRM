@@ -1,0 +1,75 @@
+import Link from "next/link";
+import UserMenu from "@/app/components/UserMenu";
+
+type Props = {
+  email: string | null;
+  children: React.ReactNode;
+};
+
+function NavItem({ href, label }: { href: string; label: string }) {
+  return (
+    <Link
+      href={href}
+      style={{
+        display: "block",
+        padding: "10px 12px",
+        borderRadius: 12,
+        color: "#111827",
+        textDecoration: "none",
+        fontWeight: 600,
+      }}
+    >
+      {label}
+    </Link>
+  );
+}
+
+export default function CrmShell({ email, children }: Props) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        minHeight: "100vh",
+        background: "#f3f4f6",
+      }}
+    >
+      <aside
+        style={{
+          width: 260,
+          background: "#ffffff",
+          borderRight: "1px solid #e5e7eb",
+          padding: 16,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+          <div
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 12,
+              background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)",
+            }}
+          />
+          <div style={{ lineHeight: 1.1 }}>
+            <div style={{ fontWeight: 800 }}>Liftygo CRM</div>
+            <div style={{ fontSize: 12, color: "#6b7280" }}>MVP</div>
+          </div>
+        </div>
+
+        <nav style={{ display: "grid", gap: 8, marginTop: 8 }}>
+          <NavItem href="/dashboard" label="דשבורד מנכ\"ל" />
+          <NavItem href="/contacts" label="Contacts" />
+          <NavItem href="/pipeline" label="Pipeline" />
+          <NavItem href="/settings/fields" label="שדות מותאמים" />
+        </nav>
+
+        <div style={{ marginTop: 24, display: "flex", justifyContent: "flex-end" }}>
+          <UserMenu email={email} />
+        </div>
+      </aside>
+
+      <section style={{ flex: 1, padding: 18 }}>{children}</section>
+    </div>
+  );
+}
+

@@ -1,0 +1,23 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-rubik), "Rubik", system-ui, sans-serif;
+  font-weight: 400;
+  background: #ffffff;
+  color: #111827;
+  line-height: 1.5;
+}
+
+a {
+  color: inherit;
+}
+

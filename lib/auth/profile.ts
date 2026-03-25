@@ -64,16 +64,28 @@ export async function ensureUserDoc(
 
   const snap = await ref.get();
   if (snap.exists) {
-    // Make sure we have email set if we got it later.
+    // Make sure we have email set if we got it later, and auto-fix admin docs.
     const d = snap.data() as Record<string, unknown>;
     const existingEmail = typeof d.email === "string" ? d.email : "";
     const newEmail = email ?? existingEmail;
-    if (newEmail && newEmail !== existingEmail && !admin && d.role !== "admin") {
-      await ref.update({
-        email: newEmail,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
+
+    const updates: Record<string, unknown> = {};
+
+    if (newEmail && newEmail !== existingEmail) {
+      updates.email = newEmail;
     }
+
+    // Existing users created before admin/invites setup can be missing approved=true.
+    if (admin) {
+      if (d.role !== "admin") updates.role = "admin";
+      if (!d.approved) updates.approved = true;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      updates.updatedAt = FieldValue.serverTimestamp();
+      await ref.update(updates);
+    }
+
     const profile = await getUserProfile(uid, email);
     if (!profile) throw new Error("User doc exists but profile missing");
     return profile;

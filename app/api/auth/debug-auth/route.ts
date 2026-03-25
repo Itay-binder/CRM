@@ -67,6 +67,7 @@ export async function GET(req: NextRequest) {
       ok: true,
       server: {
         firebaseServiceAccountProjectId: parseServiceAccountProjectId(),
+        firestoreDatabaseId: process.env.FIRESTORE_DATABASE_ID?.trim() || "(default)",
         checkedEmail: normalized,
         isAdmin,
         authEmailFromToken: auth?.email ?? null,
@@ -82,6 +83,7 @@ export async function GET(req: NextRequest) {
         ok: false,
         error: e instanceof Error ? e.message : "Unknown error",
         firebaseServiceAccountProjectId: parseServiceAccountProjectId(),
+        firestoreDatabaseId: process.env.FIRESTORE_DATABASE_ID?.trim() || "(default)",
       },
       { status: 500 }
     );

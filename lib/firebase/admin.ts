@@ -1,4 +1,5 @@
 import * as admin from "firebase-admin";
+import { getFirestore } from "firebase-admin/firestore";
 
 let init = false;
 
@@ -28,6 +29,10 @@ export function getAdminAuth(): admin.auth.Auth {
 
 export function getAdminDb(): admin.firestore.Firestore {
   ensureAdmin();
-  return admin.firestore();
+  const dbId = process.env.FIRESTORE_DATABASE_ID?.trim();
+  if (dbId) {
+    return getFirestore(admin.app(), dbId);
+  }
+  return getFirestore();
 }
 

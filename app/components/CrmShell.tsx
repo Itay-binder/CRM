@@ -57,7 +57,7 @@ export default function CrmShell({ email, children }: Props) {
         </div>
 
         <nav style={{ display: "grid", gap: 8, marginTop: 8 }}>
-          <NavItem href="/dashboard" label="דשבורד מנכ\"ל" />
+          <NavItem href="/dashboard" label={'דשבורד מנכ"ל'} />
           <NavItem href="/contacts" label="Contacts" />
           <NavItem href="/pipeline" label="Pipeline" />
           <NavItem href="/settings/fields" label="שדות מותאמים" />

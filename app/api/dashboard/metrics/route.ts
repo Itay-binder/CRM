@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
-import { fetchSheetMatrix, matrixToObjects, filterByDateRange, resolveStageColumn } from "@/lib/sheets";
+import { listLeadsFiltered } from "@/lib/leads/repo";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -26,32 +26,18 @@ export async function GET(req: NextRequest) {
   const dateTo = req.nextUrl.searchParams.get("date_to");
 
   try {
-    const matrix = await fetchSheetMatrix();
-    const { headers, records } = matrixToObjects(matrix);
-    const filtered = filterByDateRange(records, headers, dateFrom, dateTo);
-
-    const stageCol = resolveStageColumn(headers);
-    if (!stageCol) {
-      return NextResponse.json({
-        ok: true,
-        total: filtered.length,
-        stageColumn: null,
-        countsByStage: {},
-        warning: "לא נמצאה עמודת סטטוס בשיטס. כרגע מדדים לפי סטטוס לא יוצגו.",
-      } satisfies ApiOk);
-    }
+    const leads = await listLeadsFiltered(dateFrom, dateTo);
 
     const countsByStage: Record<string, number> = {};
-    for (const r of filtered) {
-      const st = normalizeStage(r[stageCol] ?? "");
-      const key = st || "—";
+    for (const l of leads) {
+      const key = normalizeStage(l.stage || "") || "—";
       countsByStage[key] = (countsByStage[key] ?? 0) + 1;
     }
 
     const payload: ApiOk = {
       ok: true,
-      total: filtered.length,
-      stageColumn: stageCol,
+      total: leads.length,
+      stageColumn: null,
       countsByStage,
     };
     return NextResponse.json(payload);

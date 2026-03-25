@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
-import {
-  fetchSheetMatrix,
-  filterByDateRange,
-  matrixToObjects,
-  resolveStageColumn,
-} from "@/lib/sheets";
+import { listLeadsFiltered } from "@/lib/leads/repo";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -23,7 +18,7 @@ function normalizeStage(s: string): string {
 }
 
 function stageOrderFromEnv(): string[] | null {
-  const raw = process.env.GOOGLE_STAGE_ORDER?.trim();
+  const raw = process.env.CRM_STAGE_ORDER?.trim();
   if (!raw) return null;
   return raw.split(",").map((s) => s.trim()).filter(Boolean);
 }
@@ -36,27 +31,21 @@ export async function GET(req: NextRequest) {
   const dateTo = req.nextUrl.searchParams.get("date_to");
 
   try {
-    const matrix = await fetchSheetMatrix();
-    const { headers, records } = matrixToObjects(matrix);
-    const filtered = filterByDateRange(records, headers, dateFrom, dateTo);
-
-    const stageCol = resolveStageColumn(headers);
-    if (!stageCol) {
-      return NextResponse.json({
-        ok: true,
-        stageColumn: null,
-        stages: ["All"],
-        leadsByStage: { All: filtered },
-      } satisfies ApiOk);
-    }
+    const leads = await listLeadsFiltered(dateFrom, dateTo);
 
     const stageSet = new Set<string>();
     const leadsByStage: Record<string, Record<string, string>[]> = {};
-    for (const r of filtered) {
-      const st = normalizeStage(r[stageCol] ?? "");
-      const key = st || "—";
+    for (const l of leads) {
+      const key = normalizeStage(l.stage || "") || "—";
       stageSet.add(key);
-      (leadsByStage[key] ||= []).push(r);
+      leadsByStage[key] ||= [];
+      leadsByStage[key].push({
+        id: l.id,
+        name: l.name ?? "",
+        email: l.email ?? "",
+        phone: l.phone ?? "",
+        stage: l.stage ?? "",
+      });
     }
 
     const order = stageOrderFromEnv();
@@ -71,7 +60,7 @@ export async function GET(req: NextRequest) {
 
     const payload: ApiOk = {
       ok: true,
-      stageColumn: stageCol,
+      stageColumn: null,
       stages,
       leadsByStage,
     };

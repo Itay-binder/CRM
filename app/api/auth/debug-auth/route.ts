@@ -33,47 +33,58 @@ function parseServiceAccountProjectId(): string | null {
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const expected = getExpectedIngestKey();
-  const provided = getProvidedKey(req);
-  if (!expected || !provided || provided !== expected) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
+  try {
+    const expected = getExpectedIngestKey();
+    const provided = getProvidedKey(req);
+    if (!expected || !provided || provided !== expected) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
 
-  const auth = await getVerifiedAuthFromRequest(req);
+    const auth = await getVerifiedAuthFromRequest(req);
 
-  // We primarily need the email that the server sees.
-  const email = auth?.email ?? req.nextUrl.searchParams.get("email") ?? undefined;
-  if (!email) {
+    // We primarily need the email that the server sees.
+    const email = auth?.email ?? req.nextUrl.searchParams.get("email") ?? undefined;
+    if (!email) {
+      return NextResponse.json(
+        { ok: false, error: "Missing email (no verified auth and no email param)" },
+        { status: 400 }
+      );
+    }
+
+    const normalized = normalizeEmail(email);
+
+    const db = getAdminDb();
+    const invitesDoc = await db.collection("invites").doc(normalized).get();
+    const invitesByEmailField = await db
+      .collection("invites")
+      .where("email", "==", normalized)
+      .limit(1)
+      .get();
+
+    const isAdmin = isAdminEmail(auth?.email ?? email);
+
+    return NextResponse.json({
+      ok: true,
+      server: {
+        firebaseServiceAccountProjectId: parseServiceAccountProjectId(),
+        checkedEmail: normalized,
+        isAdmin,
+        authEmailFromToken: auth?.email ?? null,
+        invites: {
+          docIdExists: invitesDoc.exists,
+          byEmailFieldExists: !invitesByEmailField.empty,
+        },
+      },
+    });
+  } catch (e) {
     return NextResponse.json(
-      { ok: false, error: "Missing email (no verified auth and no email param)" },
-      { status: 400 }
+      {
+        ok: false,
+        error: e instanceof Error ? e.message : "Unknown error",
+        firebaseServiceAccountProjectId: parseServiceAccountProjectId(),
+      },
+      { status: 500 }
     );
   }
-
-  const normalized = normalizeEmail(email);
-
-  const db = getAdminDb();
-  const invitesDoc = await db.collection("invites").doc(normalized).get();
-  const invitesByEmailField = await db
-    .collection("invites")
-    .where("email", "==", normalized)
-    .limit(1)
-    .get();
-
-  const isAdmin = isAdminEmail(auth?.email ?? email);
-
-  return NextResponse.json({
-    ok: true,
-    server: {
-      firebaseServiceAccountProjectId: parseServiceAccountProjectId(),
-      checkedEmail: normalized,
-      isAdmin,
-      authEmailFromToken: auth?.email ?? null,
-      invites: {
-        docIdExists: invitesDoc.exists,
-        byEmailFieldExists: !invitesByEmailField.empty,
-      },
-    },
-  });
 }
 

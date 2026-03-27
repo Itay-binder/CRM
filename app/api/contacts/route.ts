@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { listLeadsFiltered, upsertLead } from "@/lib/leads/repo";
+import { validateCustomValues } from "@/lib/customFields/repo";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -87,8 +88,14 @@ export async function POST(req: NextRequest) {
       stage?: string;
       source?: string;
       customFields?: Record<string, unknown>;
+      customValues?: Record<string, unknown>;
       uniqueKey?: string;
     };
+
+    const customValues = await validateCustomValues(
+      "contact",
+      body.customValues ?? body.customFields
+    );
 
     const lead = await upsertLead({
       uniqueKey: body.uniqueKey,
@@ -99,7 +106,7 @@ export async function POST(req: NextRequest) {
       lastName: body.lastName,
       stage: body.stage ?? "Pending",
       source: body.source ?? "manual",
-      customFields: body.customFields ?? {},
+      customFields: customValues,
     });
 
     return NextResponse.json({

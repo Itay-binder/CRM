@@ -16,6 +16,7 @@ export type LeadRecord = {
 };
 
 export type LeadUpsertInput = {
+  id?: string;
   uniqueKey?: string;
   email?: string;
   phone?: string;
@@ -107,7 +108,10 @@ function mapDocToLead(docId: string, data: Record<string, unknown>): LeadRecord 
 
 export async function upsertLead(input: LeadUpsertInput): Promise<LeadRecord> {
   const db = getAdminDb();
-  const picked = pickUniqueKey(input);
+  const picked =
+    input.id?.trim()
+      ? { docId: normalizeUniqueKey(input.id), email: input.email, phone: input.phone }
+      : pickUniqueKey(input);
   if (!picked) throw new Error("Missing uniqueKey (email or phone)");
 
   const stage = (input.stage?.trim() || "Pending").replace(/\s+/g, " ");

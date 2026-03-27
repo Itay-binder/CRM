@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { upsertLead } from "@/lib/leads/repo";
+import { validateCustomValues } from "@/lib/customFields/repo";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -28,6 +29,7 @@ export async function POST(req: NextRequest) {
         source?: string;
         uniqueKey?: string;
         customFields?: Record<string, unknown>;
+        customValues?: Record<string, unknown>;
       }>;
     };
 
@@ -46,6 +48,10 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       try {
+        const customValues = await validateCustomValues(
+          "contact",
+          r.customValues ?? r.customFields
+        );
         await upsertLead({
           uniqueKey: r.uniqueKey,
           email: r.email,
@@ -55,7 +61,7 @@ export async function POST(req: NextRequest) {
           lastName: r.lastName,
           stage: r.stage ?? "Pending",
           source: r.source ?? "import",
-          customFields: r.customFields ?? {},
+          customFields: customValues,
         });
         success++;
       } catch (e) {

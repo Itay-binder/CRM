@@ -22,7 +22,15 @@ export type OpportunityRecord = {
   customValues?: Record<string, unknown>;
   assignedRep?: string;
   notes?: Array<{ id: string; text: string; createdAt: string }>;
-  tasks?: Array<{ id: string; title: string; dueAt: string; done: boolean; createdAt: string }>;
+  tasks?: Array<{
+    id: string;
+    title: string;
+    dueAt: string;
+    done: boolean;
+    status?: "todo" | "in_progress" | "done";
+    comments?: Array<{ id: string; text: string; createdAt: string }>;
+    createdAt: string;
+  }>;
   createdAt: Date | null;
   updatedAt: Date | null;
 };
@@ -154,7 +162,15 @@ export async function listOpportunities(pipelineId?: string | null): Promise<Opp
         ? (d.notes as Array<{ id: string; text: string; createdAt: string }>)
         : undefined,
       tasks: Array.isArray(d.tasks)
-        ? (d.tasks as Array<{ id: string; title: string; dueAt: string; done: boolean; createdAt: string }>)
+        ? (d.tasks as Array<{
+            id: string;
+            title: string;
+            dueAt: string;
+            done: boolean;
+            status?: "todo" | "in_progress" | "done";
+            comments?: Array<{ id: string; text: string; createdAt: string }>;
+            createdAt: string;
+          }>)
         : undefined,
       createdAt: mapTs(d.createdAt),
       updatedAt: mapTs(d.updatedAt),
@@ -225,7 +241,15 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
       ? (d.notes as Array<{ id: string; text: string; createdAt: string }>)
       : undefined,
     tasks: Array.isArray(d.tasks)
-      ? (d.tasks as Array<{ id: string; title: string; dueAt: string; done: boolean; createdAt: string }>)
+      ? (d.tasks as Array<{
+          id: string;
+          title: string;
+          dueAt: string;
+          done: boolean;
+          status?: "todo" | "in_progress" | "done";
+          comments?: Array<{ id: string; text: string; createdAt: string }>;
+          createdAt: string;
+        }>)
       : undefined,
     createdAt: mapTs(d.createdAt),
     updatedAt: mapTs(d.updatedAt),
@@ -272,7 +296,15 @@ export async function updateOpportunity(
     assignedRep?: string;
     customValues?: Record<string, unknown>;
     notes?: Array<{ id: string; text: string; createdAt: string }>;
-    tasks?: Array<{ id: string; title: string; dueAt: string; done: boolean; createdAt: string }>;
+    tasks?: Array<{
+      id: string;
+      title: string;
+      dueAt: string;
+      done: boolean;
+      status?: "todo" | "in_progress" | "done";
+      comments?: Array<{ id: string; text: string; createdAt: string }>;
+      createdAt: string;
+    }>;
   }
 ): Promise<OpportunityRecord> {
   const ref = getAdminDb().collection("opportunities").doc(id);

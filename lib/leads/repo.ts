@@ -13,7 +13,15 @@ export type LeadRecord = {
   customFields?: Record<string, unknown>;
   assignedRep?: string;
   notes?: Array<{ id: string; text: string; createdAt: string }>;
-  tasks?: Array<{ id: string; title: string; dueAt: string; done: boolean; createdAt: string }>;
+  tasks?: Array<{
+    id: string;
+    title: string;
+    dueAt: string;
+    done: boolean;
+    status?: "todo" | "in_progress" | "done";
+    comments?: Array<{ id: string; text: string; createdAt: string }>;
+    createdAt: string;
+  }>;
   createdAt: Date | null;
   updatedAt: Date | null;
 };
@@ -126,7 +134,15 @@ function mapDocToLead(docId: string, data: Record<string, unknown>): LeadRecord 
       ? (data.notes as Array<{ id: string; text: string; createdAt: string }>)
       : undefined,
     tasks: Array.isArray(data.tasks)
-      ? (data.tasks as Array<{ id: string; title: string; dueAt: string; done: boolean; createdAt: string }>)
+      ? (data.tasks as Array<{
+          id: string;
+          title: string;
+          dueAt: string;
+          done: boolean;
+          status?: "todo" | "in_progress" | "done";
+          comments?: Array<{ id: string; text: string; createdAt: string }>;
+          createdAt: string;
+        }>)
       : undefined,
     createdAt,
     updatedAt,
@@ -243,7 +259,15 @@ export async function updateLead(
     assignedRep?: string;
     customFields?: Record<string, unknown>;
     notes?: Array<{ id: string; text: string; createdAt: string }>;
-    tasks?: Array<{ id: string; title: string; dueAt: string; done: boolean; createdAt: string }>;
+    tasks?: Array<{
+      id: string;
+      title: string;
+      dueAt: string;
+      done: boolean;
+      status?: "todo" | "in_progress" | "done";
+      comments?: Array<{ id: string; text: string; createdAt: string }>;
+      createdAt: string;
+    }>;
   }
 ): Promise<LeadRecord> {
   const docId = normalizeUniqueKey(id);

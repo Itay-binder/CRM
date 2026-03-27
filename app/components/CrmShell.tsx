@@ -53,6 +53,7 @@ export default function CrmShell({ email, children }: Props) {
           <NavItem href="/dashboard" label={'דשבורד מנכ"ל'} />
           <NavItem href="/contacts" label="אנשי קשר" />
           <NavItem href="/pipeline" label="ניהול הזדמנויות" />
+          <NavItem href="/tasks" label="משימות" />
           <NavItem href="/settings" label="הגדרות" />
         </nav>
       </aside>

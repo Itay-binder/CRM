@@ -14,7 +14,15 @@ type SortDir = "asc" | "desc";
 type AdvOp = "contains" | "equals" | "startsWith" | "isEmpty" | "notEmpty";
 type AdvFilter = { id: string; field: string; op: AdvOp; value: string };
 type NoteItem = { id: string; text: string; createdAt: string };
-type TaskItem = { id: string; title: string; dueAt: string; done: boolean; createdAt: string };
+type TaskItem = {
+  id: string;
+  title: string;
+  dueAt: string;
+  done: boolean;
+  status?: "todo" | "in_progress" | "done";
+  comments?: Array<{ id: string; text: string; createdAt: string }>;
+  createdAt: string;
+};
 type ContactDetail = {
   id: string;
   name?: string;
@@ -1074,9 +1082,19 @@ export default function ContactsClient() {
                   <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
                     <input
                       type="checkbox"
-                      checked={Boolean(t.done)}
+                      checked={Boolean((t.status ?? (t.done ? "done" : "todo")) === "done")}
                       onChange={(e) => {
-                        const tasks = (detail.tasks ?? []).map((x) => (x.id === t.id ? { ...x, done: e.target.checked } : x));
+                        const tasks = (detail.tasks ?? []).map((x) =>
+                          x.id === t.id
+                            ? {
+                                ...x,
+                                done: e.target.checked,
+                                status: (e.target.checked ? "done" : "todo") as
+                                  | "done"
+                                  | "todo",
+                              }
+                            : x
+                        );
                         setDetail((d) => (d ? { ...d, tasks } : d));
                         void saveDetail({ tasks });
                       }}
@@ -1098,6 +1116,8 @@ export default function ContactsClient() {
                         title: title.trim(),
                         dueAt: dueAt.trim(),
                         done: false,
+                        status: "todo" as const,
+                        comments: [] as Array<{ id: string; text: string; createdAt: string }>,
                         createdAt: new Date().toISOString(),
                       },
                     ];

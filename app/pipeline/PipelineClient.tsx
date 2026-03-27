@@ -27,7 +27,15 @@ type ContactRow = Record<string, string>;
 type TabId = "opportunities" | "pipelines";
 type ViewMode = "board" | "list";
 type NoteItem = { id: string; text: string; createdAt: string };
-type TaskItem = { id: string; title: string; dueAt: string; done: boolean; createdAt: string };
+type TaskItem = {
+  id: string;
+  title: string;
+  dueAt: string;
+  done: boolean;
+  status?: "todo" | "in_progress" | "done";
+  comments?: Array<{ id: string; text: string; createdAt: string }>;
+  createdAt: string;
+};
 
 const BASE_OPP_COLS = [
   "name",
@@ -844,8 +852,18 @@ export default function PipelineClient() {
               <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
                 {oppTasks.map((t) => (
                   <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
-                    <input type="checkbox" checked={Boolean(t.done)} onChange={(e) => {
-                      const tasks = oppTasks.map((x) => (x.id === t.id ? { ...x, done: e.target.checked } : x));
+                    <input type="checkbox" checked={Boolean((t.status ?? (t.done ? "done" : "todo")) === "done")} onChange={(e) => {
+                      const tasks = oppTasks.map((x) =>
+                        x.id === t.id
+                          ? {
+                              ...x,
+                              done: e.target.checked,
+                              status: (e.target.checked ? "done" : "todo") as
+                                | "done"
+                                | "todo",
+                            }
+                          : x
+                      );
                       setOppTasks(tasks);
                       void saveOpportunityPatch(selectedOpp.id, { tasks });
                     }} />
@@ -857,7 +875,7 @@ export default function PipelineClient() {
                   const title = window.prompt("כותרת משימה");
                   if (!title?.trim()) return;
                   const dueAt = window.prompt("תאריך ושעה (YYYY-MM-DD HH:mm)", new Date().toISOString().slice(0, 16).replace("T", " ")) || "";
-                  const tasks = [...oppTasks, { id: crypto.randomUUID(), title: title.trim(), dueAt: dueAt.trim(), done: false, createdAt: new Date().toISOString() }];
+                  const tasks = [...oppTasks, { id: crypto.randomUUID(), title: title.trim(), dueAt: dueAt.trim(), done: false, status: "todo" as const, comments: [] as Array<{ id: string; text: string; createdAt: string }>, createdAt: new Date().toISOString() }];
                   setOppTasks(tasks);
                   void saveOpportunityPatch(selectedOpp.id, { tasks });
                 }} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}>+ הוסף משימה</button>

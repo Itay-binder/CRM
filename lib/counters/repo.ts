@@ -6,7 +6,7 @@ export async function allocateRunningCode(
   prefix: string,
   padLength = 4
 ): Promise<string> {
-  const db = getAdminDb();
+  const db = await getAdminDb();
   const ref = db.collection("counters").doc(counterId);
 
   const seq = await db.runTransaction(async (tx) => {

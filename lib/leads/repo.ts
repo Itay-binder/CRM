@@ -160,7 +160,7 @@ function mapDocToLead(docId: string, data: Record<string, unknown>): LeadRecord 
 }
 
 export async function upsertLead(input: LeadUpsertInput): Promise<LeadRecord> {
-  const db = getAdminDb();
+  const db = await getAdminDb();
   const picked =
     input.id?.trim()
       ? { docId: normalizeUniqueKey(input.id), email: input.email, phone: input.phone }
@@ -239,7 +239,7 @@ function parseYmdBoundary(dateStr: string, mode: "from" | "to"): Date {
 }
 
 export async function listLeadsFiltered(dateFrom?: string | null, dateTo?: string | null): Promise<LeadRecord[]> {
-  const db = getAdminDb();
+  const db = await getAdminDb();
   const snap = await db.collection("leads").get();
   const leads = snap.docs.map((d) => mapDocToLead(d.id, d.data() as Record<string, unknown>));
 
@@ -261,7 +261,8 @@ export async function listLeadsFiltered(dateFrom?: string | null, dateTo?: strin
 
 export async function getLeadById(id: string): Promise<LeadRecord | null> {
   const docId = normalizeUniqueKey(id);
-  const snap = await getAdminDb().collection("leads").doc(docId).get();
+  const db = await getAdminDb();
+  const snap = await db.collection("leads").doc(docId).get();
   if (!snap.exists) return null;
   return mapDocToLead(snap.id, (snap.data() ?? {}) as Record<string, unknown>);
 }
@@ -276,7 +277,8 @@ export async function appendLeadNote(
   }
 ): Promise<LeadRecord> {
   const docId = normalizeUniqueKey(id);
-  const ref = getAdminDb().collection("leads").doc(docId);
+  const db = await getAdminDb();
+  const ref = db.collection("leads").doc(docId);
   const snap = await ref.get();
   if (!snap.exists) throw new Error("Contact not found");
 
@@ -337,7 +339,8 @@ export async function updateLead(
   }
 ): Promise<LeadRecord> {
   const docId = normalizeUniqueKey(id);
-  const ref = getAdminDb().collection("leads").doc(docId);
+  const db = await getAdminDb();
+  const ref = db.collection("leads").doc(docId);
   const snap = await ref.get();
   if (!snap.exists) throw new Error("Contact not found");
 

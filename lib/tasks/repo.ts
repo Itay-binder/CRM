@@ -54,7 +54,7 @@ function normalizeTask(raw: RawTask): UnifiedTask | null {
 }
 
 export async function listUnifiedTasks(): Promise<UnifiedTask[]> {
-  const db = getAdminDb();
+  const db = await getAdminDb();
   const [leadsSnap, oppSnap] = await Promise.all([
     db.collection("leads").get(),
     db.collection("opportunities").get(),
@@ -112,7 +112,7 @@ export async function updateTaskAndSync(
     commentText?: string;
   }
 ): Promise<UnifiedTask> {
-  const db = getAdminDb();
+  const db = await getAdminDb();
   const col = input.entityType === "contact" ? "leads" : "opportunities";
   const ref = db.collection(col).doc(input.entityId);
   const snap = await ref.get();

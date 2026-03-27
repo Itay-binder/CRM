@@ -24,7 +24,8 @@ export async function getExternalRef(
   externalId: string
 ): Promise<ExternalRef | null> {
   const id = docId(provider, externalId);
-  const snap = await getAdminDb().collection("externalRefs").doc(id).get();
+  const db = await getAdminDb();
+  const snap = await db.collection("externalRefs").doc(id).get();
   if (!snap.exists) return null;
   const d = (snap.data() ?? {}) as Record<string, unknown>;
   return {
@@ -37,7 +38,8 @@ export async function getExternalRef(
 
 export async function upsertExternalRef(input: ExternalRef): Promise<void> {
   const id = docId(input.provider, input.externalId);
-  await getAdminDb().collection("externalRefs").doc(id).set(
+  const db = await getAdminDb();
+  await db.collection("externalRefs").doc(id).set(
     {
       provider: normalizeProvider(input.provider),
       externalId: normalizeExternalId(input.externalId),

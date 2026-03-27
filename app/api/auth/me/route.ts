@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getVerifiedAuthFromRequest } from "@/lib/auth/fromRequest";
-import { ensureUserDoc } from "@/lib/auth/profile";
+import { getCrmSession } from "@/lib/auth/crmSession";
 import { authDisabled } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -12,29 +12,42 @@ export async function GET(req: NextRequest) {
       authDisabled: true,
       user: null,
       profile: null,
+      tenants: [],
+      currentTenantId: null,
     });
   }
 
   const authUser = await getVerifiedAuthFromRequest(req);
   if (!authUser) return NextResponse.json({ ok: false }, { status: 401 });
 
-  const profile = await ensureUserDoc(authUser.uid, authUser.email);
-  if (!profile.approved) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "Not approved",
-        user: { email: profile.email || authUser.email },
-      },
-      { status: 403 }
-    );
+  const ctx = await getCrmSession();
+  if (ctx.kind === "anon") {
+    return NextResponse.json({ ok: false }, { status: 401 });
+  }
+
+  const tenantsPayload = ctx.accessibleTenants.map((t) => ({
+    id: t.id,
+    label: t.label,
+  }));
+
+  if (ctx.kind === "forbidden") {
+    return NextResponse.json({
+      ok: false,
+      error: "Not approved or no access to workspace",
+      user: { uid: ctx.uid, email: ctx.email },
+      profile: null,
+      tenants: tenantsPayload,
+      currentTenantId: null,
+      tenantForbidden: true,
+    }, { status: 403 });
   }
 
   return NextResponse.json({
     ok: true,
     authDisabled: false,
-    user: { uid: authUser.uid, email: authUser.email },
-    profile,
+    user: { uid: ctx.uid, email: ctx.email },
+    profile: ctx.profile,
+    tenants: tenantsPayload,
+    currentTenantId: ctx.tenant.id,
   });
 }
-

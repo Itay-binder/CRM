@@ -1,8 +1,13 @@
 import Link from "next/link";
 import UserMenu from "@/app/components/UserMenu";
 
+export type CrmTenantOption = { id: string; label: string };
+
 type Props = {
   email: string | null;
+  tenants?: CrmTenantOption[];
+  currentTenantId?: string | null;
+  tenantForbidden?: boolean;
   children: React.ReactNode;
 };
 
@@ -24,7 +29,13 @@ function NavItem({ href, label }: { href: string; label: string }) {
   );
 }
 
-export default function CrmShell({ email, children }: Props) {
+export default function CrmShell({
+  email,
+  tenants = [],
+  currentTenantId = null,
+  tenantForbidden = false,
+  children,
+}: Props) {
   return (
     <div
       style={{
@@ -41,12 +52,24 @@ export default function CrmShell({ email, children }: Props) {
           padding: 16,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 18 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            marginBottom: 18,
+          }}
+        >
           <div style={{ lineHeight: 1.1 }}>
             <div style={{ fontWeight: 800 }}>Liftygo CRM</div>
             <div style={{ fontSize: 12, color: "#6b7280" }}>MVP</div>
           </div>
-          <UserMenu email={email} />
+          <UserMenu
+            email={email}
+            tenants={tenants}
+            currentTenantId={currentTenantId}
+          />
         </div>
 
         <nav style={{ display: "grid", gap: 8, marginTop: 8 }}>
@@ -68,9 +91,30 @@ export default function CrmShell({ email, children }: Props) {
           padding: 18,
         }}
       >
-        {children}
+        {tenantForbidden ? (
+          <div
+            style={{
+              maxWidth: 560,
+              margin: "40px auto",
+              padding: 22,
+              borderRadius: 16,
+              border: "1px solid #fecaca",
+              background: "#fff1f2",
+              color: "#881337",
+            }}
+          >
+            <div style={{ fontWeight: 800, fontSize: 18 }}>
+              אין גישה לעסק הנבחר
+            </div>
+            <div style={{ marginTop: 10, fontSize: 14, lineHeight: 1.5 }}>
+              בחר עסק אחר מהרשימה ליד האווטאר (למעלה), או בקש מהמנהל גישה לעסק
+              הזה.
+            </div>
+          </div>
+        ) : (
+          children
+        )}
       </section>
     </div>
   );
 }
-

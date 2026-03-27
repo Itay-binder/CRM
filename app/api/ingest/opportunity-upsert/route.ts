@@ -75,7 +75,8 @@ async function updateOpportunityById(
   id: string,
   updates: Record<string, unknown>
 ): Promise<void> {
-  await getAdminDb().collection("opportunities").doc(id).set(
+  const db = await getAdminDb();
+  await db.collection("opportunities").doc(id).set(
     {
       ...updates,
       updatedAt: new Date(),

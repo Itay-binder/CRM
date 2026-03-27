@@ -7,7 +7,8 @@ export type AdminUserOption = {
 };
 
 export async function listAdminUsers(): Promise<AdminUserOption[]> {
-  const snap = await getAdminDb()
+  const db = await getAdminDb();
+  const snap = await db
     .collection("users")
     .where("role", "==", "admin")
     .get();

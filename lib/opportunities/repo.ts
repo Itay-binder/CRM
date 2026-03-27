@@ -1,7 +1,8 @@
 import { randomUUID } from "crypto";
 import { FieldValue } from "firebase-admin/firestore";
-import { getAdminDb } from "@/lib/firebase/admin";
+import { getAdminDb, getRequestTenantDatabaseId } from "@/lib/firebase/admin";
 import { allocateRunningCode } from "@/lib/counters/repo";
+import { getTenantByDatabaseId } from "@/lib/tenant/config";
 
 export type PipelineRecord = {
   id: string;
@@ -56,7 +57,7 @@ export type CreatePipelineInput = {
 export type CreateOpportunityInput = {
   name?: string;
   contactId: string;
-  pipelineId: string;
+  pipelineId?: string;
   stage?: string;
   value?: number;
   status?: "פתוח" | "זכיה" | "הפסד";
@@ -94,6 +95,13 @@ function formatJerusalemDateTime(date: Date): string {
   return `${get("day")}/${get("month")}/${get("year")} ${get("hour")}:${get("minute")}`;
 }
 
+async function shouldSeedDefaultPipeline(): Promise<boolean> {
+  const dbId = await getRequestTenantDatabaseId();
+  const t = getTenantByDatabaseId(dbId);
+  if (t?.seedDefaultPipeline === false) return false;
+  return true;
+}
+
 function buildNewOpportunityLeadNoteText(params: {
   opportunityName: string;
   fullName: string;
@@ -126,7 +134,8 @@ async function mergeOpportunityNotesIntoContact(
 ): Promise<void> {
   const cid = contactId.trim();
   if (!cid || opportunityNotes.length === 0) return;
-  const contactRef = getAdminDb().collection("leads").doc(cid);
+  const db = await getAdminDb();
+  const contactRef = db.collection("leads").doc(cid);
   const contactSnap = await contactRef.get();
   if (!contactSnap.exists) return;
   const cdata = (contactSnap.data() ?? {}) as Record<string, unknown>;
@@ -197,7 +206,7 @@ function normalizeOpportunityStageByPipeline(
 }
 
 export async function ensureDefaultPipeline(): Promise<PipelineRecord> {
-  const db = getAdminDb();
+  const db = await getAdminDb();
   const ref = db.collection("pipelines").doc("default-sales");
   const snap = await ref.get();
   if (!snap.exists) {
@@ -234,8 +243,10 @@ export async function ensureDefaultPipeline(): Promise<PipelineRecord> {
 }
 
 export async function listPipelines(): Promise<PipelineRecord[]> {
-  await ensureDefaultPipeline();
-  const db = getAdminDb();
+  if (await shouldSeedDefaultPipeline()) {
+    await ensureDefaultPipeline();
+  }
+  const db = await getAdminDb();
   const snap = await db.collection("pipelines").get();
   const rows = snap.docs.map((doc) => {
     const d = (doc.data() ?? {}) as Record<string, unknown>;
@@ -251,7 +262,7 @@ export async function listPipelines(): Promise<PipelineRecord[]> {
 }
 
 export async function createPipeline(input: CreatePipelineInput): Promise<PipelineRecord> {
-  const db = getAdminDb();
+  const db = await getAdminDb();
   const name = input.name.trim();
   if (!name) throw new Error("Pipeline name is required");
   const stages = normalizeStages(input.stages);
@@ -276,8 +287,10 @@ export async function createPipeline(input: CreatePipelineInput): Promise<Pipeli
 }
 
 export async function listOpportunities(pipelineId?: string | null): Promise<OpportunityRecord[]> {
-  await ensureDefaultPipeline();
-  const db = getAdminDb();
+  if (await shouldSeedDefaultPipeline()) {
+    await ensureDefaultPipeline();
+  }
+  const db = await getAdminDb();
   const pipelinesSnap = await db.collection("pipelines").get();
   const pipelineStagesById = new Map(
     pipelinesSnap.docs.map((doc) => {
@@ -353,11 +366,19 @@ export async function listOpportunities(pipelineId?: string | null): Promise<Opp
 }
 
 export async function createOpportunity(input: CreateOpportunityInput): Promise<OpportunityRecord> {
-  const db = getAdminDb();
+  const db = await getAdminDb();
   const contactId = input.contactId.trim();
   if (!contactId) throw new Error("contactId is required");
 
-  const pipelineId = input.pipelineId?.trim() || (await ensureDefaultPipeline()).id;
+  let pipelineId = input.pipelineId?.trim() ?? "";
+  if (!pipelineId) {
+    if (await shouldSeedDefaultPipeline()) {
+      pipelineId = (await ensureDefaultPipeline()).id;
+    }
+  }
+  if (!pipelineId.trim()) {
+    throw new Error("Pipeline is required (create a pipeline in Settings / Pipeline first)");
+  }
   const pipelineSnap = await db.collection("pipelines").doc(pipelineId).get();
   if (!pipelineSnap.exists) throw new Error("Pipeline not found");
   const pd = (pipelineSnap.data() ?? {}) as Record<string, unknown>;
@@ -580,7 +601,7 @@ export async function appendOpportunityNote(
     createdAt?: string;
   }
 ): Promise<OpportunityRecord> {
-  const db = getAdminDb();
+  const db = await getAdminDb();
   const ref = db.collection("opportunities").doc(id);
   const snap = await ref.get();
   if (!snap.exists) throw new Error("Opportunity not found");
@@ -622,7 +643,7 @@ export async function appendOpportunityNote(
 }
 
 export async function getOpportunityById(id: string): Promise<OpportunityRecord | null> {
-  const db = getAdminDb();
+  const db = await getAdminDb();
   const [snap, pipelinesSnap] = await Promise.all([
     db.collection("opportunities").doc(id).get(),
     db.collection("pipelines").get(),
@@ -710,7 +731,7 @@ export async function updateOpportunity(
     }>;
   }
 ): Promise<OpportunityRecord> {
-  const db = getAdminDb();
+  const db = await getAdminDb();
   const ref = db.collection("opportunities").doc(id);
   const snap = await ref.get();
   if (!snap.exists) throw new Error("Opportunity not found");
@@ -720,7 +741,7 @@ export async function updateOpportunity(
   if (input.contactId !== undefined) {
     const nextContactId = input.contactId.trim();
     if (!nextContactId) throw new Error("contactId cannot be empty");
-    const contactSnap = await getAdminDb().collection("leads").doc(nextContactId).get();
+    const contactSnap = await db.collection("leads").doc(nextContactId).get();
     if (!contactSnap.exists) throw new Error("Contact not found");
     const cd = (contactSnap.data() ?? {}) as Record<string, unknown>;
     payload.contactId = nextContactId;
@@ -883,7 +904,7 @@ export async function updateOpportunity(
       input.contactId?.trim() || existing.contactId || ""
     ).trim();
     if (contactId) {
-      const contactRef = getAdminDb().collection("leads").doc(contactId);
+      const contactRef = db.collection("leads").doc(contactId);
       const contactSnap = await contactRef.get();
       if (contactSnap.exists) {
         const cd = (contactSnap.data() ?? {}) as Record<string, unknown>;
@@ -928,7 +949,7 @@ export async function updatePipeline(
   id: string,
   input: { name?: string; stages?: string[] }
 ): Promise<PipelineRecord> {
-  const db = getAdminDb();
+  const db = await getAdminDb();
   const ref = db.collection("pipelines").doc(id);
   const snap = await ref.get();
   if (!snap.exists) throw new Error("Pipeline not found");
@@ -993,7 +1014,7 @@ export async function updatePipeline(
 }
 
 export async function duplicatePipeline(id: string): Promise<PipelineRecord> {
-  const db = getAdminDb();
+  const db = await getAdminDb();
   const src = await db.collection("pipelines").doc(id).get();
   if (!src.exists) throw new Error("Pipeline not found");
   const d = (src.data() ?? {}) as Record<string, unknown>;
@@ -1007,10 +1028,10 @@ export async function duplicatePipeline(id: string): Promise<PipelineRecord> {
 }
 
 export async function deletePipeline(id: string): Promise<void> {
-  if (id === "default-sales") {
+  if (id === "default-sales" && (await shouldSeedDefaultPipeline())) {
     throw new Error("Default pipeline cannot be deleted");
   }
-  const db = getAdminDb();
+  const db = await getAdminDb();
   const snap = await db.collection("opportunities").where("pipelineId", "==", id).limit(1).get();
   if (!snap.empty) {
     throw new Error("Cannot delete pipeline with existing opportunities");

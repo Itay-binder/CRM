@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
 
     const normalized = normalizeEmail(email);
 
-    const db = getAdminDb();
+    const db = await getAdminDb();
     const invitesDoc = await db.collection("invites").doc(normalized).get();
     const invitesByEmailField = await db
       .collection("invites")

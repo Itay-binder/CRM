@@ -1,5 +1,8 @@
+import type { Firestore } from "firebase-admin/firestore";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
+import type { TenantConfig } from "@/lib/tenant/config";
+import { isTenantMember } from "@/lib/tenant/config";
 import type { UserProfile } from "@/lib/auth/types";
 
 function normalizeEmail(email: string): string {
@@ -7,7 +10,6 @@ function normalizeEmail(email: string): string {
 }
 
 function userDocumentId(email: string | undefined, uid: string): string {
-  // Prefer deterministic docId = normalized email.
   if (email?.includes("@")) return normalizeEmail(email);
   return uid;
 }
@@ -20,14 +22,16 @@ export function isAdminEmail(email: string | undefined): boolean {
   return list.includes(email.toLowerCase());
 }
 
-async function inviteExists(email: string | undefined): Promise<boolean> {
+export async function inviteExists(
+  email: string | undefined,
+  db: Firestore
+): Promise<boolean> {
   if (!email) return false;
   const normalized = normalizeEmail(email);
-  const snap = await getAdminDb().collection("invites").doc(normalized).get();
+  const snap = await db.collection("invites").doc(normalized).get();
   if (snap.exists) return true;
 
-  // Fallback: search by `email` field.
-  const byEmailField = await getAdminDb()
+  const byEmailField = await db
     .collection("invites")
     .where("email", "==", normalized)
     .limit(1)
@@ -37,9 +41,9 @@ async function inviteExists(email: string | undefined): Promise<boolean> {
 
 export async function getUserProfile(
   uid: string,
-  email?: string
+  email: string | undefined,
+  db: Firestore
 ): Promise<UserProfile | null> {
-  const db = getAdminDb();
   const docId = userDocumentId(email, uid);
   const snap = await db.collection("users").doc(docId).get();
   if (!snap.exists) return null;
@@ -55,16 +59,17 @@ export async function getUserProfile(
 
 export async function ensureUserDoc(
   uid: string,
-  email: string | undefined
+  email: string | undefined,
+  db: Firestore,
+  tenant: TenantConfig
 ): Promise<UserProfile> {
-  const db = getAdminDb();
   const admin = isAdminEmail(email);
+  const member = isTenantMember(email, tenant);
   const docId = userDocumentId(email, uid);
   const ref = db.collection("users").doc(docId);
 
   const snap = await ref.get();
   if (snap.exists) {
-    // Make sure we have email set if we got it later, and auto-fix admin docs.
     const d = snap.data() as Record<string, unknown>;
     const existingEmail = typeof d.email === "string" ? d.email : "";
     const newEmail = email ?? existingEmail;
@@ -75,10 +80,14 @@ export async function ensureUserDoc(
       updates.email = newEmail;
     }
 
-    // Existing users created before admin/invites setup can be missing approved=true.
+    const invited = await inviteExists(email, db);
+    const shouldApprove = admin || member || invited;
+
     if (admin) {
       if (d.role !== "admin") updates.role = "admin";
       if (!d.approved) updates.approved = true;
+    } else if (shouldApprove && !d.approved) {
+      updates.approved = true;
     }
 
     if (Object.keys(updates).length > 0) {
@@ -86,12 +95,13 @@ export async function ensureUserDoc(
       await ref.update(updates);
     }
 
-    const profile = await getUserProfile(uid, email);
+    const profile = await getUserProfile(uid, email, db);
     if (!profile) throw new Error("User doc exists but profile missing");
     return profile;
   }
 
-  const approved = admin ? true : await inviteExists(email);
+  const invited = await inviteExists(email, db);
+  const approved = admin || member || invited;
   const role: UserProfile["role"] = admin ? "admin" : "user";
   const profile: UserProfile = {
     email: email ?? "",
@@ -108,3 +118,11 @@ export async function ensureUserDoc(
   return profile;
 }
 
+/** Current request tenant (convenience for callers that omit explicit db). */
+export async function getUserProfileForRequest(
+  uid: string,
+  email: string | undefined
+): Promise<UserProfile | null> {
+  const db = await getAdminDb();
+  return getUserProfile(uid, email, db);
+}

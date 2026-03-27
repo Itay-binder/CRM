@@ -1,14 +1,30 @@
 import { redirect } from "next/navigation";
-import { getSessionWithProfile, authDisabled } from "@/lib/auth/session";
+import { authDisabled } from "@/lib/auth/session";
+import { getSessionUser } from "@/lib/auth/cookiesSession";
+import { getAdminDb, getRequestTenantDatabaseId } from "@/lib/firebase/admin";
+import { getTenantByDatabaseId } from "@/lib/tenant/config";
+import { canAccessTenant } from "@/lib/tenant/access";
+import { getUserProfile } from "@/lib/auth/profile";
+import PendingLogoutButton from "@/app/pending/PendingLogoutButton";
 
 export const dynamic = "force-dynamic";
 
 export default async function PendingPage() {
   if (authDisabled()) redirect("/login");
-  const s = await getSessionWithProfile();
-  if (!s) redirect("/login?returnTo=/pending");
+  const user = await getSessionUser();
+  if (!user) redirect("/login?returnTo=/pending");
 
-  if (s.profile.approved) {
+  const dbId = await getRequestTenantDatabaseId();
+  const tenant = getTenantByDatabaseId(dbId);
+  if (!tenant || !(await canAccessTenant(user.email, user.uid, tenant))) {
+    redirect("/login?returnTo=/pending");
+  }
+
+  const db = await getAdminDb();
+  const profile = await getUserProfile(user.uid, user.email, db);
+  if (!profile) redirect("/login?returnTo=/pending");
+
+  if (profile.approved) {
     redirect("/dashboard");
   }
 
@@ -27,30 +43,11 @@ export default async function PendingPage() {
       >
         <h1 style={{ margin: 0, fontSize: 22 }}>ממתין לאישור</h1>
         <p style={{ marginTop: 12, color: "#4b5563" }}>
-          החשבון <strong dir="ltr">{s.profile.email}</strong> ממתין לאישור מנהל
+          החשבון <strong dir="ltr">{profile.email}</strong> ממתין לאישור מנהל
           לפני גישה ל-CRM.
         </p>
-        <button
-          type="button"
-          onClick={async () => {
-            await fetch("/api/auth/session", { method: "DELETE", credentials: "include" });
-            window.location.href = "/login";
-          }}
-          style={{
-            marginTop: 16,
-            padding: "12px 16px",
-            borderRadius: 12,
-            border: "none",
-            cursor: "pointer",
-            fontWeight: 700,
-            background: "#111827",
-            color: "#fff",
-          }}
-        >
-          התנתקות
-        </button>
+        <PendingLogoutButton />
       </div>
     </main>
   );
 }
-

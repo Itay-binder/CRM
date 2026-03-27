@@ -26,7 +26,8 @@ function normalizeUrl(raw: string): string {
 }
 
 export async function listCheckoutPages(): Promise<CheckoutPageRecord[]> {
-  const snap = await getAdminDb().collection("checkoutPages").get();
+  const db = await getAdminDb();
+  const snap = await db.collection("checkoutPages").get();
   const out = snap.docs.map((doc) => {
     const d = (doc.data() ?? {}) as Record<string, unknown>;
     return {
@@ -52,7 +53,8 @@ export async function createCheckoutPage(input: {
   const url = normalizeUrl(input.url);
   const name = input.name?.trim() || new URL(url).hostname;
   const now = FieldValue.serverTimestamp();
-  const ref = await getAdminDb().collection("checkoutPages").add({
+  const dbAdd = await getAdminDb();
+  const ref = await dbAdd.collection("checkoutPages").add({
     name,
     url,
     isActive: true,
@@ -75,7 +77,8 @@ export async function updateCheckoutPage(
   id: string,
   input: { name?: string; url?: string; isActive?: boolean }
 ): Promise<CheckoutPageRecord> {
-  const ref = getAdminDb().collection("checkoutPages").doc(id);
+  const dbUp = await getAdminDb();
+  const ref = dbUp.collection("checkoutPages").doc(id);
   const snap = await ref.get();
   if (!snap.exists) throw new Error("Checkout page not found");
   const payload: Record<string, unknown> = {
@@ -98,6 +101,7 @@ export async function updateCheckoutPage(
 }
 
 export async function deleteCheckoutPage(id: string): Promise<void> {
-  await getAdminDb().collection("checkoutPages").doc(id).delete();
+  const dbDel = await getAdminDb();
+  await dbDel.collection("checkoutPages").doc(id).delete();
 }
 

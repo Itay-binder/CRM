@@ -64,7 +64,7 @@ function normalizeOptions(options?: string[]): string[] | undefined {
 }
 
 export async function listCustomFields(entityType?: CustomFieldEntity): Promise<CustomFieldRecord[]> {
-  const db = getAdminDb();
+  const db = await getAdminDb();
   const col = db.collection("customFields");
   const snap = entityType
     ? await col.where("entityType", "==", entityType).get()
@@ -90,7 +90,7 @@ export async function listCustomFields(entityType?: CustomFieldEntity): Promise<
 }
 
 export async function upsertCustomField(input: UpsertCustomFieldInput): Promise<CustomFieldRecord> {
-  const db = getAdminDb();
+  const db = await getAdminDb();
   const label = input.label.trim();
   if (!label) throw new Error("label is required");
   const fieldId = ensureEntityPrefixedFieldId(
@@ -136,7 +136,8 @@ export async function upsertCustomField(input: UpsertCustomFieldInput): Promise<
 export async function deleteCustomField(fieldId: string): Promise<void> {
   const id = normalizeFieldId(fieldId);
   if (!id) throw new Error("Invalid fieldId");
-  await getAdminDb().collection("customFields").doc(id).delete();
+  const db = await getAdminDb();
+  await db.collection("customFields").doc(id).delete();
 }
 
 export async function normalizeExistingCustomFieldIds(): Promise<{
@@ -144,7 +145,7 @@ export async function normalizeExistingCustomFieldIds(): Promise<{
   touchedContacts: number;
   touchedOpportunities: number;
 }> {
-  const db = getAdminDb();
+  const db = await getAdminDb();
   const fields = await listCustomFields();
   const contactMap = new Map<string, string>();
   const opportunityMap = new Map<string, string>();

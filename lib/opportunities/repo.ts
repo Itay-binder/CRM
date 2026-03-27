@@ -84,6 +84,18 @@ function normalizeStages(stages: string[]): string[] {
   return Array.from(new Set(out));
 }
 
+function normalizeOpportunityStageByPipeline(
+  pipelineStagesById: Map<string, string[]>,
+  pipelineId: string,
+  stageRaw: unknown
+): string {
+  const stage = String(stageRaw ?? "").trim();
+  const stages = pipelineStagesById.get(pipelineId) ?? [];
+  if (stages.length === 0) return stage || "Pending";
+  if (stage && stages.includes(stage)) return stage;
+  return stages[0];
+}
+
 export async function ensureDefaultPipeline(): Promise<PipelineRecord> {
   const db = getAdminDb();
   const ref = db.collection("pipelines").doc("default-sales");
@@ -153,6 +165,13 @@ export async function createPipeline(input: CreatePipelineInput): Promise<Pipeli
 export async function listOpportunities(pipelineId?: string | null): Promise<OpportunityRecord[]> {
   await ensureDefaultPipeline();
   const db = getAdminDb();
+  const pipelinesSnap = await db.collection("pipelines").get();
+  const pipelineStagesById = new Map(
+    pipelinesSnap.docs.map((doc) => {
+      const d = (doc.data() ?? {}) as Record<string, unknown>;
+      return [doc.id, normalizeStages((d.stages as string[] | undefined) ?? [])] as const;
+    })
+  );
   let snap;
   if (pipelineId?.trim()) {
     snap = await db.collection("opportunities").where("pipelineId", "==", pipelineId.trim()).get();
@@ -172,7 +191,11 @@ export async function listOpportunities(pipelineId?: string | null): Promise<Opp
       email: typeof d.email === "string" ? d.email : undefined,
       phone: typeof d.phone === "string" ? d.phone : undefined,
       pipelineId: String(d.pipelineId ?? ""),
-      stage: String(d.stage ?? "Pending"),
+      stage: normalizeOpportunityStageByPipeline(
+        pipelineStagesById,
+        String(d.pipelineId ?? ""),
+        d.stage
+      ),
       status:
         d.status === "זכיה" || d.status === "הפסד" || d.status === "פתוח"
           ? d.status
@@ -397,8 +420,18 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
 }
 
 export async function getOpportunityById(id: string): Promise<OpportunityRecord | null> {
-  const snap = await getAdminDb().collection("opportunities").doc(id).get();
+  const db = getAdminDb();
+  const [snap, pipelinesSnap] = await Promise.all([
+    db.collection("opportunities").doc(id).get(),
+    db.collection("pipelines").get(),
+  ]);
   if (!snap.exists) return null;
+  const pipelineStagesById = new Map(
+    pipelinesSnap.docs.map((doc) => {
+      const d = (doc.data() ?? {}) as Record<string, unknown>;
+      return [doc.id, normalizeStages((d.stages as string[] | undefined) ?? [])] as const;
+    })
+  );
   const d = (snap.data() ?? {}) as Record<string, unknown>;
   return {
     id: snap.id,
@@ -410,7 +443,11 @@ export async function getOpportunityById(id: string): Promise<OpportunityRecord 
     email: typeof d.email === "string" ? d.email : undefined,
     phone: typeof d.phone === "string" ? d.phone : undefined,
     pipelineId: String(d.pipelineId ?? ""),
-    stage: String(d.stage ?? "Pending"),
+    stage: normalizeOpportunityStageByPipeline(
+      pipelineStagesById,
+      String(d.pipelineId ?? ""),
+      d.stage
+    ),
     status:
       d.status === "זכיה" || d.status === "הפסד" || d.status === "פתוח"
         ? d.status

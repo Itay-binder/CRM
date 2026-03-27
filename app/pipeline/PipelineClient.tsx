@@ -122,6 +122,7 @@ export default function PipelineClient() {
   const [oppColFilters, setOppColFilters] = useState<Record<string, string>>({});
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
   const [openedOpportunityFromQuery, setOpenedOpportunityFromQuery] = useState(false);
+  const [boardPreviewFields, setBoardPreviewFields] = useState<string[]>([]);
 
   const selectedPipeline = useMemo(
     () => pipelines.find((p) => p.id === selectedPipelineId) ?? null,
@@ -244,6 +245,17 @@ export default function PipelineClient() {
           ).sort(),
         ];
         return prev.length ? Array.from(new Set([...prev, ...available])) : available;
+      });
+      setBoardPreviewFields((prev) => {
+        if (prev.length) return prev;
+        const available = new Set([
+          ...BASE_OPP_COLS,
+          ...Array.from(
+            new Set(opp.flatMap((o) => Object.keys((o.customValues ?? {}) as Record<string, unknown>)))
+          ),
+        ]);
+        const defaults = ["contactName", "status", "stage", "assignedRep", "phone"];
+        return defaults.filter((x) => available.has(x)).slice(0, 5);
       });
     } catch (e) {
       setErr(e instanceof Error ? e.message : "לא ניתן לטעון ניהול הזדמנויות");
@@ -442,6 +454,29 @@ export default function PipelineClient() {
     if (col === "lastLeadAt") return formatJerusalemDate(o.lastLeadAt);
     if (col in o) return String((o as Record<string, unknown>)[col] ?? "");
     return String((o.customValues ?? {})[col] ?? "");
+  }
+
+  function opportunityFieldLabel(col: string): string {
+    const labels: Record<string, string> = {
+      name: "שם הזדמנות",
+      contactName: "איש קשר",
+      email: "מייל",
+      phone: "פלאפון",
+      pipelineName: "פייפליין",
+      stage: "שלב",
+      status: "סטטוס",
+      utmSource: "utm_source",
+      utmCampaign: "utm_campaign",
+      utmMedium: "utm_medium",
+      utmContent: "utm_content",
+      landingpage: "landingpage",
+      tags: "תגיות",
+      assignedRep: "משויך",
+      createdAt: "נוצר",
+      updatedAt: "עודכן",
+      lastLeadAt: "ליד אחרון",
+    };
+    return labels[col] ?? col;
   }
 
   const INLINE_READONLY = new Set([
@@ -687,7 +722,7 @@ export default function PipelineClient() {
               onClick={() => setManageOppColsOpen(true)}
               style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", fontWeight: 800 }}
             >
-              ניהול עמודות
+              {viewMode === "board" ? "ניהול שדות" : "ניהול עמודות"}
             </button>
           </>
         )}
@@ -758,7 +793,7 @@ export default function PipelineClient() {
                     <tr key={o.id}>
                       {oppDisplayCols.map((col, idx) => (
                         <td key={col} style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6", minWidth: oppColWidths[col] ?? 180, width: oppColWidths[col] ?? 180 }}>
-                          {idx === 0 ? (
+                          {col === "name" ? (
                             <button type="button" onClick={() => void openOpportunityDetail(o.id)} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#4c1d95", fontWeight: 800, padding: 0 }}>
                               {opportunityCell(o, col)}
                             </button>
@@ -894,7 +929,21 @@ export default function PipelineClient() {
                               style={{ border: "1px solid #f3f4f6", borderRadius: 12, padding: 10, background: "#fafafa", cursor: "grab" }}
                             >
                               <button type="button" onClick={() => void openOpportunityDetail(o.id)} style={{ border: "none", background: "transparent", padding: 0, textAlign: "right", cursor: "pointer", fontWeight: 900, fontSize: 12, wordBreak: "break-word", color: "#111827" }}>{o.name}</button>
-                              <div style={{ marginTop: 4, fontSize: 12, color: "#6b7280" }}>{o.contactName || o.contactEmail || o.contactPhone || o.contactId}</div>
+                              <div style={{ marginTop: 6, display: "grid", gap: 4 }}>
+                                {boardPreviewFields.slice(0, 5).map((f) => (
+                                  <div key={`${o.id}-${f}`} style={{ fontSize: 12, color: "#4b5563", display: "flex", gap: 6 }}>
+                                    <span style={{ fontWeight: 800 }}>{opportunityFieldLabel(f)}:</span>
+                                    <span style={{ color: "#6b7280", wordBreak: "break-word" }}>
+                                      {opportunityCell(o, f) || "—"}
+                                    </span>
+                                  </div>
+                                ))}
+                                {boardPreviewFields.length === 0 && (
+                                  <div style={{ fontSize: 12, color: "#6b7280" }}>
+                                    {o.contactName || o.contactEmail || o.contactPhone || o.contactId}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           ))
                         )}
@@ -1164,80 +1213,124 @@ export default function PipelineClient() {
         <div style={{ position: "fixed", inset: 0, zIndex: 90 }}>
           <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.2)" }} onMouseDown={() => setManageOppColsOpen(false)} />
           <div style={{ position: "absolute", top: 0, right: 0, height: "100%", width: "min(420px, 94vw)", overflow: "auto", background: "#fff", borderLeft: "1px solid #e5e7eb", padding: 16 }} onMouseDown={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: 0, marginBottom: 10 }}>ניהול עמודות (הזדמנויות)</h3>
-            <div style={{ display: "grid", gap: 8 }}>
-              {(oppColumnOrder.length
-                ? oppColumnOrder
-                : [...BASE_OPP_COLS, ...oppCustomFieldIds]).map((h, idx, arr) => (
-                <div
-                  key={h}
-                  draggable
-                  onDragStart={() => setOppDragIndex(idx)}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={() => {
-                    if (oppDragIndex != null) moveOppColumn(oppDragIndex, idx);
-                    setOppDragIndex(null);
-                  }}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "auto 1fr auto auto",
-                    alignItems: "center",
-                    gap: 8,
-                    border: "1px solid #f3f4f6",
-                    borderRadius: 10,
-                    padding: "6px 8px",
-                  }}
-                >
-                  <span style={{ cursor: "grab", opacity: 0.7 }} title="גרור לשינוי סדר">
-                    ⋮⋮
-                  </span>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <input
-                      type="checkbox"
-                      checked={oppVisibleCols.includes(h)}
-                      onChange={(e) =>
-                        setOppVisibleCols((vis) =>
-                          e.target.checked ? Array.from(new Set([...vis, h])) : vis.filter((x) => x !== h)
-                        )
-                      }
-                    />
-                    <span>{h}</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => moveOppColumn(idx, idx - 1)}
-                    disabled={idx === 0}
-                    style={{
-                      border: "1px solid #e5e7eb",
-                      background: "#fff",
-                      borderRadius: 8,
-                      padding: "4px 7px",
-                      cursor: idx === 0 ? "default" : "pointer",
-                      opacity: idx === 0 ? 0.5 : 1,
-                    }}
-                    title="הזז למעלה"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => moveOppColumn(idx, idx + 1)}
-                    disabled={idx === arr.length - 1}
-                    style={{
-                      border: "1px solid #e5e7eb",
-                      background: "#fff",
-                      borderRadius: 8,
-                      padding: "4px 7px",
-                      cursor: idx === arr.length - 1 ? "default" : "pointer",
-                      opacity: idx === arr.length - 1 ? 0.5 : 1,
-                    }}
-                    title="הזז למטה"
-                  >
-                    ↓
-                  </button>
+            <h3 style={{ margin: 0, marginBottom: 10 }}>
+              {viewMode === "board" ? "ניהול שדות (תצוגת פייפליין)" : "ניהול עמודות (הזדמנויות)"}
+            </h3>
+            {viewMode === "board" ? (
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>
+                  אפשר לבחור עד 5 שדות לתצוגה מקדימה על הכרטיס.
                 </div>
-              ))}
-            </div>
+                {[...BASE_OPP_COLS, ...oppCustomFieldIds]
+                  .filter((h) => h !== "name")
+                  .map((h) => {
+                    const selected = boardPreviewFields.includes(h);
+                    const maxReached = boardPreviewFields.length >= 5 && !selected;
+                    return (
+                      <label
+                        key={h}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          border: "1px solid #f3f4f6",
+                          borderRadius: 10,
+                          padding: "8px 10px",
+                          opacity: maxReached ? 0.6 : 1,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          disabled={maxReached}
+                          onChange={(e) =>
+                            setBoardPreviewFields((arr) =>
+                              e.target.checked
+                                ? [...arr, h].slice(0, 5)
+                                : arr.filter((x) => x !== h)
+                            )
+                          }
+                        />
+                        <span>{opportunityFieldLabel(h)}</span>
+                      </label>
+                    );
+                  })}
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 8 }}>
+                {(oppColumnOrder.length
+                  ? oppColumnOrder
+                  : [...BASE_OPP_COLS, ...oppCustomFieldIds]).map((h, idx, arr) => (
+                  <div
+                    key={h}
+                    draggable
+                    onDragStart={() => setOppDragIndex(idx)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => {
+                      if (oppDragIndex != null) moveOppColumn(oppDragIndex, idx);
+                      setOppDragIndex(null);
+                    }}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "auto 1fr auto auto",
+                      alignItems: "center",
+                      gap: 8,
+                      border: "1px solid #f3f4f6",
+                      borderRadius: 10,
+                      padding: "6px 8px",
+                    }}
+                  >
+                    <span style={{ cursor: "grab", opacity: 0.7 }} title="גרור לשינוי סדר">
+                      ⋮⋮
+                    </span>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={oppVisibleCols.includes(h)}
+                        onChange={(e) =>
+                          setOppVisibleCols((vis) =>
+                            e.target.checked ? Array.from(new Set([...vis, h])) : vis.filter((x) => x !== h)
+                          )
+                        }
+                      />
+                      <span>{h}</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => moveOppColumn(idx, idx - 1)}
+                      disabled={idx === 0}
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        background: "#fff",
+                        borderRadius: 8,
+                        padding: "4px 7px",
+                        cursor: idx === 0 ? "default" : "pointer",
+                        opacity: idx === 0 ? 0.5 : 1,
+                      }}
+                      title="הזז למעלה"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveOppColumn(idx, idx + 1)}
+                      disabled={idx === arr.length - 1}
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        background: "#fff",
+                        borderRadius: 8,
+                        padding: "4px 7px",
+                        cursor: idx === arr.length - 1 ? "default" : "pointer",
+                        opacity: idx === arr.length - 1 ? 0.5 : 1,
+                      }}
+                      title="הזז למטה"
+                    >
+                      ↓
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
               <button type="button" onClick={() => setManageOppColsOpen(false)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}>סגור</button>
             </div>

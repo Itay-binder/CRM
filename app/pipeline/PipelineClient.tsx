@@ -1401,7 +1401,27 @@ export default function PipelineClient() {
                 </div>
 
                 <div style={{ border: "1px solid #f3f4f6", borderRadius: 12, padding: 12 }}>
-                  <div style={{ fontWeight: 900, marginBottom: 8 }}>Opportunity details</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <div style={{ fontWeight: 900 }}>Opportunity details</div>
+                    <div style={{ flex: 1 }} />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        window.location.href = "/settings/fields";
+                      }}
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        background: "#fff",
+                        borderRadius: 8,
+                        padding: "6px 8px",
+                        cursor: "pointer",
+                        fontWeight: 700,
+                        fontSize: 12,
+                      }}
+                    >
+                      ניהול שדות
+                    </button>
+                  </div>
                   <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
                 <label style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>שם הזדמנות</span>

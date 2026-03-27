@@ -23,7 +23,48 @@ type CustomField = {
   isActive: boolean;
 };
 
+type FieldScope = "all" | EntityType;
+type SystemField = {
+  kind: "system";
+  entityType: EntityType;
+  label: string;
+  fieldId: string;
+  type: FieldType | "readonly";
+  isRequired: boolean;
+  isActive: boolean;
+  options?: string[];
+};
+
+const CONTACT_SYSTEM_FIELDS: SystemField[] = [
+  { kind: "system", entityType: "contact", label: "שם מלא", fieldId: "name", type: "text", isRequired: true, isActive: true },
+  { kind: "system", entityType: "contact", label: "מייל", fieldId: "email", type: "email", isRequired: false, isActive: true },
+  { kind: "system", entityType: "contact", label: "פלאפון", fieldId: "phone", type: "phone", isRequired: false, isActive: true },
+  { kind: "system", entityType: "contact", label: "סטטוס", fieldId: "status", type: "select", isRequired: false, isActive: true, options: ["פתוח", "זכיה", "הפסד"] },
+  { kind: "system", entityType: "contact", label: "נציג משויך", fieldId: "assignedRep", type: "select", isRequired: false, isActive: true },
+  { kind: "system", entityType: "contact", label: "תאריך יצירה", fieldId: "createdAt", type: "readonly", isRequired: false, isActive: true },
+];
+
+const OPPORTUNITY_SYSTEM_FIELDS: SystemField[] = [
+  { kind: "system", entityType: "opportunity", label: "שם הזדמנות", fieldId: "name", type: "text", isRequired: true, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "פייפליין", fieldId: "pipelineId", type: "select", isRequired: true, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "שלב בפייפליין", fieldId: "stage", type: "select", isRequired: true, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "סטטוס", fieldId: "status", type: "select", isRequired: false, isActive: true, options: ["פתוח", "זכיה", "הפסד"] },
+  { kind: "system", entityType: "opportunity", label: "נציג משויך", fieldId: "assignedRep", type: "select", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "מייל", fieldId: "email", type: "email", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "פלאפון", fieldId: "phone", type: "phone", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "utm_source", fieldId: "utmSource", type: "text", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "utm_campaign", fieldId: "utmCampaign", type: "text", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "utm_medium", fieldId: "utmMedium", type: "text", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "utm_content", fieldId: "utmContent", type: "text", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "landingpage", fieldId: "landingpage", type: "text", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "תגיות", fieldId: "tags", type: "select", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "תאריך יצירה", fieldId: "createdAt", type: "readonly", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "תאריך עדכון", fieldId: "updatedAt", type: "readonly", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "תאריך ליד אחרון", fieldId: "lastLeadAt", type: "readonly", isRequired: false, isActive: true },
+];
+
 export default function FieldsClient() {
+  const [scope, setScope] = useState<FieldScope>("all");
   const [entityType, setEntityType] = useState<EntityType>("contact");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -36,13 +77,14 @@ export default function FieldsClient() {
   const [isRequired, setIsRequired] = useState(false);
   const [isActive, setIsActive] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
     setErr(null);
     try {
       const res = await fetch(
-        `/api/custom-fields?entityType=${encodeURIComponent(entityType)}`,
+        `/api/custom-fields`,
         {
           credentials: "include",
           cache: "no-store",
@@ -80,9 +122,19 @@ export default function FieldsClient() {
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entityType]);
+  }, []);
 
-  async function createField() {
+  function resetForm() {
+    setEditingFieldId(null);
+    setLabel("");
+    setFieldId("");
+    setType("text");
+    setOptionsText("");
+    setIsRequired(false);
+    setIsActive(true);
+  }
+
+  async function saveField() {
     setSaving(true);
     setErr(null);
     try {
@@ -113,22 +165,33 @@ export default function FieldsClient() {
         error?: string;
       };
       if (!res.ok || !j.ok) {
-        setErr(j.error ?? "יצירת שדה נכשלה");
+        setErr(j.error ?? "שמירת שדה נכשלה");
         return;
       }
-      setLabel("");
-      setFieldId("");
-      setType("text");
-      setOptionsText("");
-      setIsRequired(false);
-      setIsActive(true);
+      resetForm();
       await load();
     } catch {
-      setErr("יצירת שדה נכשלה");
+      setErr("שמירת שדה נכשלה");
     } finally {
       setSaving(false);
     }
   }
+
+  function startEditField(f: CustomField) {
+    setEditingFieldId(f.fieldId);
+    setEntityType(f.entityType);
+    setLabel(f.label);
+    setFieldId(f.fieldId);
+    setType(f.type);
+    setOptionsText((f.options ?? []).join(", "));
+    setIsRequired(f.isRequired);
+    setIsActive(f.isActive);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  const systemRows: SystemField[] = [...CONTACT_SYSTEM_FIELDS, ...OPPORTUNITY_SYSTEM_FIELDS];
+  const filteredSystemRows = systemRows.filter((f) => scope === "all" || f.entityType === scope);
+  const filteredCustomRows = rows.filter((f) => scope === "all" || f.entityType === scope);
 
   return (
     <div style={{ maxWidth: 1100 }}>
@@ -145,7 +208,7 @@ export default function FieldsClient() {
         <div
           style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}
         >
-          <label style={{ fontWeight: 700 }}>Entity:</label>
+          <label style={{ fontWeight: 700 }}>סוג שדה ליצירה/עריכה:</label>
           <select
             value={entityType}
             onChange={(e) => setEntityType(e.target.value as EntityType)}
@@ -157,6 +220,17 @@ export default function FieldsClient() {
           >
             <option value="contact">Contact</option>
             <option value="opportunity">Opportunity</option>
+          </select>
+          <div style={{ flex: 1 }} />
+          <label style={{ fontWeight: 700 }}>תצוגה בטבלה:</label>
+          <select
+            value={scope}
+            onChange={(e) => setScope(e.target.value as FieldScope)}
+            style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+          >
+            <option value="all">הכל</option>
+            <option value="contact">אנשי קשר</option>
+            <option value="opportunity">הזדמנויות</option>
           </select>
         </div>
 
@@ -244,7 +318,7 @@ export default function FieldsClient() {
         <div style={{ marginTop: 12 }}>
           <button
             type="button"
-            onClick={() => void createField()}
+            onClick={() => void saveField()}
             disabled={saving}
             style={{
               padding: "10px 12px",
@@ -256,8 +330,25 @@ export default function FieldsClient() {
               cursor: "pointer",
             }}
           >
-            {saving ? "שומר..." : "צור שדה"}
+            {saving ? "שומר..." : editingFieldId ? "שמור שינויים" : "צור שדה"}
           </button>
+          {editingFieldId && (
+            <button
+              type="button"
+              onClick={resetForm}
+              style={{
+                marginInlineStart: 8,
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #e5e7eb",
+                background: "#fff",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              ביטול עריכה
+            </button>
+          )}
         </div>
       </div>
 
@@ -284,7 +375,7 @@ export default function FieldsClient() {
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
           <thead>
             <tr>
-              {["Label", "fieldId", "type", "required", "active", "options"].map(
+              {["source", "entity", "label", "fieldId", "type", "required", "active", "options", "actions"].map(
                 (h) => (
                   <th
                     key={h}
@@ -305,8 +396,23 @@ export default function FieldsClient() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((f) => (
+            {filteredSystemRows.map((f) => (
+              <tr key={`sys-${f.entityType}-${f.fieldId}`}>
+                <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>system</td>
+                <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{f.entityType}</td>
+                <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{f.label}</td>
+                <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}><code>{f.fieldId}</code></td>
+                <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{f.type}</td>
+                <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{f.isRequired ? "yes" : "no"}</td>
+                <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{f.isActive ? "yes" : "no"}</td>
+                <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{(f.options ?? []).join(", ") || "—"}</td>
+                <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6", color: "#6b7280" }}>מנוהל מערכת</td>
+              </tr>
+            ))}
+            {filteredCustomRows.map((f) => (
               <tr key={f.id}>
+                <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>custom</td>
+                <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{f.entityType}</td>
                 <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>
                   {f.label}
                 </td>
@@ -325,19 +431,34 @@ export default function FieldsClient() {
                 <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>
                   {(f.options ?? []).join(", ")}
                 </td>
+                <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>
+                  <button
+                    type="button"
+                    onClick={() => startEditField(f)}
+                    style={{
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 8,
+                      padding: "6px 8px",
+                      background: "#fff",
+                      cursor: "pointer",
+                    }}
+                  >
+                    עריכה
+                  </button>
+                </td>
               </tr>
             ))}
-            {!loading && rows.length === 0 && (
+            {!loading && filteredSystemRows.length + filteredCustomRows.length === 0 && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={9}
                   style={{
                     padding: 16,
                     color: "#6b7280",
                     fontWeight: 700,
                   }}
                 >
-                  אין שדות מותאמים כרגע.
+                  אין שדות להצגה.
                 </td>
               </tr>
             )}

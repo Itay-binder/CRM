@@ -151,7 +151,7 @@ export default function ContactsClient() {
   const [detail, setDetail] = useState<ContactDetail | null>(null);
   const [savingDetail, setSavingDetail] = useState(false);
   const openedFromQueryRef = useRef(false);
-  const [adminUsers, setAdminUsers] = useState<Array<{ email: string }>>([]);
+  const [adminUsers, setAdminUsers] = useState<Array<{ email: string; name?: string }>>([]);
   const [detailOpportunities, setDetailOpportunities] = useState<
     Array<{
       id: string;
@@ -241,12 +241,20 @@ export default function ContactsClient() {
         });
         const j = (await res.json().catch(() => ({}))) as {
           ok?: boolean;
-          users?: Array<{ email: string }>;
+          users?: Array<{ email: string; name?: string }>;
         };
         if (res.ok && j.ok) setAdminUsers(j.users ?? []);
       } catch {}
     })();
   }, []);
+
+  const adminLabelByEmail = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const u of adminUsers) {
+      map.set(u.email, (u.name?.trim() || u.email).trim());
+    }
+    return map;
+  }, [adminUsers]);
 
   const fieldKinds = useMemo(() => {
     const out: Record<string, FieldKind> = {};
@@ -860,7 +868,9 @@ export default function ContactsClient() {
                             {row[h] ?? ""}
                           </button>
                         ) : CONTACT_INLINE_READONLY.has(h) || !row.id ? (
-                          row[h] ?? ""
+                          h === "assignedRep"
+                            ? adminLabelByEmail.get(String(row[h] ?? "").trim()) ?? (row[h] ?? "")
+                            : row[h] ?? ""
                         ) : (
                           editingCell?.id === String(row.id) && editingCell.col === h ? (
                             h === "status" ? (
@@ -895,7 +905,7 @@ export default function ContactsClient() {
                               >
                                 <option value="">לא משויך</option>
                                 {adminUsers.map((u) => (
-                                  <option key={u.email} value={u.email}>{u.email}</option>
+                                  <option key={u.email} value={u.email}>{u.name?.trim() || u.email}</option>
                                 ))}
                               </select>
                             ) : (
@@ -940,7 +950,9 @@ export default function ContactsClient() {
                               }}
                               title="לחץ לעריכה מהירה"
                             >
-                              {row[h] ?? ""}
+                              {h === "assignedRep"
+                                ? adminLabelByEmail.get(String(row[h] ?? "").trim()) ?? (row[h] ?? "")
+                                : row[h] ?? ""}
                             </button>
                           )
                         )}
@@ -1246,7 +1258,7 @@ export default function ContactsClient() {
               <select value={createAssignedRep} onChange={(e) => setCreateAssignedRep(e.target.value)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", gridColumn: "1 / -1" }}>
                 <option value="">נציג משויך</option>
                 {adminUsers.map((u) => (
-                  <option key={u.email} value={u.email}>{u.email}</option>
+                  <option key={u.email} value={u.email}>{u.name?.trim() || u.email}</option>
                 ))}
               </select>
             </div>
@@ -1348,7 +1360,7 @@ export default function ContactsClient() {
                 <select value={detail.assignedRep ?? ""} onChange={(e) => setDetail((d) => (d ? { ...d, assignedRep: e.target.value } : d))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
                   <option value="">Unassigned</option>
                   {adminUsers.map((u) => (
-                    <option key={u.email} value={u.email}>{u.email}</option>
+                    <option key={u.email} value={u.email}>{u.name?.trim() || u.email}</option>
                   ))}
                 </select>
                 <div style={{ border: "1px solid #f3f4f6", borderRadius: 10, padding: 8 }}>

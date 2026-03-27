@@ -25,6 +25,17 @@ function checkIngestAuth(req: NextRequest): boolean {
   return Boolean(got && got === expected);
 }
 
+function pickString(
+  obj: Record<string, unknown>,
+  keys: string[]
+): string | undefined {
+  for (const key of keys) {
+    const v = obj[key];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return undefined;
+}
+
 export async function POST(req: NextRequest) {
   if (!checkIngestAuth(req)) {
     return NextResponse.json(
@@ -37,7 +48,7 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as {
       provider?: string;
       externalId?: string;
-      contact?: {
+      contact?: Record<string, unknown> & {
         uniqueKey?: string;
         email?: string;
         phone?: string;
@@ -51,7 +62,7 @@ export async function POST(req: NextRequest) {
 
     const provider = body.provider?.trim() || "make";
     const externalId = body.externalId?.trim();
-    const c = body.contact ?? {};
+    const c = (body.contact ?? {}) as Record<string, unknown>;
 
     let existingEntityId: string | undefined;
     if (externalId) {
@@ -61,15 +72,67 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const customValues = await validateCustomValues("contact", c.customValues);
+    const uniqueKey = pickString(c, ["uniqueKey", "contact_unique_key"]);
+    const email = pickString(c, ["email", "contact_email"]);
+    const phone = pickString(c, ["phone", "contact_phone"]);
+    const name = pickString(c, ["fullName", "name", "contact_name"]);
+    const stage = pickString(c, ["stage", "contact_stage"]);
+    const source = pickString(c, ["source", "contact_source"]);
+    const statusRaw = pickString(c, ["status", "contact_status"]);
+    const assignedRep = pickString(c, [
+      "assignedRep",
+      "contact_assigned_rep",
+      "contact_assignedRep",
+    ]);
+    const pipelineId = pickString(c, ["pipelineId", "contact_pipeline_id"]);
+
+    const systemKeys = new Set([
+      "uniqueKey",
+      "contact_unique_key",
+      "email",
+      "contact_email",
+      "phone",
+      "contact_phone",
+      "fullName",
+      "name",
+      "contact_name",
+      "stage",
+      "contact_stage",
+      "source",
+      "contact_source",
+      "status",
+      "contact_status",
+      "assignedRep",
+      "contact_assigned_rep",
+      "contact_assignedRep",
+      "pipelineId",
+      "contact_pipeline_id",
+      "customValues",
+      "customFields",
+    ]);
+    const directFieldIdValues = Object.fromEntries(
+      Object.entries(c).filter(([k]) => !systemKeys.has(k))
+    );
+    const customInput = {
+      ...((c.customValues as Record<string, unknown> | undefined) ?? {}),
+      ...((c.customFields as Record<string, unknown> | undefined) ?? {}),
+      ...directFieldIdValues,
+    };
+    const customValues = await validateCustomValues("contact", customInput);
     const lead = await upsertLead({
       id: existingEntityId,
-      uniqueKey: c.uniqueKey,
-      email: c.email,
-      phone: c.phone,
-      name: c.fullName || c.name,
-      stage: c.stage ?? "Pending",
-      source: c.source ?? "ingest",
+      uniqueKey,
+      email,
+      phone,
+      name,
+      stage: stage ?? "Pending",
+      source: source ?? "ingest",
+      status:
+        statusRaw === "זכיה" || statusRaw === "הפסד" || statusRaw === "פתוח"
+          ? statusRaw
+          : "פתוח",
+      assignedRep,
+      pipelineId,
       customFields: customValues,
     });
 

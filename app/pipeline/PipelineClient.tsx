@@ -51,6 +51,50 @@ type TaskItem = {
 type SortDir = "asc" | "desc";
 type SortState = { col: string; dir: SortDir } | null;
 type EditingCell = { id: string; col: string; value: string };
+type AdvLogic = "and" | "or";
+type AdvFieldKind = "text" | "number" | "date" | "select";
+type AdvOp =
+  | "contains"
+  | "equals"
+  | "startsWith"
+  | "endsWith"
+  | "notEquals"
+  | "isEmpty"
+  | "notEmpty"
+  | "numEq"
+  | "numGt"
+  | "numGte"
+  | "numLt"
+  | "numLte"
+  | "dateOn"
+  | "dateBefore"
+  | "dateAfter";
+type AdvFilter = { id: string; field: string; op: AdvOp; value: string };
+
+const ADV_OPS_BY_KIND: Record<AdvFieldKind, AdvOp[]> = {
+  text: ["contains", "equals", "startsWith", "endsWith", "notEquals", "isEmpty", "notEmpty"],
+  number: ["numEq", "numGt", "numGte", "numLt", "numLte", "isEmpty", "notEmpty"],
+  date: ["dateOn", "dateBefore", "dateAfter", "isEmpty", "notEmpty"],
+  select: ["equals", "notEquals", "isEmpty", "notEmpty"],
+};
+
+const ADV_OP_LABEL: Record<AdvOp, string> = {
+  contains: "כולל",
+  equals: "שווה בדיוק",
+  startsWith: "מתחיל ב...",
+  endsWith: "מסתיים ב...",
+  notEquals: "שונה מ...",
+  isEmpty: "ריק",
+  notEmpty: "לא ריק",
+  numEq: "שווה ל...",
+  numGt: "גדול מ...",
+  numGte: "גדול/שווה ל...",
+  numLt: "קטן מ...",
+  numLte: "קטן/שווה ל...",
+  dateOn: "בתאריך",
+  dateBefore: "מוקדם יותר מ...",
+  dateAfter: "מאוחר יותר מ...",
+};
 
 const BASE_OPP_COLS = [
   "name",
@@ -116,10 +160,15 @@ export default function PipelineClient() {
   const [editPipelineName, setEditPipelineName] = useState("");
   const [editStages, setEditStages] = useState<string[]>([]);
   const [editDragIndex, setEditDragIndex] = useState<number | null>(null);
-  const [adminUsers, setAdminUsers] = useState<Array<{ email: string }>>([]);
+  const [adminUsers, setAdminUsers] = useState<Array<{ email: string; name?: string }>>([]);
   const [oppColWidths, setOppColWidths] = useState<Record<string, number>>({});
   const [oppSort, setOppSort] = useState<SortState>(null);
   const [oppColFilters, setOppColFilters] = useState<Record<string, string>>({});
+  const [advOpen, setAdvOpen] = useState(false);
+  const [advLogic, setAdvLogic] = useState<AdvLogic>("and");
+  const [advFilters, setAdvFilters] = useState<AdvFilter[]>([]);
+  const [draftAdvLogic, setDraftAdvLogic] = useState<AdvLogic>("and");
+  const [draftAdvFilters, setDraftAdvFilters] = useState<AdvFilter[]>([]);
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
   const [openedOpportunityFromQuery, setOpenedOpportunityFromQuery] = useState(false);
   const [boardPreviewFields, setBoardPreviewFields] = useState<string[]>([]);
@@ -204,7 +253,7 @@ export default function PipelineClient() {
       };
       const adminsJson = (await adminsRes.json().catch(() => ({}))) as {
         ok?: boolean;
-        users?: Array<{ email: string }>;
+        users?: Array<{ email: string; name?: string }>;
       };
 
       if (!pJson.ok) throw new Error(pJson.error ?? "שגיאה בטעינת pipelines");
@@ -268,6 +317,14 @@ export default function PipelineClient() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPipelineId]);
+
+  const adminLabelByEmail = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const u of adminUsers) {
+      map.set(u.email, (u.name?.trim() || u.email).trim());
+    }
+    return map;
+  }, [adminUsers]);
 
   useEffect(() => {
     if (openedOpportunityFromQuery) return;
@@ -457,9 +514,22 @@ export default function PipelineClient() {
     return `${get("day")}/${get("month")}/${get("year")} ${get("hour")}:${get("minute")}`;
   }
 
+  function asDateKey(raw: string): string | null {
+    const s = raw.trim();
+    if (!s) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const t = Date.parse(s);
+    if (Number.isNaN(t)) return null;
+    return new Date(t).toISOString().slice(0, 10);
+  }
+
   function opportunityCell(o: Opportunity, col: string): string {
     if (col === "pipelineName") {
       return pipelines.find((p) => p.id === o.pipelineId)?.name || o.pipelineId;
+    }
+    if (col === "assignedRep") {
+      const value = String(o.assignedRep ?? "");
+      return adminLabelByEmail.get(value) ?? value;
     }
     if (col === "tags") return (o.tags ?? []).join(", ");
     if (col === "createdAt") return formatJerusalemDate(o.createdAt);
@@ -490,6 +560,91 @@ export default function PipelineClient() {
       lastLeadAt: "ליד אחרון",
     };
     return labels[col] ?? col;
+  }
+
+  const advFieldKinds = useMemo(() => {
+    const out: Record<string, AdvFieldKind> = {};
+    const rowsToInspect = oppForSelectedPipeline.slice(0, 120);
+    for (const col of oppDisplayCols) {
+      const key = col.trim().toLowerCase();
+      if (
+        key === "status" ||
+        key === "stage" ||
+        key === "assignedrep" ||
+        key === "pipelinename"
+      ) {
+        out[col] = "select";
+        continue;
+      }
+      if (key === "createdat" || key === "updatedat" || key === "lastleadat") {
+        out[col] = "date";
+        continue;
+      }
+      const values = rowsToInspect.map((o) => opportunityCell(o, col).trim()).filter(Boolean);
+      if (values.length > 0 && values.every((v) => !Number.isNaN(Number(v)))) {
+        out[col] = "number";
+        continue;
+      }
+      if (values.length > 0 && values.every((v) => asDateKey(v) !== null)) {
+        out[col] = "date";
+        continue;
+      }
+      out[col] = "text";
+    }
+    return out;
+  }, [oppDisplayCols, oppForSelectedPipeline, pipelines, adminLabelByEmail]);
+
+  const advSelectValues = useMemo(() => {
+    const out: Record<string, string[]> = {};
+    for (const col of oppDisplayCols) {
+      if (advFieldKinds[col] !== "select") continue;
+      const uniq = Array.from(
+        new Set(
+          oppForSelectedPipeline.map((o) => opportunityCell(o, col).trim()).filter(Boolean)
+        )
+      );
+      out[col] = uniq.sort((a, b) => a.localeCompare(b, "he"));
+    }
+    return out;
+  }, [oppDisplayCols, advFieldKinds, oppForSelectedPipeline, pipelines]);
+
+  function defaultOpForField(field: string): AdvOp {
+    const kind = advFieldKinds[field] ?? "text";
+    return ADV_OPS_BY_KIND[kind][0] ?? "contains";
+  }
+
+  function evaluateAdvFilter(o: Opportunity, f: AdvFilter): boolean {
+    const raw = opportunityCell(o, f.field);
+    const v = raw.trim();
+    const val = f.value.trim();
+    const vN = v.toLowerCase();
+    const cN = val.toLowerCase();
+    if (f.op === "isEmpty") return v === "";
+    if (f.op === "notEmpty") return v !== "";
+    if (f.op === "contains") return vN.includes(cN);
+    if (f.op === "equals") return vN === cN;
+    if (f.op === "startsWith") return vN.startsWith(cN);
+    if (f.op === "endsWith") return vN.endsWith(cN);
+    if (f.op === "notEquals") return vN !== cN;
+    if (["numEq", "numGt", "numGte", "numLt", "numLte"].includes(f.op)) {
+      const n1 = Number(v);
+      const n2 = Number(val);
+      if (Number.isNaN(n1) || Number.isNaN(n2)) return false;
+      if (f.op === "numEq") return n1 === n2;
+      if (f.op === "numGt") return n1 > n2;
+      if (f.op === "numGte") return n1 >= n2;
+      if (f.op === "numLt") return n1 < n2;
+      if (f.op === "numLte") return n1 <= n2;
+    }
+    if (["dateOn", "dateBefore", "dateAfter"].includes(f.op)) {
+      const d1 = asDateKey(v);
+      const d2 = asDateKey(val);
+      if (!d1 || !d2) return false;
+      if (f.op === "dateOn") return d1 === d2;
+      if (f.op === "dateBefore") return d1 < d2;
+      if (f.op === "dateAfter") return d1 > d2;
+    }
+    return true;
   }
 
   const INLINE_READONLY = new Set([
@@ -562,13 +717,19 @@ export default function PipelineClient() {
   }
 
   const filteredSortedOpps = useMemo(() => {
-    const filtered = oppForSelectedPipeline.filter((o) =>
+    let filtered = oppForSelectedPipeline.filter((o) =>
       oppDisplayCols.every((col) => {
         const q = (oppColFilters[col] ?? "").trim().toLowerCase();
         if (!q) return true;
         return opportunityCell(o, col).toLowerCase().includes(q);
       })
     );
+    if (advFilters.length) {
+      filtered = filtered.filter((o) => {
+        const checks = advFilters.map((f) => evaluateAdvFilter(o, f));
+        return advLogic === "and" ? checks.every(Boolean) : checks.some(Boolean);
+      });
+    }
     if (!oppSort) return filtered;
     const sorted = [...filtered];
     sorted.sort((a, b) => {
@@ -579,7 +740,19 @@ export default function PipelineClient() {
       return 0;
     });
     return sorted;
-  }, [oppForSelectedPipeline, oppDisplayCols, oppColFilters, oppSort]);
+  }, [oppForSelectedPipeline, oppDisplayCols, oppColFilters, oppSort, advFilters, advLogic]);
+
+  function openAdvancedFilters() {
+    setDraftAdvLogic(advLogic);
+    setDraftAdvFilters(advFilters.length ? [...advFilters] : []);
+    setAdvOpen(true);
+  }
+
+  function applyAdvancedFilters() {
+    setAdvLogic(draftAdvLogic);
+    setAdvFilters(draftAdvFilters);
+    setAdvOpen(false);
+  }
 
   function toggleSort(col: string) {
     setOppSort((prev) => {
@@ -737,6 +910,15 @@ export default function PipelineClient() {
             >
               {viewMode === "board" ? "ניהול שדות" : "ניהול עמודות"}
             </button>
+            {viewMode === "list" && (
+              <button
+                type="button"
+                onClick={openAdvancedFilters}
+                style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", fontWeight: 800 }}
+              >
+                פילטר מתקדם
+              </button>
+            )}
           </>
         )}
 
@@ -861,7 +1043,7 @@ export default function PipelineClient() {
                                 >
                                   <option value="">לא משויך</option>
                                   {adminUsers.map((u) => (
-                                    <option key={u.email} value={u.email}>{u.email}</option>
+                                    <option key={u.email} value={u.email}>{u.name?.trim() || u.email}</option>
                                   ))}
                                 </select>
                               ) : (
@@ -1224,7 +1406,7 @@ export default function PipelineClient() {
               <select value={newOppAssignedRep} onChange={(e) => setNewOppAssignedRep(e.target.value)} style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #e5e7eb" }}>
                 <option value="">נציג משויך</option>
                 {adminUsers.map((u) => (
-                  <option key={u.email} value={u.email}>{u.email}</option>
+                  <option key={u.email} value={u.email}>{u.name?.trim() || u.email}</option>
                 ))}
               </select>
             </div>
@@ -1365,10 +1547,161 @@ export default function PipelineClient() {
         </div>
       )}
 
+      {advOpen && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 90 }}>
+          <div
+            style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.2)" }}
+            onMouseDown={() => setAdvOpen(false)}
+          />
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              right: 0,
+              height: "100%",
+              width: "min(430px, 94vw)",
+              overflow: "auto",
+              background: "#fff",
+              borderLeft: "1px solid #e5e7eb",
+              padding: 16,
+              boxShadow: "-12px 0 30px rgba(0,0,0,0.08)",
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: 0, marginBottom: 10 }}>פילטר מתקדם (הזדמנויות)</h3>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <span style={{ fontSize: 12, fontWeight: 800, color: "#6b7280" }}>לוגיקה בין התנאים</span>
+              <select
+                value={draftAdvLogic}
+                onChange={(e) => setDraftAdvLogic(e.target.value as AdvLogic)}
+                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+              >
+                <option value="and">וגם (AND)</option>
+                <option value="or">או (OR)</option>
+              </select>
+            </div>
+            <div style={{ display: "grid", gap: 8 }}>
+              {draftAdvFilters.map((f) => (
+                <div key={f.id} style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1.4fr auto", gap: 8 }}>
+                  <select
+                    value={f.field}
+                    onChange={(e) =>
+                      setDraftAdvFilters((arr) =>
+                        arr.map((x) =>
+                          x.id === f.id
+                            ? { ...x, field: e.target.value, op: defaultOpForField(e.target.value), value: "" }
+                            : x
+                        )
+                      )
+                    }
+                    style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+                  >
+                    {oppDisplayCols.map((h) => (
+                      <option key={h} value={h}>
+                        {opportunityFieldLabel(h)}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={f.op}
+                    onChange={(e) =>
+                      setDraftAdvFilters((arr) => arr.map((x) => (x.id === f.id ? { ...x, op: e.target.value as AdvOp } : x)))
+                    }
+                    style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+                  >
+                    {(ADV_OPS_BY_KIND[advFieldKinds[f.field] ?? "text"] ?? ADV_OPS_BY_KIND.text).map((op) => (
+                      <option key={op} value={op}>
+                        {ADV_OP_LABEL[op]}
+                      </option>
+                    ))}
+                  </select>
+                  {advFieldKinds[f.field] === "select" && (f.op === "equals" || f.op === "notEquals") ? (
+                    <select
+                      value={f.value}
+                      onChange={(e) =>
+                        setDraftAdvFilters((arr) => arr.map((x) => (x.id === f.id ? { ...x, value: e.target.value } : x)))
+                      }
+                      style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+                    >
+                      <option value="">בחר ערך</option>
+                      {(advSelectValues[f.field] ?? []).map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type={["dateOn", "dateBefore", "dateAfter"].includes(f.op) ? "date" : "text"}
+                      value={f.value}
+                      onChange={(e) =>
+                        setDraftAdvFilters((arr) => arr.map((x) => (x.id === f.id ? { ...x, value: e.target.value } : x)))
+                      }
+                      disabled={f.op === "isEmpty" || f.op === "notEmpty"}
+                      style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setDraftAdvFilters((arr) => arr.filter((x) => x.id !== f.id))}
+                    style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
+                  >
+                    מחק
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() =>
+                  setDraftAdvFilters((arr) => [
+                    ...arr,
+                    {
+                      id: crypto.randomUUID(),
+                      field: oppDisplayCols[0] ?? "name",
+                      op: defaultOpForField(oppDisplayCols[0] ?? "name"),
+                      value: "",
+                    },
+                  ])
+                }
+                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
+              >
+                הוסף תנאי
+              </button>
+              <button
+                type="button"
+                onClick={() => setDraftAdvFilters([])}
+                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
+              >
+                נקה הכל
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdvOpen(false)}
+                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
+              >
+                ביטול
+              </button>
+              <button
+                type="button"
+                onClick={applyAdvancedFilters}
+                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
+              >
+                החל
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {selectedOpp && (
         <div style={{ position: "fixed", inset: 0, zIndex: 96 }}>
           <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.2)" }} onMouseDown={() => setSelectedOpp(null)} />
-          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 12 }}>
+          <div
+            style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 12 }}
+            onMouseDown={() => setSelectedOpp(null)}
+          >
             <div style={{ width: "min(980px, 96vw)", maxHeight: "92vh", overflow: "auto", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: 16 }} onMouseDown={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
               <h3 style={{ margin: 0, fontSize: 22 }}>{selectedOpp.name}</h3>
@@ -1481,7 +1814,7 @@ export default function PipelineClient() {
                   <select value={selectedOpp.assignedRep ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, assignedRep: e.target.value } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
                     <option value="">לא משויך</option>
                     {adminUsers.map((u) => (
-                      <option key={u.email} value={u.email}>{u.email}</option>
+                      <option key={u.email} value={u.email}>{u.name?.trim() || u.email}</option>
                     ))}
                   </select>
                 </label>

@@ -3,6 +3,7 @@ import { getAdminDb } from "@/lib/firebase/admin";
 export type AdminUserOption = {
   id: string;
   email: string;
+  name?: string;
 };
 
 export async function listAdminUsers(): Promise<AdminUserOption[]> {
@@ -16,10 +17,21 @@ export async function listAdminUsers(): Promise<AdminUserOption[]> {
       const d = (doc.data() ?? {}) as Record<string, unknown>;
       const email = String(d.email ?? doc.id).trim().toLowerCase();
       if (!email) return null;
-      return { id: doc.id, email } satisfies AdminUserOption;
+      const nameRaw =
+        typeof d.name === "string"
+          ? d.name
+          : typeof d.displayName === "string"
+          ? d.displayName
+          : typeof d.fullName === "string"
+          ? d.fullName
+          : "";
+      const name = nameRaw.trim() || undefined;
+      return { id: doc.id, email, name } as AdminUserOption;
     })
-    .filter((x): x is AdminUserOption => Boolean(x));
+    .filter(Boolean) as AdminUserOption[];
 
-  return out.sort((a, b) => a.email.localeCompare(b.email, "he"));
+  return out.sort((a, b) =>
+    (a.name || a.email).localeCompare(b.name || b.email, "he")
+  );
 }
 

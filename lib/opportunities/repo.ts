@@ -1,5 +1,6 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
+import { allocateRunningCode } from "@/lib/counters/repo";
 
 export type PipelineRecord = {
   id: string;
@@ -11,6 +12,7 @@ export type PipelineRecord = {
 
 export type OpportunityRecord = {
   id: string;
+  opportunityCode?: string;
   name: string;
   contactId: string;
   contactName?: string;
@@ -269,8 +271,14 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
 
   if (!existingSame.empty) {
     const existingRef = existingSame.docs[0].ref;
+    const existingData = (existingSame.docs[0].data() ?? {}) as Record<string, unknown>;
+    const existingOpportunityCode =
+      typeof existingData.opportunityCode === "string" && existingData.opportunityCode.trim()
+        ? existingData.opportunityCode.trim()
+        : await allocateRunningCode("opportunities", "O-");
     await existingRef.set(
       {
+        opportunityCode: existingOpportunityCode,
         name: input.name?.trim() || (typeof cd.name === "string" ? cd.name : "Opportunity"),
         stage,
         status: input.status ?? "פתוח",
@@ -296,6 +304,7 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
     const d = (updated.data() ?? {}) as Record<string, unknown>;
     return {
       id: updated.id,
+      opportunityCode: typeof d.opportunityCode === "string" ? d.opportunityCode : undefined,
       name: String(d.name ?? ""),
       contactId: String(d.contactId ?? contactId),
       contactName: typeof d.contactName === "string" ? d.contactName : undefined,
@@ -341,7 +350,9 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
     };
   }
 
+  const opportunityCode = await allocateRunningCode("opportunities", "O-");
   const ref = await db.collection("opportunities").add({
+    opportunityCode,
     name: input.name?.trim() || (typeof cd.name === "string" ? cd.name : "Opportunity"),
     contactId,
     contactName: typeof cd.name === "string" ? cd.name : "",
@@ -374,6 +385,7 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
   const d = (snap.data() ?? {}) as Record<string, unknown>;
   return {
     id: snap.id,
+    opportunityCode: typeof d.opportunityCode === "string" ? d.opportunityCode : undefined,
     name: String(d.name ?? ""),
     contactId: String(d.contactId ?? contactId),
     contactName: typeof d.contactName === "string" ? d.contactName : undefined,
@@ -435,6 +447,7 @@ export async function getOpportunityById(id: string): Promise<OpportunityRecord 
   const d = (snap.data() ?? {}) as Record<string, unknown>;
   return {
     id: snap.id,
+    opportunityCode: typeof d.opportunityCode === "string" ? d.opportunityCode : undefined,
     name: String(d.name ?? ""),
     contactId: String(d.contactId ?? ""),
     contactName: typeof d.contactName === "string" ? d.contactName : undefined,

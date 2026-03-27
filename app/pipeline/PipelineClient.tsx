@@ -12,6 +12,7 @@ type Pipeline = {
 
 type Opportunity = {
   id: string;
+  opportunityCode?: string;
   name: string;
   contactId: string;
   contactName?: string;
@@ -97,6 +98,7 @@ const ADV_OP_LABEL: Record<AdvOp, string> = {
 };
 
 const BASE_OPP_COLS = [
+  "opportunityCode",
   "name",
   "contactName",
   "email",
@@ -541,6 +543,7 @@ export default function PipelineClient() {
 
   function opportunityFieldLabel(col: string): string {
     const labels: Record<string, string> = {
+      opportunityCode: "מספר הזדמנות",
       name: "שם הזדמנות",
       contactName: "איש קשר",
       email: "מייל",
@@ -648,6 +651,7 @@ export default function PipelineClient() {
   }
 
   const INLINE_READONLY = new Set([
+    "opportunityCode",
     "createdAt",
     "updatedAt",
     "lastLeadAt",

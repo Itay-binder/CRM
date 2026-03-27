@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     const leads = await listLeadsFiltered(dateFrom, dateTo);
 
     // Build dynamic headers based on customFields keys too.
-    const fixedHeaders = ["name", "email", "phone", "status", "assignedRep", "createdAt", "id"];
+    const fixedHeaders = ["contactCode", "name", "email", "phone", "status", "assignedRep", "createdAt", "id"];
     const customKeys = new Set<string>();
     const rows: Record<string, string>[] = [];
 
@@ -40,6 +40,7 @@ export async function GET(req: NextRequest) {
 
       rows.push({
         id: l.id,
+        contactCode: l.contactCode ?? "",
         name: l.name ?? "",
         email: l.email ?? "",
         phone: l.phone ?? "",
@@ -116,6 +117,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       lead: {
         id: lead.id,
+        contactCode: lead.contactCode ?? "",
         email: lead.email ?? "",
         phone: lead.phone ?? "",
         name: lead.name ?? "",

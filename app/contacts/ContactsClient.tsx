@@ -43,6 +43,7 @@ type TaskItem = {
 };
 type ContactDetail = {
   id: string;
+  contactCode?: string;
   name?: string;
   email?: string;
   phone?: string;
@@ -53,7 +54,7 @@ type ContactDetail = {
   tasks?: TaskItem[];
 };
 
-const BASE_COLS = ["name", "phone", "email", "status", "assignedRep", "createdAt"];
+const BASE_COLS = ["contactCode", "name", "phone", "email", "status", "assignedRep", "createdAt"];
 
 function normalize(v: unknown) {
   return String(v ?? "").trim().toLowerCase();
@@ -402,7 +403,7 @@ export default function ContactsClient() {
     setSortDir("asc");
   }
 
-  const CONTACT_INLINE_READONLY = new Set(["id", "createdAt", "updatedAt"]);
+  const CONTACT_INLINE_READONLY = new Set(["id", "contactCode", "createdAt", "updatedAt"]);
 
   function onResizeColumnStart(col: string, startX: number) {
     const base = contactColWidths[col] ?? 180;

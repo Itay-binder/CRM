@@ -1,8 +1,10 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
+import { allocateRunningCode } from "@/lib/counters/repo";
 
 export type LeadRecord = {
   id: string; // doc id = normalized unique key
+  contactCode?: string;
   email?: string;
   phone?: string;
   name?: string;
@@ -122,6 +124,7 @@ function mapDocToLead(docId: string, data: Record<string, unknown>): LeadRecord 
 
   return {
     id: docId,
+    contactCode: typeof data.contactCode === "string" ? data.contactCode : undefined,
     email: typeof data.email === "string" ? data.email : undefined,
     phone: typeof data.phone === "string" ? data.phone : undefined,
     name: typeof data.name === "string" ? data.name : undefined,
@@ -175,8 +178,10 @@ export async function upsertLead(input: LeadUpsertInput): Promise<LeadRecord> {
   const nowUpdate = FieldValue.serverTimestamp();
 
   if (!snap.exists) {
+    const contactCode = await allocateRunningCode("contacts", "C-");
     const payload: Record<string, unknown> = {
       stage,
+      contactCode,
       createdAt: createdAtDate ? createdAtDate : nowUpdate,
       updatedAt: nowUpdate,
     };
@@ -197,6 +202,9 @@ export async function upsertLead(input: LeadUpsertInput): Promise<LeadRecord> {
       stage,
       updatedAt: nowUpdate,
     };
+    if (typeof prev.contactCode !== "string" || !String(prev.contactCode).trim()) {
+      payload.contactCode = await allocateRunningCode("contacts", "C-");
+    }
     payload.status = input.status ?? ((prev.status as string | undefined) ?? "פתוח");
     if (picked.email ?? prev.email) payload.email = picked.email ?? prev.email;
     if (picked.phone ?? prev.phone) payload.phone = picked.phone ?? prev.phone;

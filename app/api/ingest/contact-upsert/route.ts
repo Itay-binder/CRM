@@ -149,6 +149,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       contact: {
         id: lead.id,
+        contactCode: lead.contactCode ?? "",
         email: lead.email ?? "",
         phone: lead.phone ?? "",
         name: lead.name ?? "",

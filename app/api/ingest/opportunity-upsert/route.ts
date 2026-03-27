@@ -252,6 +252,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       opportunity: {
         id: created.id,
+        opportunityCode: created.opportunityCode ?? "",
         name: created.name,
         stage: created.stage,
         pipelineId: created.pipelineId,

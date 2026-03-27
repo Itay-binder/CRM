@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import CheckoutPagesManager from "@/app/components/CheckoutPagesManager";
 
 type MetricsOk = {
   ok: true;
@@ -161,6 +162,8 @@ export default function DashboardClient() {
           )}
         </div>
       </div>
+
+      <CheckoutPagesManager compact />
     </div>
   );
 }

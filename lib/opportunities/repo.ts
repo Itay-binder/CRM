@@ -16,9 +16,19 @@ export type OpportunityRecord = {
   contactName?: string;
   contactEmail?: string;
   contactPhone?: string;
+  email?: string;
+  phone?: string;
   pipelineId: string;
   stage: string;
+  status?: "פתוח" | "זכיה" | "הפסד";
   value?: number;
+  utmSource?: string;
+  utmCampaign?: string;
+  utmMedium?: string;
+  utmContent?: string;
+  landingpage?: string;
+  tags?: string[];
+  lastLeadAt?: Date | null;
   customValues?: Record<string, unknown>;
   assignedRep?: string;
   notes?: Array<{ id: string; text: string; createdAt: string }>;
@@ -46,6 +56,15 @@ export type CreateOpportunityInput = {
   pipelineId: string;
   stage?: string;
   value?: number;
+  status?: "פתוח" | "זכיה" | "הפסד";
+  email?: string;
+  phone?: string;
+  utmSource?: string;
+  utmCampaign?: string;
+  utmMedium?: string;
+  utmContent?: string;
+  landingpage?: string;
+  tags?: string[];
   customValues?: Record<string, unknown>;
   assignedRep?: string;
 };
@@ -150,9 +169,22 @@ export async function listOpportunities(pipelineId?: string | null): Promise<Opp
       contactName: typeof d.contactName === "string" ? d.contactName : undefined,
       contactEmail: typeof d.contactEmail === "string" ? d.contactEmail : undefined,
       contactPhone: typeof d.contactPhone === "string" ? d.contactPhone : undefined,
+      email: typeof d.email === "string" ? d.email : undefined,
+      phone: typeof d.phone === "string" ? d.phone : undefined,
       pipelineId: String(d.pipelineId ?? ""),
       stage: String(d.stage ?? "Pending"),
+      status:
+        d.status === "זכיה" || d.status === "הפסד" || d.status === "פתוח"
+          ? d.status
+          : "פתוח",
       value: typeof d.value === "number" ? d.value : undefined,
+      utmSource: typeof d.utmSource === "string" ? d.utmSource : undefined,
+      utmCampaign: typeof d.utmCampaign === "string" ? d.utmCampaign : undefined,
+      utmMedium: typeof d.utmMedium === "string" ? d.utmMedium : undefined,
+      utmContent: typeof d.utmContent === "string" ? d.utmContent : undefined,
+      landingpage: typeof d.landingpage === "string" ? d.landingpage : undefined,
+      tags: Array.isArray(d.tags) ? (d.tags as string[]) : undefined,
+      lastLeadAt: mapTs(d.lastLeadAt),
       customValues:
         typeof d.customValues === "object"
           ? (d.customValues as Record<string, unknown>)
@@ -201,15 +233,106 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
   const cd = (contactSnap.data() ?? {}) as Record<string, unknown>;
 
   const now = FieldValue.serverTimestamp();
+  const existingSame = await db
+    .collection("opportunities")
+    .where("pipelineId", "==", pipelineId)
+    .where("contactId", "==", contactId)
+    .limit(1)
+    .get();
+
+  if (!existingSame.empty) {
+    const existingRef = existingSame.docs[0].ref;
+    await existingRef.set(
+      {
+        name: input.name?.trim() || (typeof cd.name === "string" ? cd.name : "Opportunity"),
+        stage,
+        status: input.status ?? "פתוח",
+        value: typeof input.value === "number" ? input.value : null,
+        email: input.email?.trim() || (typeof cd.email === "string" ? cd.email : ""),
+        phone: input.phone?.trim() || (typeof cd.phone === "string" ? cd.phone : ""),
+        utmSource: input.utmSource?.trim() || "",
+        utmCampaign: input.utmCampaign?.trim() || "",
+        utmMedium: input.utmMedium?.trim() || "",
+        utmContent: input.utmContent?.trim() || "",
+        landingpage: input.landingpage?.trim() || "",
+        tags: input.tags ?? [],
+        customValues: input.customValues ?? {},
+        assignedRep:
+          input.assignedRep?.trim() ||
+          (typeof cd.assignedRep === "string" ? cd.assignedRep : ""),
+        lastLeadAt: now,
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+    const updated = await existingRef.get();
+    const d = (updated.data() ?? {}) as Record<string, unknown>;
+    return {
+      id: updated.id,
+      name: String(d.name ?? ""),
+      contactId: String(d.contactId ?? contactId),
+      contactName: typeof d.contactName === "string" ? d.contactName : undefined,
+      contactEmail: typeof d.contactEmail === "string" ? d.contactEmail : undefined,
+      contactPhone: typeof d.contactPhone === "string" ? d.contactPhone : undefined,
+      email: typeof d.email === "string" ? d.email : undefined,
+      phone: typeof d.phone === "string" ? d.phone : undefined,
+      pipelineId: String(d.pipelineId ?? pipelineId),
+      stage: String(d.stage ?? stage),
+      status:
+        d.status === "זכיה" || d.status === "הפסד" || d.status === "פתוח"
+          ? d.status
+          : "פתוח",
+      value: typeof d.value === "number" ? d.value : undefined,
+      utmSource: typeof d.utmSource === "string" ? d.utmSource : undefined,
+      utmCampaign: typeof d.utmCampaign === "string" ? d.utmCampaign : undefined,
+      utmMedium: typeof d.utmMedium === "string" ? d.utmMedium : undefined,
+      utmContent: typeof d.utmContent === "string" ? d.utmContent : undefined,
+      landingpage: typeof d.landingpage === "string" ? d.landingpage : undefined,
+      tags: Array.isArray(d.tags) ? (d.tags as string[]) : undefined,
+      lastLeadAt: mapTs(d.lastLeadAt),
+      customValues:
+        typeof d.customValues === "object"
+          ? (d.customValues as Record<string, unknown>)
+          : undefined,
+      assignedRep: typeof d.assignedRep === "string" ? d.assignedRep : undefined,
+      notes: Array.isArray(d.notes)
+        ? (d.notes as Array<{ id: string; text: string; createdAt: string }>)
+        : undefined,
+      tasks: Array.isArray(d.tasks)
+        ? (d.tasks as Array<{
+            id: string;
+            title: string;
+            dueAt: string;
+            done: boolean;
+            status?: "todo" | "in_progress" | "done";
+            comments?: Array<{ id: string; text: string; createdAt: string }>;
+            createdAt: string;
+          }>)
+        : undefined,
+      createdAt: mapTs(d.createdAt),
+      updatedAt: mapTs(d.updatedAt),
+    };
+  }
+
   const ref = await db.collection("opportunities").add({
     name: input.name?.trim() || (typeof cd.name === "string" ? cd.name : "Opportunity"),
     contactId,
     contactName: typeof cd.name === "string" ? cd.name : "",
     contactEmail: typeof cd.email === "string" ? cd.email : "",
     contactPhone: typeof cd.phone === "string" ? cd.phone : "",
+    email: input.email?.trim() || (typeof cd.email === "string" ? cd.email : ""),
+    phone: input.phone?.trim() || (typeof cd.phone === "string" ? cd.phone : ""),
     pipelineId,
     stage,
+    status: input.status ?? "פתוח",
     value: typeof input.value === "number" ? input.value : null,
+    utmSource: input.utmSource?.trim() || "",
+    utmCampaign: input.utmCampaign?.trim() || "",
+    utmMedium: input.utmMedium?.trim() || "",
+    utmContent: input.utmContent?.trim() || "",
+    landingpage: input.landingpage?.trim() || "",
+    tags: input.tags ?? [],
+    lastLeadAt: now,
     customValues: input.customValues ?? {},
     assignedRep:
       input.assignedRep?.trim() ||
@@ -229,9 +352,22 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
     contactName: typeof d.contactName === "string" ? d.contactName : undefined,
     contactEmail: typeof d.contactEmail === "string" ? d.contactEmail : undefined,
     contactPhone: typeof d.contactPhone === "string" ? d.contactPhone : undefined,
+    email: typeof d.email === "string" ? d.email : undefined,
+    phone: typeof d.phone === "string" ? d.phone : undefined,
     pipelineId: String(d.pipelineId ?? pipelineId),
     stage: String(d.stage ?? stage),
+    status:
+      d.status === "זכיה" || d.status === "הפסד" || d.status === "פתוח"
+        ? d.status
+        : "פתוח",
     value: typeof d.value === "number" ? d.value : undefined,
+    utmSource: typeof d.utmSource === "string" ? d.utmSource : undefined,
+    utmCampaign: typeof d.utmCampaign === "string" ? d.utmCampaign : undefined,
+    utmMedium: typeof d.utmMedium === "string" ? d.utmMedium : undefined,
+    utmContent: typeof d.utmContent === "string" ? d.utmContent : undefined,
+    landingpage: typeof d.landingpage === "string" ? d.landingpage : undefined,
+    tags: Array.isArray(d.tags) ? (d.tags as string[]) : undefined,
+    lastLeadAt: mapTs(d.lastLeadAt),
     customValues:
       typeof d.customValues === "object"
         ? (d.customValues as Record<string, unknown>)
@@ -267,9 +403,22 @@ export async function getOpportunityById(id: string): Promise<OpportunityRecord 
     contactName: typeof d.contactName === "string" ? d.contactName : undefined,
     contactEmail: typeof d.contactEmail === "string" ? d.contactEmail : undefined,
     contactPhone: typeof d.contactPhone === "string" ? d.contactPhone : undefined,
+    email: typeof d.email === "string" ? d.email : undefined,
+    phone: typeof d.phone === "string" ? d.phone : undefined,
     pipelineId: String(d.pipelineId ?? ""),
     stage: String(d.stage ?? "Pending"),
+    status:
+      d.status === "זכיה" || d.status === "הפסד" || d.status === "פתוח"
+        ? d.status
+        : "פתוח",
     value: typeof d.value === "number" ? d.value : undefined,
+    utmSource: typeof d.utmSource === "string" ? d.utmSource : undefined,
+    utmCampaign: typeof d.utmCampaign === "string" ? d.utmCampaign : undefined,
+    utmMedium: typeof d.utmMedium === "string" ? d.utmMedium : undefined,
+    utmContent: typeof d.utmContent === "string" ? d.utmContent : undefined,
+    landingpage: typeof d.landingpage === "string" ? d.landingpage : undefined,
+    tags: Array.isArray(d.tags) ? (d.tags as string[]) : undefined,
+    lastLeadAt: mapTs(d.lastLeadAt),
     customValues:
       typeof d.customValues === "object"
         ? (d.customValues as Record<string, unknown>)
@@ -293,7 +442,16 @@ export async function updateOpportunity(
     contactId?: string;
     pipelineId?: string;
     stage?: string;
+    status?: "פתוח" | "זכיה" | "הפסד";
     value?: number | null;
+    email?: string;
+    phone?: string;
+    utmSource?: string;
+    utmCampaign?: string;
+    utmMedium?: string;
+    utmContent?: string;
+    landingpage?: string;
+    tags?: string[];
     assignedRep?: string;
     customValues?: Record<string, unknown>;
     notes?: Array<{ id: string; text: string; createdAt: string }>;
@@ -326,7 +484,16 @@ export async function updateOpportunity(
   }
   if (input.pipelineId !== undefined) payload.pipelineId = input.pipelineId.trim();
   if (input.stage !== undefined) payload.stage = input.stage.trim();
+  if (input.status !== undefined) payload.status = input.status;
   if (input.value !== undefined) payload.value = input.value;
+  if (input.email !== undefined) payload.email = input.email.trim();
+  if (input.phone !== undefined) payload.phone = input.phone.trim();
+  if (input.utmSource !== undefined) payload.utmSource = input.utmSource.trim();
+  if (input.utmCampaign !== undefined) payload.utmCampaign = input.utmCampaign.trim();
+  if (input.utmMedium !== undefined) payload.utmMedium = input.utmMedium.trim();
+  if (input.utmContent !== undefined) payload.utmContent = input.utmContent.trim();
+  if (input.landingpage !== undefined) payload.landingpage = input.landingpage.trim();
+  if (input.tags !== undefined) payload.tags = Array.from(new Set(input.tags.map((x) => x.trim()).filter(Boolean)));
   if (input.assignedRep !== undefined) payload.assignedRep = input.assignedRep.trim();
   if (input.customValues !== undefined) payload.customValues = input.customValues;
   if (input.notes !== undefined) payload.notes = input.notes;

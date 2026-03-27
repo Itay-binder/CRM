@@ -18,9 +18,20 @@ type Opportunity = {
   contactPhone?: string;
   pipelineId: string;
   stage: string;
+  status?: "פתוח" | "זכיה" | "הפסד";
   assignedRep?: string;
+  email?: string;
+  phone?: string;
+  utmSource?: string;
+  utmCampaign?: string;
+  utmMedium?: string;
+  utmContent?: string;
+  landingpage?: string;
+  tags?: string[];
+  lastLeadAt?: string | null;
   customValues?: Record<string, unknown>;
   createdAt: string | null;
+  updatedAt?: string | null;
 };
 
 type ContactRow = Record<string, string>;
@@ -40,12 +51,21 @@ type TaskItem = {
 const BASE_OPP_COLS = [
   "name",
   "contactName",
+  "email",
+  "phone",
   "pipelineName",
   "stage",
+  "status",
+  "utmSource",
+  "utmCampaign",
+  "utmMedium",
+  "utmContent",
+  "landingpage",
+  "tags",
   "assignedRep",
-  "contactPhone",
-  "contactEmail",
   "createdAt",
+  "updatedAt",
+  "lastLeadAt",
 ];
 
 export default function PipelineClient() {
@@ -71,6 +91,7 @@ export default function PipelineClient() {
   const [newOppName, setNewOppName] = useState("");
   const [newOppContactId, setNewOppContactId] = useState("");
   const [newOppStage, setNewOppStage] = useState("");
+  const [newOppStatus, setNewOppStatus] = useState<"פתוח" | "זכיה" | "הפסד">("פתוח");
   const [newOppAssignedRep, setNewOppAssignedRep] = useState("");
   const [oppVisibleCols, setOppVisibleCols] = useState<string[]>([]);
   const [oppColumnOrder, setOppColumnOrder] = useState<string[]>([]);
@@ -88,6 +109,7 @@ export default function PipelineClient() {
   const [editPipelineName, setEditPipelineName] = useState("");
   const [editStages, setEditStages] = useState<string[]>([]);
   const [editDragIndex, setEditDragIndex] = useState<number | null>(null);
+  const [adminUsers, setAdminUsers] = useState<Array<{ email: string }>>([]);
 
   const selectedPipeline = useMemo(
     () => pipelines.find((p) => p.id === selectedPipelineId) ?? null,
@@ -128,8 +150,12 @@ export default function PipelineClient() {
           cache: "no-store",
         }),
       ]);
+      const adminsRes = await fetch("/api/admin-users", {
+        credentials: "include",
+        cache: "no-store",
+      });
 
-      for (const r of [pRes, oRes, cRes, cfRes]) {
+      for (const r of [pRes, oRes, cRes, cfRes, adminsRes]) {
         if (r.status === 401) {
           window.location.href = `/login?returnTo=${encodeURIComponent("/pipeline")}`;
           return;
@@ -159,6 +185,10 @@ export default function PipelineClient() {
         ok?: boolean;
         fields?: Array<{ fieldId: string }>;
       };
+      const adminsJson = (await adminsRes.json().catch(() => ({}))) as {
+        ok?: boolean;
+        users?: Array<{ email: string }>;
+      };
 
       if (!pJson.ok) throw new Error(pJson.error ?? "שגיאה בטעינת pipelines");
       if (!oJson.ok) throw new Error(oJson.error ?? "שגיאה בטעינת opportunities");
@@ -169,6 +199,7 @@ export default function PipelineClient() {
       const opp = oJson.opportunities ?? [];
       setOpportunities(opp);
       setContacts(cJson.rows ?? []);
+      setAdminUsers(adminsJson.ok ? adminsJson.users ?? [] : []);
       setSelectedPipelineId((prev) => prev || p[0]?.id || "");
       const customFromSettings =
         cfJson.ok && Array.isArray(cfJson.fields)
@@ -202,6 +233,22 @@ export default function PipelineClient() {
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPipelineId]);
+
+  useEffect(() => {
+    const saved =
+      typeof window !== "undefined"
+        ? window.sessionStorage.getItem("crm:selectedPipelineId")
+        : null;
+    if (saved && !selectedPipelineId) {
+      setSelectedPipelineId(saved);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!selectedPipelineId) return;
+    window.sessionStorage.setItem("crm:selectedPipelineId", selectedPipelineId);
   }, [selectedPipelineId]);
 
   async function createPipeline() {
@@ -239,6 +286,7 @@ export default function PipelineClient() {
           contactId: newOppContactId,
           pipelineId: selectedPipelineId,
           stage: newOppStage || selectedPipeline?.stages?.[0] || "New Lead",
+          status: newOppStatus,
           assignedRep: newOppAssignedRep,
         }),
       });
@@ -248,6 +296,7 @@ export default function PipelineClient() {
       setNewOppName("");
       setNewOppContactId("");
       setNewOppStage("");
+      setNewOppStatus("פתוח");
       setNewOppAssignedRep("");
       await load();
     } catch (e) {
@@ -284,6 +333,15 @@ export default function PipelineClient() {
       pipelineId?: string;
       assignedRep?: string;
       customValues?: Record<string, unknown>;
+      status?: "פתוח" | "זכיה" | "הפסד";
+      email?: string;
+      phone?: string;
+      utmSource?: string;
+      utmCampaign?: string;
+      utmMedium?: string;
+      utmContent?: string;
+      landingpage?: string;
+      tags?: string[];
       notes?: NoteItem[];
       tasks?: TaskItem[];
     }
@@ -325,8 +383,52 @@ export default function PipelineClient() {
     if (col === "pipelineName") {
       return pipelines.find((p) => p.id === o.pipelineId)?.name || o.pipelineId;
     }
+    if (col === "tags") return (o.tags ?? []).join(", ");
     if (col in o) return String((o as Record<string, unknown>)[col] ?? "");
     return String((o.customValues ?? {})[col] ?? "");
+  }
+
+  const INLINE_READONLY = new Set(["createdAt", "updatedAt", "lastLeadAt", "pipelineName"]);
+
+  async function inlineEditOpportunity(o: Opportunity, col: string) {
+    if (INLINE_READONLY.has(col)) return;
+    if (col === "stage") {
+      const next = window.prompt("עדכן שלב", o.stage ?? "");
+      if (next == null) return;
+      await saveOpportunityPatch(o.id, { stage: next });
+      return;
+    }
+    if (col === "status") {
+      const next = window.prompt("סטטוס: פתוח / זכיה / הפסד", o.status ?? "פתוח");
+      if (next == null) return;
+      const status =
+        next === "זכיה" || next === "הפסד" || next === "פתוח" ? next : "פתוח";
+      await saveOpportunityPatch(o.id, { status });
+      return;
+    }
+    if (col === "assignedRep") {
+      const next = window.prompt("משתמש משויך (מייל אדמין)", o.assignedRep ?? "");
+      if (next == null) return;
+      await saveOpportunityPatch(o.id, { assignedRep: next });
+      return;
+    }
+    if (col === "tags") {
+      const next = window.prompt("תגיות (מופרדות בפסיק)", (o.tags ?? []).join(", "));
+      if (next == null) return;
+      const tags = next.split(",").map((x) => x.trim()).filter(Boolean);
+      await saveOpportunityPatch(o.id, { tags });
+      return;
+    }
+    const current = opportunityCell(o, col);
+    const next = window.prompt(`עדכון ${col}`, current);
+    if (next == null) return;
+    if (["name", "email", "phone", "utmSource", "utmCampaign", "utmMedium", "utmContent", "landingpage"].includes(col)) {
+      await saveOpportunityPatch(o.id, { [col]: next } as Record<string, unknown>);
+      return;
+    }
+    await saveOpportunityPatch(o.id, {
+      customValues: { ...(o.customValues ?? {}), [col]: next },
+    });
   }
 
   function openPipelineEdit(p: Pipeline) {
@@ -513,7 +615,23 @@ export default function PipelineClient() {
                               {opportunityCell(o, col)}
                             </button>
                           ) : (
-                            opportunityCell(o, col)
+                            <button
+                              type="button"
+                              disabled={INLINE_READONLY.has(col)}
+                              onClick={() => void inlineEditOpportunity(o, col)}
+                              style={{
+                                border: "none",
+                                background: "transparent",
+                                cursor: INLINE_READONLY.has(col) ? "default" : "pointer",
+                                padding: 0,
+                                textAlign: "right",
+                                width: "100%",
+                                color: INLINE_READONLY.has(col) ? "#374151" : "#111827",
+                              }}
+                              title={INLINE_READONLY.has(col) ? "" : "לחץ לעריכה מהירה"}
+                            >
+                              {opportunityCell(o, col)}
+                            </button>
                           )}
                         </td>
                       ))}
@@ -798,7 +916,17 @@ export default function PipelineClient() {
                   </option>
                 ))}
               </select>
-              <input value={newOppAssignedRep} onChange={(e) => setNewOppAssignedRep(e.target.value)} placeholder="נציג משויך" style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #e5e7eb" }} />
+              <select value={newOppStatus} onChange={(e) => setNewOppStatus(e.target.value as "פתוח" | "זכיה" | "הפסד")} style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #e5e7eb" }}>
+                {["פתוח", "זכיה", "הפסד"].map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+              <select value={newOppAssignedRep} onChange={(e) => setNewOppAssignedRep(e.target.value)} style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #e5e7eb" }}>
+                <option value="">נציג משויך</option>
+                {adminUsers.map((u) => (
+                  <option key={u.email} value={u.email}>{u.email}</option>
+                ))}
+              </select>
             </div>
             <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
               <button type="button" onClick={() => void createOpportunity()} style={{ padding: "10px 12px", borderRadius: 12, border: "none", background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)", color: "#fff", cursor: "pointer", fontWeight: 800 }}>Create</button>
@@ -876,14 +1004,32 @@ export default function PipelineClient() {
                   <div style={{ fontWeight: 900, marginBottom: 8 }}>Opportunity details</div>
                   <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
                 <input value={selectedOpp.name} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, name: e.target.value } : x))} style={{ gridColumn: "1 / -1", padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                <input value={selectedOpp.email ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, email: e.target.value } : x))} placeholder="Email" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                <input value={selectedOpp.phone ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, phone: e.target.value } : x))} placeholder="Phone" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
                 <select value={selectedOpp.stage} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, stage: e.target.value } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
                   {(selectedPipeline?.stages ?? []).map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
-                <input value={selectedOpp.assignedRep ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, assignedRep: e.target.value } : x))} placeholder="נציג משויך" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                <select value={selectedOpp.status ?? "פתוח"} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, status: e.target.value as "פתוח" | "זכיה" | "הפסד" } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+                  {["פתוח", "זכיה", "הפסד"].map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                <select value={selectedOpp.assignedRep ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, assignedRep: e.target.value } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+                  <option value="">Unassigned</option>
+                  {adminUsers.map((u) => (
+                    <option key={u.email} value={u.email}>{u.email}</option>
+                  ))}
+                </select>
+                <input value={selectedOpp.utmSource ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, utmSource: e.target.value } : x))} placeholder="utm_source" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                <input value={selectedOpp.utmCampaign ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, utmCampaign: e.target.value } : x))} placeholder="utm_campaign" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                <input value={selectedOpp.utmMedium ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, utmMedium: e.target.value } : x))} placeholder="utm_medium" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                <input value={selectedOpp.utmContent ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, utmContent: e.target.value } : x))} placeholder="utm_content" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                <input value={selectedOpp.landingpage ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, landingpage: e.target.value } : x))} placeholder="landingpage" style={{ gridColumn: "1 / -1", padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                <input value={(selectedOpp.tags ?? []).join(", ")} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, tags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) } : x))} placeholder="תגיות (מופרדות בפסיק)" style={{ gridColumn: "1 / -1", padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
                 {oppCustomFieldIds.map((fid) => (
                   <input key={fid} value={String((selectedOpp.customValues ?? {})[fid] ?? "")} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, customValues: { ...(x.customValues ?? {}), [fid]: e.target.value } } : x))} placeholder={fid} style={{ gridColumn: "1 / -1", padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
                 ))}
-                <button type="button" onClick={() => void saveOpportunityPatch(selectedOpp.id, { name: selectedOpp.name, contactId: selectedOpp.contactId, stage: selectedOpp.stage, pipelineId: selectedOpp.pipelineId, assignedRep: selectedOpp.assignedRep ?? "", customValues: selectedOpp.customValues ?? {} })} style={{ gridColumn: "1 / -1", padding: "9px 12px", borderRadius: 10, border: "none", background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)", color: "#fff", fontWeight: 800, cursor: "pointer" }}>Update</button>
+                <button type="button" onClick={() => void saveOpportunityPatch(selectedOpp.id, { name: selectedOpp.name, contactId: selectedOpp.contactId, email: selectedOpp.email ?? "", phone: selectedOpp.phone ?? "", stage: selectedOpp.stage, status: selectedOpp.status ?? "פתוח", pipelineId: selectedOpp.pipelineId, assignedRep: selectedOpp.assignedRep ?? "", utmSource: selectedOpp.utmSource ?? "", utmCampaign: selectedOpp.utmCampaign ?? "", utmMedium: selectedOpp.utmMedium ?? "", utmContent: selectedOpp.utmContent ?? "", landingpage: selectedOpp.landingpage ?? "", tags: selectedOpp.tags ?? [], customValues: selectedOpp.customValues ?? {} })} style={{ gridColumn: "1 / -1", padding: "9px 12px", borderRadius: 10, border: "none", background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)", color: "#fff", fontWeight: 800, cursor: "pointer" }}>שמור ועדכן</button>
                   </div>
                 </div>
               </div>

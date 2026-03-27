@@ -47,7 +47,16 @@ export async function PATCH(
       contactId?: string;
       pipelineId?: string;
       stage?: string;
+      status?: "פתוח" | "זכיה" | "הפסד";
       value?: number | null;
+      email?: string;
+      phone?: string;
+      utmSource?: string;
+      utmCampaign?: string;
+      utmMedium?: string;
+      utmContent?: string;
+      landingpage?: string;
+      tags?: string[];
       assignedRep?: string;
       customValues?: Record<string, unknown>;
       notes?: Array<{ id: string; text: string; createdAt: string }>;

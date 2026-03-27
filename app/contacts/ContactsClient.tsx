@@ -30,6 +30,7 @@ type ContactDetail = {
   email?: string;
   phone?: string;
   stage: string;
+  status?: "פתוח" | "זכיה" | "הפסד";
   assignedRep?: string;
   customFields?: Record<string, unknown>;
   notes?: NoteItem[];
@@ -86,6 +87,8 @@ export default function ContactsClient() {
   const [createPhone, setCreatePhone] = useState("");
   const [createEmail, setCreateEmail] = useState("");
   const [createStage, setCreateStage] = useState("Pending");
+  const [createStatus, setCreateStatus] = useState<"פתוח" | "זכיה" | "הפסד">("פתוח");
+  const [createAssignedRep, setCreateAssignedRep] = useState("");
   const [savingCreate, setSavingCreate] = useState(false);
 
   const [importing, setImporting] = useState(false);
@@ -99,6 +102,12 @@ export default function ContactsClient() {
   const [detail, setDetail] = useState<ContactDetail | null>(null);
   const [savingDetail, setSavingDetail] = useState(false);
   const openedFromQueryRef = useRef(false);
+  const [adminUsers, setAdminUsers] = useState<Array<{ email: string }>>([]);
+  const [detailOpportunities, setDetailOpportunities] = useState<
+    Array<{ id: string; name: string; pipelineId: string; stage: string }>
+  >([]);
+  const [detailAggNotes, setDetailAggNotes] = useState<NoteItem[]>([]);
+  const [detailAggTasks, setDetailAggTasks] = useState<TaskItem[]>([]);
 
   const query = useMemo(() => {
     const params = new URLSearchParams();
@@ -176,6 +185,22 @@ export default function ContactsClient() {
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [columnFilterOpen]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/admin-users", {
+          credentials: "include",
+          cache: "no-store",
+        });
+        const j = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          users?: Array<{ email: string }>;
+        };
+        if (res.ok && j.ok) setAdminUsers(j.users ?? []);
+      } catch {}
+    })();
+  }, []);
 
   const filteredRows = useMemo(() => {
     const q = normalize(search);
@@ -265,6 +290,8 @@ export default function ContactsClient() {
           phone: createPhone,
           email: createEmail,
           stage: createStage || "Pending",
+          status: createStatus,
+          assignedRep: createAssignedRep,
           source: "manual",
         }),
       });
@@ -278,6 +305,8 @@ export default function ContactsClient() {
       setCreatePhone("");
       setCreateEmail("");
       setCreateStage("Pending");
+      setCreateStatus("פתוח");
+      setCreateAssignedRep("");
       await load();
     } catch {
       setErr("יצירת איש קשר נכשלה");
@@ -297,9 +326,15 @@ export default function ContactsClient() {
         ok?: boolean;
         error?: string;
         lead?: ContactDetail;
+        opportunities?: Array<{ id: string; name: string; pipelineId: string; stage: string }>;
+        aggregatedNotes?: NoteItem[];
+        aggregatedTasks?: TaskItem[];
       };
       if (!res.ok || !j.ok || !j.lead) throw new Error(j.error ?? "טעינת איש קשר נכשלה");
       setDetail(j.lead);
+      setDetailOpportunities(j.opportunities ?? []);
+      setDetailAggNotes(j.aggregatedNotes ?? []);
+      setDetailAggTasks(j.aggregatedTasks ?? []);
       setDetailTab("details");
       setDetailOpen(true);
     } catch (e) {
@@ -955,7 +990,18 @@ export default function ContactsClient() {
               <input placeholder="שם מלא" value={createName} onChange={(e) => setCreateName(e.target.value)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
               <input placeholder="טלפון" value={createPhone} onChange={(e) => setCreatePhone(e.target.value)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
               <input placeholder="אימייל" value={createEmail} onChange={(e) => setCreateEmail(e.target.value)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", gridColumn: "1 / -1" }} />
-              <input placeholder="סטטוס" value={createStage} onChange={(e) => setCreateStage(e.target.value)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", gridColumn: "1 / -1" }} />
+              <input placeholder="שלב" value={createStage} onChange={(e) => setCreateStage(e.target.value)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", gridColumn: "1 / -1" }} />
+              <select value={createStatus} onChange={(e) => setCreateStatus(e.target.value as "פתוח" | "זכיה" | "הפסד")} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", gridColumn: "1 / -1" }}>
+                {["פתוח", "זכיה", "הפסד"].map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+              <select value={createAssignedRep} onChange={(e) => setCreateAssignedRep(e.target.value)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", gridColumn: "1 / -1" }}>
+                <option value="">נציג משויך</option>
+                {adminUsers.map((u) => (
+                  <option key={u.email} value={u.email}>{u.email}</option>
+                ))}
+              </select>
             </div>
             <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
               <button
@@ -1047,8 +1093,32 @@ export default function ContactsClient() {
                 <input value={detail.name ?? ""} onChange={(e) => setDetail((d) => (d ? { ...d, name: e.target.value } : d))} placeholder="שם" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
                 <input value={detail.phone ?? ""} onChange={(e) => setDetail((d) => (d ? { ...d, phone: e.target.value } : d))} placeholder="טלפון" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
                 <input value={detail.email ?? ""} onChange={(e) => setDetail((d) => (d ? { ...d, email: e.target.value } : d))} placeholder="אימייל" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
-                <input value={detail.assignedRep ?? ""} onChange={(e) => setDetail((d) => (d ? { ...d, assignedRep: e.target.value } : d))} placeholder="נציג משויך (שדה מערכת)" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                <select value={detail.status ?? "פתוח"} onChange={(e) => setDetail((d) => (d ? { ...d, status: e.target.value as "פתוח" | "זכיה" | "הפסד" } : d))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+                  {["פתוח", "זכיה", "הפסד"].map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                <select value={detail.assignedRep ?? ""} onChange={(e) => setDetail((d) => (d ? { ...d, assignedRep: e.target.value } : d))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+                  <option value="">Unassigned</option>
+                  {adminUsers.map((u) => (
+                    <option key={u.email} value={u.email}>{u.email}</option>
+                  ))}
+                </select>
                 <input value={detail.stage ?? ""} onChange={(e) => setDetail((d) => (d ? { ...d, stage: e.target.value } : d))} placeholder="שלב" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                <div style={{ border: "1px solid #f3f4f6", borderRadius: 10, padding: 8 }}>
+                  <div style={{ fontWeight: 800, marginBottom: 6 }}>הזדמנויות פתוחות תחת איש קשר</div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {detailOpportunities.length === 0 ? (
+                      <span style={{ color: "#6b7280", fontSize: 12 }}>אין הזדמנויות פתוחות כרגע</span>
+                    ) : (
+                      detailOpportunities.map((o) => (
+                        <span key={o.id} style={{ border: "1px solid #e5e7eb", borderRadius: 999, padding: "4px 8px", fontSize: 12, fontWeight: 700 }}>
+                          {o.name} · {o.pipelineId} · {o.stage}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                </div>
                 <button
                   type="button"
                   disabled={savingDetail}
@@ -1057,6 +1127,7 @@ export default function ContactsClient() {
                       name: detail.name ?? "",
                       phone: detail.phone ?? "",
                       email: detail.email ?? "",
+                      status: detail.status ?? "פתוח",
                       assignedRep: detail.assignedRep ?? "",
                       stage: detail.stage ?? "Pending",
                       customFields: detail.customFields ?? {},
@@ -1073,6 +1144,9 @@ export default function ContactsClient() {
               <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
                 {(detail.notes ?? []).map((n) => (
                   <textarea key={n.id} value={n.text} readOnly style={{ width: "100%", minHeight: 70, padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                ))}
+                {(detailAggNotes ?? []).map((n) => (
+                  <textarea key={`agg-${n.id}`} value={n.text} readOnly style={{ width: "100%", minHeight: 60, padding: "8px 10px", borderRadius: 10, border: "1px dashed #cbd5e1", background: "#f8fafc" }} />
                 ))}
                 <button
                   type="button"
@@ -1113,6 +1187,13 @@ export default function ContactsClient() {
                         void saveDetail({ tasks });
                       }}
                     />
+                    <span style={{ fontWeight: 700 }}>{t.title}</span>
+                    <span style={{ color: "#6b7280", fontSize: 12 }}>{t.dueAt}</span>
+                  </label>
+                ))}
+                {(detailAggTasks ?? []).map((t) => (
+                  <label key={`agg-${t.id}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 10, border: "1px dashed #cbd5e1", background: "#f8fafc" }}>
+                    <input type="checkbox" checked={Boolean((t.status ?? (t.done ? "done" : "todo")) === "done")} readOnly />
                     <span style={{ fontWeight: 700 }}>{t.title}</span>
                     <span style={{ color: "#6b7280", fontSize: 12 }}>{t.dueAt}</span>
                   </label>

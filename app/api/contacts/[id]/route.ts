@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { getLeadById, updateLead } from "@/lib/leads/repo";
 import { validateCustomValues } from "@/lib/customFields/repo";
+import { listOpportunities } from "@/lib/opportunities/repo";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -26,7 +27,16 @@ export async function GET(
       { status: 404 }
     );
   }
-  return NextResponse.json({ ok: true, lead });
+  const opportunities = (await listOpportunities()).filter((o) => o.contactId === lead.id);
+  const aggregatedNotes = opportunities.flatMap((o) => o.notes ?? []);
+  const aggregatedTasks = opportunities.flatMap((o) => o.tasks ?? []);
+  return NextResponse.json({
+    ok: true,
+    lead,
+    opportunities,
+    aggregatedNotes,
+    aggregatedTasks,
+  });
 }
 
 export async function PATCH(
@@ -47,6 +57,7 @@ export async function PATCH(
       email?: string;
       phone?: string;
       stage?: string;
+      status?: "פתוח" | "זכיה" | "הפסד";
       assignedRep?: string;
       customFields?: Record<string, unknown>;
       notes?: Array<{ id: string; text: string; createdAt: string }>;

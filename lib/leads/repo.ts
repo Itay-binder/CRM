@@ -7,6 +7,7 @@ export type LeadRecord = {
   phone?: string;
   name?: string;
   stage: string;
+  status?: "פתוח" | "זכיה" | "הפסד";
   pipelineId?: string;
   source?: string;
   utm?: Record<string, string>;
@@ -35,6 +36,7 @@ export type LeadUpsertInput = {
   firstName?: string;
   lastName?: string;
   stage?: string;
+  status?: "פתוח" | "זכיה" | "הפסד";
   pipelineId?: string;
   source?: string;
   utm?: Record<string, string>;
@@ -124,6 +126,10 @@ function mapDocToLead(docId: string, data: Record<string, unknown>): LeadRecord 
     phone: typeof data.phone === "string" ? data.phone : undefined,
     name: typeof data.name === "string" ? data.name : undefined,
     stage: typeof data.stage === "string" && data.stage.trim() ? data.stage : "Pending",
+    status:
+      data.status === "זכיה" || data.status === "הפסד" || data.status === "פתוח"
+        ? data.status
+        : "פתוח",
     pipelineId: typeof data.pipelineId === "string" ? data.pipelineId : undefined,
     source: typeof data.source === "string" ? data.source : undefined,
     utm: typeof data.utm === "object" ? (data.utm as Record<string, string>) : undefined,
@@ -174,6 +180,7 @@ export async function upsertLead(input: LeadUpsertInput): Promise<LeadRecord> {
       createdAt: createdAtDate ? createdAtDate : nowUpdate,
       updatedAt: nowUpdate,
     };
+    payload.status = input.status ?? "פתוח";
     if (picked.email) payload.email = picked.email;
     if (picked.phone) payload.phone = picked.phone;
     if (name) payload.name = name;
@@ -190,6 +197,7 @@ export async function upsertLead(input: LeadUpsertInput): Promise<LeadRecord> {
       stage,
       updatedAt: nowUpdate,
     };
+    payload.status = input.status ?? ((prev.status as string | undefined) ?? "פתוח");
     if (picked.email ?? prev.email) payload.email = picked.email ?? prev.email;
     if (picked.phone ?? prev.phone) payload.phone = picked.phone ?? prev.phone;
     if (name ?? prev.name) payload.name = name ?? prev.name;
@@ -256,6 +264,7 @@ export async function updateLead(
     email?: string;
     phone?: string;
     stage?: string;
+    status?: "פתוח" | "זכיה" | "הפסד";
     assignedRep?: string;
     customFields?: Record<string, unknown>;
     notes?: Array<{ id: string; text: string; createdAt: string }>;
@@ -280,6 +289,7 @@ export async function updateLead(
   if (input.email !== undefined) payload.email = input.email.trim().toLowerCase();
   if (input.phone !== undefined) payload.phone = normalizePhone(input.phone) ?? "";
   if (input.stage !== undefined) payload.stage = input.stage.trim() || "Pending";
+  if (input.status !== undefined) payload.status = input.status;
   if (input.assignedRep !== undefined) payload.assignedRep = input.assignedRep.trim();
   if (input.customFields !== undefined) payload.customFields = input.customFields;
   if (input.notes !== undefined) payload.notes = input.notes;

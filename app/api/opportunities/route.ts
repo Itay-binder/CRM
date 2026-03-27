@@ -45,7 +45,16 @@ export async function POST(req: NextRequest) {
       contactId?: string;
       pipelineId?: string;
       stage?: string;
+      status?: "פתוח" | "זכיה" | "הפסד";
       value?: number;
+      email?: string;
+      phone?: string;
+      utmSource?: string;
+      utmCampaign?: string;
+      utmMedium?: string;
+      utmContent?: string;
+      landingpage?: string;
+      tags?: string[];
       customValues?: Record<string, unknown>;
       assignedRep?: string;
     };
@@ -58,7 +67,16 @@ export async function POST(req: NextRequest) {
       contactId: body.contactId ?? "",
       pipelineId: body.pipelineId ?? "",
       stage: body.stage,
+      status: body.status,
       value: body.value,
+      email: body.email,
+      phone: body.phone,
+      utmSource: body.utmSource,
+      utmCampaign: body.utmCampaign,
+      utmMedium: body.utmMedium,
+      utmContent: body.utmContent,
+      landingpage: body.landingpage,
+      tags: body.tags,
       customValues,
       assignedRep: body.assignedRep,
     });

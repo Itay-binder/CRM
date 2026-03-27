@@ -126,33 +126,35 @@ export async function upsertLead(input: LeadUpsertInput): Promise<LeadRecord> {
   const nowUpdate = FieldValue.serverTimestamp();
 
   if (!snap.exists) {
-    await docRef.set({
-      email: picked.email,
-      phone: picked.phone,
-      name,
+    const payload: Record<string, unknown> = {
       stage,
-      pipelineId,
-      source: input.source?.trim() || undefined,
-      utm: input.utm ?? undefined,
-      customFields: input.customFields ?? undefined,
       createdAt: createdAtDate ? createdAtDate : nowUpdate,
       updatedAt: nowUpdate,
-    });
+    };
+    if (picked.email) payload.email = picked.email;
+    if (picked.phone) payload.phone = picked.phone;
+    if (name) payload.name = name;
+    if (pipelineId) payload.pipelineId = pipelineId;
+    const source = input.source?.trim();
+    if (source) payload.source = source;
+    if (input.utm) payload.utm = input.utm;
+    if (input.customFields) payload.customFields = input.customFields;
+    await docRef.set(payload);
   } else {
-    await docRef.set(
-      {
-        email: picked.email ?? snap.data()?.email,
-        phone: picked.phone ?? snap.data()?.phone,
-        name: name ?? snap.data()?.name,
-        stage,
-        pipelineId,
-        source: input.source?.trim() || (snap.data()?.source as string | undefined),
-        utm: input.utm ?? (snap.data()?.utm as Record<string, string> | undefined),
-        customFields: input.customFields ?? (snap.data()?.customFields as Record<string, unknown> | undefined),
-        updatedAt: nowUpdate,
-      },
-      { merge: true }
-    );
+    const prev = (snap.data() ?? {}) as Record<string, unknown>;
+    const payload: Record<string, unknown> = {
+      stage,
+      updatedAt: nowUpdate,
+    };
+    if (picked.email ?? prev.email) payload.email = picked.email ?? prev.email;
+    if (picked.phone ?? prev.phone) payload.phone = picked.phone ?? prev.phone;
+    if (name ?? prev.name) payload.name = name ?? prev.name;
+    if (pipelineId) payload.pipelineId = pipelineId;
+    const source = input.source?.trim() || (prev.source as string | undefined);
+    if (source) payload.source = source;
+    if (input.utm ?? prev.utm) payload.utm = input.utm ?? prev.utm;
+    if (input.customFields ?? prev.customFields) payload.customFields = input.customFields ?? prev.customFields;
+    await docRef.set(payload, { merge: true });
   }
 
   const again = await docRef.get();

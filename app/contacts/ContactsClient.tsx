@@ -68,8 +68,8 @@ export default function ContactsClient() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
-  const [columnFilterOpen, setColumnFilterOpen] = useState<string | null>(null);
-  const filterWrapRef = useRef<HTMLDivElement>(null);
+  const [contactColWidths, setContactColWidths] = useState<Record<string, number>>({});
+  const [editingCell, setEditingCell] = useState<{ id: string; col: string; value: string } | null>(null);
 
   const [visibleCols, setVisibleCols] = useState<string[]>([]);
   const [columnOrder, setColumnOrder] = useState<string[]>([]);
@@ -184,17 +184,6 @@ export default function ContactsClient() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (!columnFilterOpen) return;
-    function onDoc(e: MouseEvent) {
-      if (!filterWrapRef.current?.contains(e.target as Node)) {
-        setColumnFilterOpen(null);
-      }
-    }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [columnFilterOpen]);
-
-  useEffect(() => {
     void (async () => {
       try {
         const res = await fetch("/api/admin-users", {
@@ -265,6 +254,51 @@ export default function ContactsClient() {
     }
     setSortField(field);
     setSortDir("asc");
+  }
+
+  const CONTACT_INLINE_READONLY = new Set(["id", "createdAt", "updatedAt"]);
+
+  function onResizeColumnStart(col: string, startX: number) {
+    const base = contactColWidths[col] ?? 180;
+    const onMove = (ev: MouseEvent) => {
+      const next = Math.max(120, base + (ev.clientX - startX));
+      setContactColWidths((prev) => ({ ...prev, [col]: next }));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
+  async function commitInlineEdit(row: Record<string, string>, col: string, valueRaw: string) {
+    const id = String(row.id ?? "").trim();
+    if (!id || CONTACT_INLINE_READONLY.has(col)) return;
+    const value = valueRaw.trim();
+    const body: Record<string, unknown> = {};
+    if (["name", "email", "phone", "stage", "assignedRep"].includes(col)) {
+      body[col] = value;
+    } else if (col === "status") {
+      body.status = value === "זכיה" || value === "הפסד" || value === "פתוח" ? value : "פתוח";
+    } else {
+      setErr("עריכה מהירה נתמכת כרגע לשדות מערכת. שדות מותאמים לעריכה דרך כרטיס איש קשר.");
+      return;
+    }
+    const res = await fetch(`/api/contacts/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (!res.ok || !j.ok) {
+      setErr(j.error ?? "עדכון שדה נכשל");
+      return;
+    }
+    setRows((prev) =>
+      prev.map((r) => (String(r.id) === id ? { ...r, [col]: String(value) } : r))
+    );
   }
 
   function exportCsv(onlyFiltered: boolean) {
@@ -649,83 +683,45 @@ export default function ContactsClient() {
                         position: "sticky",
                         top: 0,
                         background: "#f5f3ff",
-                        padding: "10px 12px",
+                        padding: "8px 10px",
                         borderBottom: "2px solid #e9d5ff",
                         textAlign: "right",
                         fontWeight: 900,
                         fontSize: 12,
                         whiteSpace: "nowrap",
+                        minWidth: contactColWidths[h] ?? 180,
+                        width: contactColWidths[h] ?? 180,
+                        verticalAlign: "top",
+                        zIndex: 2,
                       }}
                     >
-                        <div ref={filterWrapRef} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <button
-                            type="button"
-                            onClick={() => toggleSort(h)}
-                            style={{ border: "none", background: "transparent", cursor: "pointer", fontWeight: 900 }}
-                            title="מיין לפי עמודה"
-                          >
-                            {h} {sortField === h ? (sortDir === "asc" ? "▲" : "▼") : "↕"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setColumnFilterOpen((cur) => (cur === h ? null : h))}
-                            style={{ border: "none", background: "transparent", cursor: "pointer" }}
-                            title="פילטר בעמודה"
-                          >
-                            ⌕
-                          </button>
-                          {columnFilterOpen === h && (
-                            <div
-                              style={{
-                                position: "absolute",
-                                marginTop: 120,
-                                background: "#fff",
-                                border: "1px solid #e5e7eb",
-                                borderRadius: 12,
-                                padding: 8,
-                                boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
-                                zIndex: 60,
-                                minWidth: 220,
-                              }}
-                            >
-                              <input
-                                placeholder={`פילטר ${h}`}
-                                value={columnFilters[h] ?? ""}
-                                onChange={(e) =>
-                                  setColumnFilters((f) => ({ ...f, [h]: e.target.value }))
-                                }
-                                style={{
-                                  width: "100%",
-                                  padding: "8px 10px",
-                                  borderRadius: 10,
-                                  border: "1px solid #e5e7eb",
-                                }}
-                              />
-                              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                                <button
-                                  type="button"
-                                  onClick={() => setColumnFilterOpen(null)}
-                                  style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
-                                >
-                                  סגור
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setColumnFilters((f) => {
-                                      const x = { ...f };
-                                      delete x[h];
-                                      return x;
-                                    })
-                                  }
-                                  style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
-                                >
-                                  נקה
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span>{h}</span>
+                        <button
+                          type="button"
+                          onClick={() => toggleSort(h)}
+                          style={{ border: "1px solid #e5e7eb", background: "#fff", borderRadius: 6, padding: "0 6px", cursor: "pointer", fontSize: 11, fontWeight: 800 }}
+                          title="מיון עולה/יורד"
+                        >
+                          {sortField === h ? (sortDir === "asc" ? "↑" : "↓") : "↕"}
+                        </button>
+                      </div>
+                      <input
+                        value={columnFilters[h] ?? ""}
+                        onChange={(e) =>
+                          setColumnFilters((f) => ({ ...f, [h]: e.target.value }))
+                        }
+                        placeholder="חיפוש בעמודה..."
+                        style={{ marginTop: 6, width: "100%", padding: "6px 8px", borderRadius: 8, border: "1px solid #e5e7eb", fontSize: 11 }}
+                      />
+                      <div
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          onResizeColumnStart(h, e.clientX);
+                        }}
+                        style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 8, cursor: "col-resize" }}
+                        title="גרור לשינוי רוחב"
+                      />
                     </th>
                   ))}
                 </tr>
@@ -733,7 +729,7 @@ export default function ContactsClient() {
               <tbody>
                 {filteredRows.map((row, i) => (
                   <tr key={i}>
-                    {displayHeaders.map((h, cellIdx) => (
+                    {displayHeaders.map((h) => (
                       <td
                         key={h}
                         style={{
@@ -741,11 +737,13 @@ export default function ContactsClient() {
                           borderBottom: "1px solid #f3f4f6",
                           verticalAlign: "top",
                           fontSize: 12,
-                          maxWidth: 360,
+                          minWidth: contactColWidths[h] ?? 180,
+                          width: contactColWidths[h] ?? 180,
+                          maxWidth: contactColWidths[h] ?? 180,
                           wordBreak: "break-word",
                         }}
                       >
-                        {cellIdx === 0 && row.id ? (
+                        {h === "name" && row.id ? (
                           <button
                             type="button"
                             onClick={() => void openDetailById(String(row.id))}
@@ -760,8 +758,90 @@ export default function ContactsClient() {
                           >
                             {row[h] ?? ""}
                           </button>
-                        ) : (
+                        ) : CONTACT_INLINE_READONLY.has(h) || !row.id ? (
                           row[h] ?? ""
+                        ) : (
+                          editingCell?.id === String(row.id) && editingCell.col === h ? (
+                            h === "status" ? (
+                              <select
+                                autoFocus
+                                value={editingCell.value || "פתוח"}
+                                onChange={(e) =>
+                                  setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
+                                }
+                                onBlur={() => {
+                                  void commitInlineEdit(row, h, editingCell.value);
+                                  setEditingCell(null);
+                                }}
+                                style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
+                              >
+                                {["פתוח", "זכיה", "הפסד"].map((s) => (
+                                  <option key={s} value={s}>{s}</option>
+                                ))}
+                              </select>
+                            ) : h === "assignedRep" ? (
+                              <select
+                                autoFocus
+                                value={editingCell.value}
+                                onChange={(e) =>
+                                  setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
+                                }
+                                onBlur={() => {
+                                  void commitInlineEdit(row, h, editingCell.value);
+                                  setEditingCell(null);
+                                }}
+                                style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
+                              >
+                                <option value="">לא משויך</option>
+                                {adminUsers.map((u) => (
+                                  <option key={u.email} value={u.email}>{u.email}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                autoFocus
+                                value={editingCell.value}
+                                onChange={(e) =>
+                                  setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
+                                }
+                                onBlur={() => {
+                                  void commitInlineEdit(row, h, editingCell.value);
+                                  setEditingCell(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    void commitInlineEdit(row, h, editingCell.value);
+                                    setEditingCell(null);
+                                  }
+                                  if (e.key === "Escape") setEditingCell(null);
+                                }}
+                                style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
+                              />
+                            )
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditingCell({
+                                  id: String(row.id),
+                                  col: h,
+                                  value: String(row[h] ?? ""),
+                                })
+                              }
+                              style={{
+                                border: "none",
+                                background: "transparent",
+                                cursor: "pointer",
+                                padding: 0,
+                                textAlign: "right",
+                                width: "100%",
+                                color: "#111827",
+                              }}
+                              title="לחץ לעריכה מהירה"
+                            >
+                              {row[h] ?? ""}
+                            </button>
+                          )
                         )}
                       </td>
                     ))}

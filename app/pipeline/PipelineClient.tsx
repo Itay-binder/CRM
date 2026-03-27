@@ -901,12 +901,25 @@ export default function PipelineClient() {
               </table>
             </div>
           ) : (
-            <div style={{ marginTop: 16, overflowX: "auto", maxWidth: "100%", paddingBottom: 10 }}>
-              <div style={{ display: "flex", gap: 12, minWidth: 900 }}>
+            <div
+              style={{
+                marginTop: 14,
+                background: "#fff",
+                border: "1px solid #e5e7eb",
+                borderRadius: 16,
+                width: "100%",
+                maxWidth: "100%",
+                overflowX: "hidden",
+                overflowY: "hidden",
+                padding: 10,
+              }}
+            >
+              <div style={{ overflowX: "auto", overflowY: "hidden", width: "100%", paddingBottom: 6 }}>
+                <div style={{ display: "flex", gap: 12, minWidth: 980 }}>
                 {(selectedPipeline?.stages ?? []).map((stage) => {
                   const list = grouped[stage] ?? [];
                   return (
-                    <div key={stage} style={{ width: 320, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: 12 }}>
+                    <div key={stage} style={{ flex: "0 0 360px", minWidth: 360, maxWidth: 360, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: 12 }}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                         <div style={{ fontWeight: 900 }}>{stage}</div>
                         <div style={{ background: "#f5f3ff", border: "1px solid #e9d5ff", padding: "4px 8px", borderRadius: 999, fontWeight: 900, color: "#6d28d9" }}>{list.length}</div>
@@ -951,6 +964,7 @@ export default function PipelineClient() {
                     </div>
                   );
                 })}
+                </div>
               </div>
             </div>
           )}
@@ -1089,7 +1103,7 @@ export default function PipelineClient() {
             <div style={{ display: "grid", gap: 8 }}>
               {editStages.map((s, i) => (
                 <div
-                  key={`${i}-${s}`}
+                  key={`stage-${i}`}
                   draggable
                   onDragStart={() => setEditDragIndex(i)}
                   onDragOver={(e) => e.preventDefault()}

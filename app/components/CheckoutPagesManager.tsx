@@ -338,18 +338,17 @@ export default function CheckoutPagesManager({
                 src={selected.url}
                 title={selected.name}
                 style={{
-                  width: isPhoneViewport ? 390 : 1536,
-                  height: 860,
+                  width: isPhoneViewport
+                    ? 390
+                    : Math.max(previewContainerWidth - 12, 1),
+                  height: isPhoneViewport
+                    ? 860
+                    : Math.round(
+                        860 *
+                          (Math.max(previewContainerWidth - 12, 1) / 1536)
+                      ),
                   border: "none",
                   display: "block",
-                  transformOrigin: isPhoneViewport ? "top center" : "top right",
-                  transform:
-                    !isPhoneViewport
-                      ? `scale(${Math.min(
-                          1,
-                          (Math.max(previewContainerWidth - 12, 1) || 1) / 1536
-                        )})`
-                      : "none",
                 }}
                 onError={() =>
                   setIframeError(

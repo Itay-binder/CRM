@@ -23,6 +23,7 @@ export default function CheckoutPagesManager({
   const [url, setUrl] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const [iframeError, setIframeError] = useState<string | null>(null);
+  const [previewWidth, setPreviewWidth] = useState<1280 | 1536>(1536);
 
   const selected = useMemo(
     () => pages.find((p) => p.id === selectedId) ?? null,
@@ -268,8 +269,45 @@ export default function CheckoutPagesManager({
 
       {!compact && selected && (
         <div style={{ marginTop: 14 }}>
-          <div style={{ fontWeight: 900, marginBottom: 8 }}>
-            תצוגת iframe: {selected.name}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <div style={{ fontWeight: 900 }}>תצוגת iframe: {selected.name}</div>
+            <div style={{ flex: 1 }} />
+            <div
+              style={{
+                display: "inline-flex",
+                border: "1px solid #e5e7eb",
+                borderRadius: 10,
+                overflow: "hidden",
+                background: "#fff",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setPreviewWidth(1536)}
+                style={{
+                  border: "none",
+                  background: previewWidth === 1536 ? "#ede9fe" : "transparent",
+                  padding: "6px 10px",
+                  cursor: "pointer",
+                  fontWeight: 800,
+                }}
+              >
+                Desktop רחב
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewWidth(1280)}
+                style={{
+                  border: "none",
+                  background: previewWidth === 1280 ? "#ede9fe" : "transparent",
+                  padding: "6px 10px",
+                  cursor: "pointer",
+                  fontWeight: 800,
+                }}
+              >
+                Desktop רגיל
+              </button>
+            </div>
           </div>
           <div
             style={{
@@ -279,17 +317,19 @@ export default function CheckoutPagesManager({
               background: "#fff",
             }}
           >
-            <iframe
-              key={selected.id}
-              src={selected.url}
-              title={selected.name}
-              style={{ width: "100%", height: 680, border: "none" }}
-              onError={() =>
-                setIframeError(
-                  "הדף חסם הטמעה ב-iframe. אפשר לפתוח אותו בלינק חדש."
-                )
-              }
-            />
+            <div style={{ overflowX: "auto", overflowY: "hidden", maxWidth: "100%" }}>
+              <iframe
+                key={selected.id}
+                src={selected.url}
+                title={selected.name}
+                style={{ width: previewWidth, height: 860, border: "none", display: "block" }}
+                onError={() =>
+                  setIframeError(
+                    "הדף חסם הטמעה ב-iframe. אפשר לפתוח אותו בלינק חדש."
+                  )
+                }
+              />
+            </div>
           </div>
           {iframeError && (
             <div

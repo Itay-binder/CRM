@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
-import { listLeadsFiltered } from "@/lib/leads/repo";
+import { listLeadsFiltered, upsertLead } from "@/lib/leads/repo";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -64,6 +64,59 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       { ok: false, error: message } satisfies ApiErr,
       { status: 500 }
+    );
+  }
+}
+
+export async function POST(req: NextRequest) {
+  const auth = await requireApprovedUser(req);
+  if (!auth.ok) {
+    return NextResponse.json(
+      { ok: false, error: auth.error } satisfies ApiErr,
+      { status: auth.status }
+    );
+  }
+
+  try {
+    const body = (await req.json()) as {
+      email?: string;
+      phone?: string;
+      name?: string;
+      firstName?: string;
+      lastName?: string;
+      stage?: string;
+      source?: string;
+      customFields?: Record<string, unknown>;
+      uniqueKey?: string;
+    };
+
+    const lead = await upsertLead({
+      uniqueKey: body.uniqueKey,
+      email: body.email,
+      phone: body.phone,
+      name: body.name,
+      firstName: body.firstName,
+      lastName: body.lastName,
+      stage: body.stage ?? "Pending",
+      source: body.source ?? "manual",
+      customFields: body.customFields ?? {},
+    });
+
+    return NextResponse.json({
+      ok: true,
+      lead: {
+        id: lead.id,
+        email: lead.email ?? "",
+        phone: lead.phone ?? "",
+        name: lead.name ?? "",
+        stage: lead.stage,
+      },
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Unknown error";
+    return NextResponse.json(
+      { ok: false, error: message } satisfies ApiErr,
+      { status: 400 }
     );
   }
 }

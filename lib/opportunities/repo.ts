@@ -170,7 +170,7 @@ function normalizeStageLabel(s: string): string {
 }
 
 export async function ensureCustomersPipeline(): Promise<PipelineRecord> {
-  const db = getAdminDb();
+  const db = await getAdminDb();
   const ref = db.collection("pipelines").doc(CUSTOMERS_PIPELINE_ID);
   const snap = await ref.get();
   if (!snap.exists) {
@@ -808,6 +808,7 @@ export async function updateOpportunity(
   let firstCustomerStageForNewOpp: string | null = null;
 
   if (
+    (await shouldSeedDefaultPipeline()) &&
     becameWon &&
     targetPipelineId !== CUSTOMERS_PIPELINE_ID &&
     existing.winAutomationDone !== true

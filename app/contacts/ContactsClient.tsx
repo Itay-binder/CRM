@@ -73,8 +73,6 @@ export default function ContactsClient() {
   const [visibleCols, setVisibleCols] = useState<string[]>([]);
   const [columnOrder, setColumnOrder] = useState<string[]>([]);
   const [manageColsOpen, setManageColsOpen] = useState(false);
-  const [draftVisibleCols, setDraftVisibleCols] = useState<string[]>([]);
-  const [draftColumnOrder, setDraftColumnOrder] = useState<string[]>([]);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
 
   const [advOpen, setAdvOpen] = useState(false);
@@ -466,51 +464,15 @@ export default function ContactsClient() {
     }
   }
 
-  function openManageColumns() {
-    const order = columnOrder.length ? columnOrder : headers;
-    const visible = visibleCols.length ? visibleCols : headers;
-    setDraftColumnOrder(order);
-    setDraftVisibleCols(visible);
-    setManageColsOpen(true);
-  }
-
-  function applyManageColumns() {
-    setColumnOrder(draftColumnOrder);
-    setVisibleCols(draftVisibleCols);
-    setManageColsOpen(false);
-  }
-
-  function resetColumnsToDefault() {
-    const initial = BASE_COLS.filter((c) => headers.includes(c));
-    const rest = headers.filter((h) => !initial.includes(h));
-    const order = [...initial, ...rest];
-    setDraftColumnOrder(order);
-    setDraftVisibleCols(order);
-  }
-
-  function moveDraftColumn(from: number, to: number) {
+  function moveColumn(from: number, to: number) {
     if (from === to || from < 0 || to < 0) return;
-    setDraftColumnOrder((arr) => {
+    setColumnOrder((arr) => {
       if (to >= arr.length) return arr;
       const next = [...arr];
       const [moved] = next.splice(from, 1);
       next.splice(to, 0, moved);
       return next;
     });
-  }
-
-  function addCustomFieldColumn() {
-    const raw = window.prompt("שם שדה מותאם (מפתח פנימי באנגלית/עברית ללא פסיקים):");
-    const name = (raw ?? "").trim();
-    if (!name) return;
-    if (headers.includes(name)) {
-      window.alert("השדה כבר קיים.");
-      return;
-    }
-    setHeaders((hs) => [...hs, name]);
-    setRows((rs) => rs.map((r) => ({ ...r, [name]: r[name] ?? "" })));
-    setDraftColumnOrder((arr) => [...arr, name]);
-    setDraftVisibleCols((arr) => [...arr, name]);
   }
 
   function openAdvancedFilters() {
@@ -544,7 +506,7 @@ export default function ContactsClient() {
 
         <button
           type="button"
-          onClick={openManageColumns}
+          onClick={() => setManageColsOpen(true)}
           style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fff", fontWeight: 700, cursor: "pointer" }}
         >
           ניהול עמודות
@@ -879,20 +841,10 @@ export default function ContactsClient() {
             }}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <h3 style={{ margin: 0, marginBottom: 10 }}>ניהול עמודות</h3>
-            <input
-              placeholder="Search field"
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 12,
-                border: "1px solid #e5e7eb",
-                marginBottom: 10,
-              }}
-            />
+            <h3 style={{ margin: 0, marginBottom: 10 }}>ניהול עמודות (אנשי קשר)</h3>
             <div style={{ display: "grid", gap: 8 }}>
-              {draftColumnOrder.map((h, i) => {
-                const checked = draftVisibleCols.includes(h);
+              {(columnOrder.length ? columnOrder : headers).map((h, i, arr) => {
+                const checked = visibleCols.includes(h);
                 return (
                   <div
                     key={h}
@@ -900,14 +852,15 @@ export default function ContactsClient() {
                     onDragStart={() => setDragIndex(i)}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={() => {
-                      if (dragIndex != null) moveDraftColumn(dragIndex, i);
+                      if (dragIndex != null) moveColumn(dragIndex, i);
                       setDragIndex(null);
                     }}
                     style={{
-                      display: "flex",
+                      display: "grid",
+                      gridTemplateColumns: "auto 1fr auto auto",
                       alignItems: "center",
                       gap: 8,
-                      padding: "6px 4px",
+                      padding: "6px 8px",
                       borderRadius: 8,
                       border: "1px solid #f3f4f6",
                     }}
@@ -915,16 +868,52 @@ export default function ContactsClient() {
                     <span title="גרור" style={{ cursor: "grab", opacity: 0.7 }}>
                       ⋮⋮
                     </span>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) =>
-                        setDraftVisibleCols((cols) =>
-                          e.target.checked ? [...cols, h] : cols.filter((x) => x !== h)
-                        )
-                      }
-                    />
-                    <span>{h}</span>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) =>
+                          setVisibleCols((cols) =>
+                            e.target.checked
+                              ? Array.from(new Set([...cols, h]))
+                              : cols.filter((x) => x !== h)
+                          )
+                        }
+                      />
+                      <span>{h}</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => moveColumn(i, i - 1)}
+                      disabled={i === 0}
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        background: "#fff",
+                        borderRadius: 8,
+                        padding: "4px 7px",
+                        cursor: i === 0 ? "default" : "pointer",
+                        opacity: i === 0 ? 0.5 : 1,
+                      }}
+                      title="הזז למעלה"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveColumn(i, i + 1)}
+                      disabled={i === arr.length - 1}
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        background: "#fff",
+                        borderRadius: 8,
+                        padding: "4px 7px",
+                        cursor: i === arr.length - 1 ? "default" : "pointer",
+                        opacity: i === arr.length - 1 ? 0.5 : 1,
+                      }}
+                      title="הזז למטה"
+                    >
+                      ↓
+                    </button>
                   </div>
                 );
               })}
@@ -932,33 +921,10 @@ export default function ContactsClient() {
             <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
               <button
                 type="button"
-                onClick={addCustomFieldColumn}
-                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
-              >
-                Add custom field
-              </button>
-              <button
-                type="button"
-                onClick={resetColumnsToDefault}
-                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
-              >
-                סדר ברירת מחדל
-              </button>
-            </div>
-            <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
-              <button
-                type="button"
                 onClick={() => setManageColsOpen(false)}
                 style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
               >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={applyManageColumns}
-                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
-              >
-                Apply
+                סגור
               </button>
             </div>
           </div>

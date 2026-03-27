@@ -280,6 +280,11 @@ export default function PipelineClient() {
     }
     void openOpportunityDetail(openOpportunityId);
     setOpenedOpportunityFromQuery(true);
+    if (typeof window !== "undefined") {
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.delete("openOpportunityId");
+      window.history.replaceState({}, "", nextUrl.toString());
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, opportunities, selectedPipelineId, openedOpportunityFromQuery]);
 
@@ -392,7 +397,8 @@ export default function PipelineClient() {
       tags?: string[];
       notes?: NoteItem[];
       tasks?: TaskItem[];
-    }
+    },
+    options?: { fromDetail?: boolean }
   ) {
     const res = await fetch(`/api/opportunities/${encodeURIComponent(id)}`, {
       method: "PATCH",
@@ -409,11 +415,13 @@ export default function PipelineClient() {
       setErr(j.error ?? "שמירת הזדמנות נכשלה");
       return;
     }
-    setSelectedOpp((prev) => {
-      if (!prev || prev.id !== id) return prev;
-      return j.opportunity ?? prev;
-    });
-    if (selectedOpp?.id === id) {
+    if (options?.fromDetail) {
+      setSelectedOpp((prev) => {
+        if (!prev || prev.id !== id) return prev;
+        return j.opportunity ?? prev;
+      });
+    }
+    if (options?.fromDetail && selectedOpp?.id === id) {
       setOppNotes(j.opportunity.notes ?? []);
       setOppTasks(j.opportunity.tasks ?? []);
     }
@@ -1507,7 +1515,7 @@ export default function PipelineClient() {
                     <input value={String((selectedOpp.customValues ?? {})[fid] ?? "")} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, customValues: { ...(x.customValues ?? {}), [fid]: e.target.value } } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
                   </label>
                 ))}
-                <button type="button" onClick={() => void saveOpportunityPatch(selectedOpp.id, { name: selectedOpp.name, email: selectedOpp.email ?? "", phone: selectedOpp.phone ?? "", stage: selectedOpp.stage, status: selectedOpp.status ?? "פתוח", pipelineId: selectedOpp.pipelineId, assignedRep: selectedOpp.assignedRep ?? "", utmSource: selectedOpp.utmSource ?? "", utmCampaign: selectedOpp.utmCampaign ?? "", utmMedium: selectedOpp.utmMedium ?? "", utmContent: selectedOpp.utmContent ?? "", landingpage: selectedOpp.landingpage ?? "", tags: selectedOpp.tags ?? [], customValues: selectedOpp.customValues ?? {} })} style={{ gridColumn: "1 / -1", padding: "9px 12px", borderRadius: 10, border: "none", background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)", color: "#fff", fontWeight: 800, cursor: "pointer" }}>שמור ועדכן</button>
+                <button type="button" onClick={() => void saveOpportunityPatch(selectedOpp.id, { name: selectedOpp.name, email: selectedOpp.email ?? "", phone: selectedOpp.phone ?? "", stage: selectedOpp.stage, status: selectedOpp.status ?? "פתוח", pipelineId: selectedOpp.pipelineId, assignedRep: selectedOpp.assignedRep ?? "", utmSource: selectedOpp.utmSource ?? "", utmCampaign: selectedOpp.utmCampaign ?? "", utmMedium: selectedOpp.utmMedium ?? "", utmContent: selectedOpp.utmContent ?? "", landingpage: selectedOpp.landingpage ?? "", tags: selectedOpp.tags ?? [], customValues: selectedOpp.customValues ?? {} }, { fromDetail: true })} style={{ gridColumn: "1 / -1", padding: "9px 12px", borderRadius: 10, border: "none", background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)", color: "#fff", fontWeight: 800, cursor: "pointer" }}>שמור ועדכן</button>
                   </div>
                 </div>
               </div>
@@ -1534,7 +1542,7 @@ export default function PipelineClient() {
                   const notes = [...oppNotes, { id: crypto.randomUUID(), text, createdAt: new Date().toISOString(), createdBy: "CRM User" }];
                   setOppNotes(notes);
                   setNewOppNoteText("");
-                  void saveOpportunityPatch(selectedOpp.id, { notes });
+                  void saveOpportunityPatch(selectedOpp.id, { notes }, { fromDetail: true });
                 }} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}>+ הוסף פתק</button>
               </div>
             )}
@@ -1555,7 +1563,7 @@ export default function PipelineClient() {
                           : x
                       );
                       setOppTasks(tasks);
-                      void saveOpportunityPatch(selectedOpp.id, { tasks });
+                      void saveOpportunityPatch(selectedOpp.id, { tasks }, { fromDetail: true });
                     }} />
                     <span style={{ fontWeight: 700 }}>{t.title}</span>
                     <span style={{ color: "#6b7280", fontSize: 12 }}>{t.dueAt}</span>
@@ -1567,7 +1575,7 @@ export default function PipelineClient() {
                   const dueAt = window.prompt("תאריך ושעה (YYYY-MM-DD HH:mm)", new Date().toISOString().slice(0, 16).replace("T", " ")) || "";
                   const tasks = [...oppTasks, { id: crypto.randomUUID(), title: title.trim(), dueAt: dueAt.trim(), done: false, status: "todo" as const, comments: [] as Array<{ id: string; text: string; createdAt: string }>, createdAt: new Date().toISOString() }];
                   setOppTasks(tasks);
-                  void saveOpportunityPatch(selectedOpp.id, { tasks });
+                  void saveOpportunityPatch(selectedOpp.id, { tasks }, { fromDetail: true });
                 }} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}>+ הוסף משימה</button>
               </div>
             )}

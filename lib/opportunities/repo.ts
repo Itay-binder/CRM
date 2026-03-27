@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { allocateRunningCode } from "@/lib/counters/repo";
@@ -77,6 +78,70 @@ function mapTs(ts: unknown): Date | null {
     return (ts as any).toDate?.() ?? null;
   }
   return null;
+}
+
+function formatJerusalemDateTime(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Jerusalem",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("day")}/${get("month")}/${get("year")} ${get("hour")}:${get("minute")}`;
+}
+
+function buildNewOpportunityLeadNoteText(params: {
+  opportunityName: string;
+  fullName: string;
+  phone: string;
+  email: string;
+  utmSource: string;
+  utmCampaign: string;
+  utmMedium: string;
+  utmContent: string;
+  createdAtLabel: string;
+}): string {
+  const dash = (s: string) => (s.trim() ? s.trim() : "—");
+  return [
+    `ליד חדש - ${dash(params.opportunityName)}`,
+    "",
+    `שם מלא: ${dash(params.fullName)}`,
+    `פלאפון: ${dash(params.phone)}`,
+    `מייל: ${dash(params.email)}`,
+    `utm_source: ${dash(params.utmSource)}`,
+    `utm_campaign: ${dash(params.utmCampaign)}`,
+    `utm_medium: ${dash(params.utmMedium)}`,
+    `utm_content: ${dash(params.utmContent)}`,
+    `תאריך יצירה: ${params.createdAtLabel}`,
+  ].join("\n");
+}
+
+async function mergeOpportunityNotesIntoContact(
+  contactId: string,
+  opportunityNotes: Array<{ id: string; text: string; createdAt: string; createdBy?: string }>
+): Promise<void> {
+  const cid = contactId.trim();
+  if (!cid || opportunityNotes.length === 0) return;
+  const contactRef = getAdminDb().collection("leads").doc(cid);
+  const contactSnap = await contactRef.get();
+  if (!contactSnap.exists) return;
+  const cdata = (contactSnap.data() ?? {}) as Record<string, unknown>;
+  const contactNotes = Array.isArray(cdata.notes)
+    ? (cdata.notes as Array<{ id: string; text: string; createdAt: string; createdBy?: string }>)
+    : [];
+  const notesMap = new Map(contactNotes.map((n) => [n.id, n]));
+  for (const n of opportunityNotes) notesMap.set(n.id, n);
+  await contactRef.set(
+    {
+      notes: Array.from(notesMap.values()),
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
 }
 
 function normalizeStages(stages: string[]): string[] {
@@ -351,23 +416,50 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
   }
 
   const opportunityCode = await allocateRunningCode("opportunities", "O-");
+  const oppName = input.name?.trim() || (typeof cd.name === "string" ? cd.name : "Opportunity");
+  const resolvedFullName = typeof cd.name === "string" ? cd.name : "";
+  const resolvedEmail = input.email?.trim() || (typeof cd.email === "string" ? cd.email : "");
+  const resolvedPhone = input.phone?.trim() || (typeof cd.phone === "string" ? cd.phone : "");
+  const utmS = input.utmSource?.trim() || "";
+  const utmCa = input.utmCampaign?.trim() || "";
+  const utmMe = input.utmMedium?.trim() || "";
+  const utmCo = input.utmContent?.trim() || "";
+  const noteInstant = new Date();
+  const createdAtLabel = formatJerusalemDateTime(noteInstant);
+  const initialNote = {
+    id: randomUUID(),
+    text: buildNewOpportunityLeadNoteText({
+      opportunityName: oppName,
+      fullName: resolvedFullName,
+      phone: resolvedPhone,
+      email: resolvedEmail,
+      utmSource: utmS,
+      utmCampaign: utmCa,
+      utmMedium: utmMe,
+      utmContent: utmCo,
+      createdAtLabel,
+    }),
+    createdAt: noteInstant.toISOString(),
+    createdBy: "המערכת",
+  };
+
   const ref = await db.collection("opportunities").add({
     opportunityCode,
-    name: input.name?.trim() || (typeof cd.name === "string" ? cd.name : "Opportunity"),
+    name: oppName,
     contactId,
     contactName: typeof cd.name === "string" ? cd.name : "",
     contactEmail: typeof cd.email === "string" ? cd.email : "",
     contactPhone: typeof cd.phone === "string" ? cd.phone : "",
-    email: input.email?.trim() || (typeof cd.email === "string" ? cd.email : ""),
-    phone: input.phone?.trim() || (typeof cd.phone === "string" ? cd.phone : ""),
+    email: resolvedEmail,
+    phone: resolvedPhone,
     pipelineId,
     stage,
     status: input.status ?? "פתוח",
     value: typeof input.value === "number" ? input.value : null,
-    utmSource: input.utmSource?.trim() || "",
-    utmCampaign: input.utmCampaign?.trim() || "",
-    utmMedium: input.utmMedium?.trim() || "",
-    utmContent: input.utmContent?.trim() || "",
+    utmSource: utmS,
+    utmCampaign: utmCa,
+    utmMedium: utmMe,
+    utmContent: utmCo,
     landingpage: input.landingpage?.trim() || "",
     tags: input.tags ?? [],
     lastLeadAt: now,
@@ -375,11 +467,13 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
     assignedRep:
       input.assignedRep?.trim() ||
       (typeof cd.assignedRep === "string" ? cd.assignedRep : ""),
-    notes: [],
+    notes: [initialNote],
     tasks: [],
     createdAt: now,
     updatedAt: now,
   });
+
+  await mergeOpportunityNotesIntoContact(contactId, [initialNote]);
 
   const snap = await ref.get();
   const d = (snap.data() ?? {}) as Record<string, unknown>;

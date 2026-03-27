@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { getLeadById, updateLead } from "@/lib/leads/repo";
 import { validateCustomValues } from "@/lib/customFields/repo";
-import { listOpportunities } from "@/lib/opportunities/repo";
+import { listOpportunities, listPipelines } from "@/lib/opportunities/repo";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -27,7 +27,17 @@ export async function GET(
       { status: 404 }
     );
   }
-  const opportunities = (await listOpportunities()).filter((o) => o.contactId === lead.id);
+  const [opportunitiesRaw, pipelines] = await Promise.all([
+    listOpportunities(),
+    listPipelines(),
+  ]);
+  const pipelineNameById = new Map(pipelines.map((p) => [p.id, p.name]));
+  const opportunities = opportunitiesRaw
+    .filter((o) => o.contactId === lead.id)
+    .map((o) => ({
+      ...o,
+      pipelineName: pipelineNameById.get(o.pipelineId) ?? o.pipelineId,
+    }));
   const aggregatedNotes = opportunities.flatMap((o) => o.notes ?? []);
   const aggregatedTasks = opportunities.flatMap((o) => o.tasks ?? []);
   return NextResponse.json({

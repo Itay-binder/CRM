@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type CheckoutPage = {
   id: string;
@@ -24,6 +24,9 @@ export default function CheckoutPagesManager({
   const [selectedId, setSelectedId] = useState("");
   const [iframeError, setIframeError] = useState<string | null>(null);
   const [previewWidth, setPreviewWidth] = useState<1280 | 1536>(1536);
+  const [previewMode, setPreviewMode] = useState<"desktop" | "phone">("desktop");
+  const previewFrameRef = useRef<HTMLDivElement | null>(null);
+  const [previewContainerWidth, setPreviewContainerWidth] = useState(0);
 
   const selected = useMemo(
     () => pages.find((p) => p.id === selectedId) ?? null,
@@ -65,6 +68,20 @@ export default function CheckoutPagesManager({
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    const el = previewFrameRef.current;
+    if (!el) return;
+    const update = () => setPreviewContainerWidth(el.clientWidth);
+    update();
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(update);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [selectedId, compact, previewMode]);
 
   async function addPage() {
     setErr(null);
@@ -283,14 +300,54 @@ export default function CheckoutPagesManager({
             >
               <button
                 type="button"
-                onClick={() => setPreviewWidth(1536)}
+                onClick={() => setPreviewMode("phone")}
                 style={{
                   border: "none",
-                  background: previewWidth === 1536 ? "#ede9fe" : "transparent",
+                  background: previewMode === "phone" ? "#ede9fe" : "transparent",
                   padding: "6px 10px",
                   cursor: "pointer",
                   fontWeight: 800,
                 }}
+              >
+                פון
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewMode("desktop")}
+                style={{
+                  border: "none",
+                  background: previewMode === "desktop" ? "#ede9fe" : "transparent",
+                  padding: "6px 10px",
+                  cursor: "pointer",
+                  fontWeight: 800,
+                }}
+              >
+                Desktop
+              </button>
+            </div>
+            <div
+              style={{
+                display: "inline-flex",
+                border: "1px solid #e5e7eb",
+                borderRadius: 10,
+                overflow: "hidden",
+                background: "#fff",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setPreviewWidth(1536)}
+                style={{
+                  border: "none",
+                  background:
+                    previewMode === "desktop" && previewWidth === 1536
+                      ? "#ede9fe"
+                      : "transparent",
+                  padding: "6px 10px",
+                  cursor: "pointer",
+                  fontWeight: 800,
+                }}
+                disabled={previewMode !== "desktop"}
               >
                 Desktop רחב
               </button>
@@ -299,11 +356,15 @@ export default function CheckoutPagesManager({
                 onClick={() => setPreviewWidth(1280)}
                 style={{
                   border: "none",
-                  background: previewWidth === 1280 ? "#ede9fe" : "transparent",
+                  background:
+                    previewMode === "desktop" && previewWidth === 1280
+                      ? "#ede9fe"
+                      : "transparent",
                   padding: "6px 10px",
                   cursor: "pointer",
                   fontWeight: 800,
                 }}
+                disabled={previewMode !== "desktop"}
               >
                 Desktop רגיל
               </button>
@@ -317,12 +378,48 @@ export default function CheckoutPagesManager({
               background: "#fff",
             }}
           >
-            <div style={{ overflowX: "auto", overflowY: "hidden", maxWidth: "100%" }}>
+            <div
+              ref={previewFrameRef}
+              style={{
+                width: "100%",
+                height:
+                  previewMode === "desktop"
+                    ? Math.max(
+                        520,
+                        Math.round(
+                          860 *
+                            Math.min(
+                              1,
+                              (Math.max(previewContainerWidth - 12, 1) || 1) / previewWidth
+                            )
+                        )
+                      )
+                    : 860,
+                overflowX: "hidden",
+                overflowY: "auto",
+                display: "grid",
+                placeItems: "start center",
+                padding: previewMode === "desktop" ? "6px 0" : "0",
+              }}
+            >
               <iframe
                 key={selected.id}
                 src={selected.url}
                 title={selected.name}
-                style={{ width: previewWidth, height: 860, border: "none", display: "block" }}
+                style={{
+                  width: previewMode === "desktop" ? previewWidth : 390,
+                  height: 860,
+                  border: "none",
+                  display: "block",
+                  transformOrigin: "top center",
+                  transform:
+                    previewMode === "desktop"
+                      ? `scale(${Math.min(
+                          1,
+                          (Math.max(previewContainerWidth - 12, 1) || 1) / previewWidth
+                        )})`
+                      : "none",
+                }}
                 onError={() =>
                   setIframeError(
                     "הדף חסם הטמעה ב-iframe. אפשר לפתוח אותו בלינק חדש."

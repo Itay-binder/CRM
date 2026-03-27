@@ -104,7 +104,14 @@ export default function ContactsClient() {
   const openedFromQueryRef = useRef(false);
   const [adminUsers, setAdminUsers] = useState<Array<{ email: string }>>([]);
   const [detailOpportunities, setDetailOpportunities] = useState<
-    Array<{ id: string; name: string; pipelineId: string; stage: string }>
+    Array<{
+      id: string;
+      name: string;
+      pipelineId: string;
+      pipelineName?: string;
+      stage: string;
+      status?: "פתוח" | "זכיה" | "הפסד";
+    }>
   >([]);
   const [detailAggNotes, setDetailAggNotes] = useState<NoteItem[]>([]);
   const [detailAggTasks, setDetailAggTasks] = useState<TaskItem[]>([]);
@@ -327,7 +334,14 @@ export default function ContactsClient() {
         ok?: boolean;
         error?: string;
         lead?: ContactDetail;
-        opportunities?: Array<{ id: string; name: string; pipelineId: string; stage: string }>;
+        opportunities?: Array<{
+          id: string;
+          name: string;
+          pipelineId: string;
+          pipelineName?: string;
+          stage: string;
+          status?: "פתוח" | "זכיה" | "הפסד";
+        }>;
         aggregatedNotes?: NoteItem[];
         aggregatedTasks?: TaskItem[];
       };
@@ -1113,9 +1127,26 @@ export default function ContactsClient() {
                       <span style={{ color: "#6b7280", fontSize: 12 }}>אין הזדמנויות פתוחות כרגע</span>
                     ) : (
                       detailOpportunities.map((o) => (
-                        <span key={o.id} style={{ border: "1px solid #e5e7eb", borderRadius: 999, padding: "4px 8px", fontSize: 12, fontWeight: 700 }}>
-                          {o.name} · {o.pipelineId} · {o.stage}
-                        </span>
+                        <button
+                          key={o.id}
+                          type="button"
+                          onClick={() => {
+                            window.location.href = `/pipeline?openOpportunityId=${encodeURIComponent(o.id)}`;
+                          }}
+                          style={{
+                            border: "1px solid #e5e7eb",
+                            borderRadius: 12,
+                            padding: "6px 10px",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            background: "#fff",
+                            cursor: "pointer",
+                            textAlign: "right",
+                          }}
+                          title="פתח הזדמנות"
+                        >
+                          {o.name} · {o.pipelineName || o.pipelineId} · {o.stage} · {o.status ?? "פתוח"}
+                        </button>
                       ))
                     )}
                   </div>

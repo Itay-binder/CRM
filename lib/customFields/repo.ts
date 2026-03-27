@@ -124,11 +124,13 @@ export async function upsertCustomField(input: UpsertCustomFieldInput): Promise<
 }
 
 export async function validateCustomValues(
-  entityType: CustomFieldEntity,
+  _entityType: CustomFieldEntity,
   values: Record<string, unknown> | undefined
 ): Promise<Record<string, unknown>> {
   if (!values || typeof values !== "object") return {};
-  const fields = await listCustomFields(entityType);
+  // Custom fields are shared for integrations across contacts/opportunities.
+  // Accept any active configured fieldId regardless of specific entity type.
+  const fields = await listCustomFields();
   const activeMap = new Map(fields.filter((f) => f.isActive).map((f) => [f.fieldId, f]));
   const out: Record<string, unknown> = {};
 

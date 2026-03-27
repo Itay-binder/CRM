@@ -226,7 +226,11 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
   if (!pipelineSnap.exists) throw new Error("Pipeline not found");
   const pd = (pipelineSnap.data() ?? {}) as Record<string, unknown>;
   const stages = normalizeStages((pd.stages as string[] | undefined) ?? ["Pending"]);
-  const stage = input.stage?.trim() || stages[0] || "Pending";
+  const requestedStage = input.stage?.trim();
+  const stage =
+    requestedStage && stages.includes(requestedStage)
+      ? requestedStage
+      : stages[0] || "Pending";
 
   const contactSnap = await db.collection("leads").doc(contactId).get();
   if (!contactSnap.exists) throw new Error("Contact not found");
@@ -466,9 +470,11 @@ export async function updateOpportunity(
     }>;
   }
 ): Promise<OpportunityRecord> {
-  const ref = getAdminDb().collection("opportunities").doc(id);
+  const db = getAdminDb();
+  const ref = db.collection("opportunities").doc(id);
   const snap = await ref.get();
   if (!snap.exists) throw new Error("Opportunity not found");
+  const existing = (snap.data() ?? {}) as Record<string, unknown>;
   const payload: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
   if (input.name !== undefined) payload.name = input.name.trim();
   if (input.contactId !== undefined) {
@@ -482,8 +488,24 @@ export async function updateOpportunity(
     payload.contactEmail = typeof cd.email === "string" ? cd.email : "";
     payload.contactPhone = typeof cd.phone === "string" ? cd.phone : "";
   }
-  if (input.pipelineId !== undefined) payload.pipelineId = input.pipelineId.trim();
-  if (input.stage !== undefined) payload.stage = input.stage.trim();
+  const targetPipelineId =
+    input.pipelineId !== undefined
+      ? input.pipelineId.trim()
+      : String(existing.pipelineId ?? "").trim();
+  if (!targetPipelineId) throw new Error("pipelineId is required");
+  const pipelineSnap = await db.collection("pipelines").doc(targetPipelineId).get();
+  if (!pipelineSnap.exists) throw new Error("Pipeline not found");
+  const pipelineData = (pipelineSnap.data() ?? {}) as Record<string, unknown>;
+  const stages = normalizeStages((pipelineData.stages as string[] | undefined) ?? []);
+  if (stages.length === 0) throw new Error("Pipeline must contain stages");
+  if (input.pipelineId !== undefined) payload.pipelineId = targetPipelineId;
+  if (input.stage !== undefined) {
+    const nextStage = input.stage.trim();
+    payload.stage = stages.includes(nextStage) ? nextStage : stages[0];
+  } else if (input.pipelineId !== undefined) {
+    const currentStage = String(existing.stage ?? "").trim();
+    payload.stage = stages.includes(currentStage) ? currentStage : stages[0];
+  }
   if (input.status !== undefined) payload.status = input.status;
   if (input.value !== undefined) payload.value = input.value;
   if (input.email !== undefined) payload.email = input.email.trim();

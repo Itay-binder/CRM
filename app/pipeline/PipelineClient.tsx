@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 type Pipeline = {
   id: string;
@@ -47,6 +48,9 @@ type TaskItem = {
   comments?: Array<{ id: string; text: string; createdAt: string }>;
   createdAt: string;
 };
+type SortDir = "asc" | "desc";
+type SortState = { col: string; dir: SortDir } | null;
+type EditingCell = { id: string; col: string; value: string };
 
 const BASE_OPP_COLS = [
   "name",
@@ -69,6 +73,7 @@ const BASE_OPP_COLS = [
 ];
 
 export default function PipelineClient() {
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("opportunities");
@@ -96,6 +101,7 @@ export default function PipelineClient() {
   const [oppVisibleCols, setOppVisibleCols] = useState<string[]>([]);
   const [oppColumnOrder, setOppColumnOrder] = useState<string[]>([]);
   const [manageOppColsOpen, setManageOppColsOpen] = useState(false);
+  const [oppDragIndex, setOppDragIndex] = useState<number | null>(null);
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
   const [oppDetailTab, setOppDetailTab] = useState<"details" | "notes" | "tasks">(
     "details"
@@ -111,10 +117,19 @@ export default function PipelineClient() {
   const [editStages, setEditStages] = useState<string[]>([]);
   const [editDragIndex, setEditDragIndex] = useState<number | null>(null);
   const [adminUsers, setAdminUsers] = useState<Array<{ email: string }>>([]);
+  const [oppColWidths, setOppColWidths] = useState<Record<string, number>>({});
+  const [oppSort, setOppSort] = useState<SortState>(null);
+  const [oppColFilters, setOppColFilters] = useState<Record<string, string>>({});
+  const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
+  const [openedOpportunityFromQuery, setOpenedOpportunityFromQuery] = useState(false);
 
   const selectedPipeline = useMemo(
     () => pipelines.find((p) => p.id === selectedPipelineId) ?? null,
     [pipelines, selectedPipelineId]
+  );
+  const selectedOppPipeline = useMemo(
+    () => (selectedOpp ? pipelines.find((p) => p.id === selectedOpp.pipelineId) ?? null : null),
+    [selectedOpp, pipelines]
   );
 
   const oppForSelectedPipeline = useMemo(() => {
@@ -146,7 +161,7 @@ export default function PipelineClient() {
           { credentials: "include", cache: "no-store" }
         ),
         fetch("/api/contacts", { credentials: "include", cache: "no-store" }),
-        fetch("/api/custom-fields?entityType=opportunity", {
+        fetch("/api/custom-fields", {
           credentials: "include",
           cache: "no-store",
         }),
@@ -221,9 +236,15 @@ export default function PipelineClient() {
       setOppColumnOrder((prev) =>
         prev.length ? prev : [...BASE_OPP_COLS, ...Array.from(new Set(opp.flatMap((o) => Object.keys((o.customValues ?? {}) as Record<string, unknown>)))).sort()]
       );
-      setOppVisibleCols((prev) =>
-        prev.length ? prev : ["name", "contactName", "stage", "assignedRep", "contactPhone", "createdAt"]
-      );
+      setOppVisibleCols((prev) => {
+        const available = [
+          ...BASE_OPP_COLS,
+          ...Array.from(
+            new Set(opp.flatMap((o) => Object.keys((o.customValues ?? {}) as Record<string, unknown>)))
+          ).sort(),
+        ];
+        return prev.length ? Array.from(new Set([...prev, ...available])) : available;
+      });
     } catch (e) {
       setErr(e instanceof Error ? e.message : "לא ניתן לטעון ניהול הזדמנויות");
     } finally {
@@ -235,6 +256,20 @@ export default function PipelineClient() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPipelineId]);
+
+  useEffect(() => {
+    if (openedOpportunityFromQuery) return;
+    const openOpportunityId = searchParams.get("openOpportunityId")?.trim();
+    if (!openOpportunityId || opportunities.length === 0) return;
+    const target = opportunities.find((o) => o.id === openOpportunityId);
+    if (!target) return;
+    if (target.pipelineId && selectedPipelineId !== target.pipelineId) {
+      setSelectedPipelineId(target.pipelineId);
+    }
+    void openOpportunityDetail(openOpportunityId);
+    setOpenedOpportunityFromQuery(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, opportunities, selectedPipelineId, openedOpportunityFromQuery]);
 
   useEffect(() => {
     const saved =
@@ -380,55 +415,139 @@ export default function PipelineClient() {
     return order.filter((h) => visible.includes(h));
   }, [oppColumnOrder, oppVisibleCols]);
 
+  function formatJerusalemDate(raw: string | null | undefined): string {
+    if (!raw) return "";
+    const dt = new Date(raw);
+    if (Number.isNaN(dt.getTime())) return String(raw);
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Jerusalem",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(dt);
+    const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+    return `${get("day")}/${get("month")}/${get("year")} ${get("hour")}:${get("minute")}`;
+  }
+
   function opportunityCell(o: Opportunity, col: string): string {
     if (col === "pipelineName") {
       return pipelines.find((p) => p.id === o.pipelineId)?.name || o.pipelineId;
     }
     if (col === "tags") return (o.tags ?? []).join(", ");
+    if (col === "createdAt") return formatJerusalemDate(o.createdAt);
+    if (col === "updatedAt") return formatJerusalemDate(o.updatedAt);
+    if (col === "lastLeadAt") return formatJerusalemDate(o.lastLeadAt);
     if (col in o) return String((o as Record<string, unknown>)[col] ?? "");
     return String((o.customValues ?? {})[col] ?? "");
   }
 
-  const INLINE_READONLY = new Set(["createdAt", "updatedAt", "lastLeadAt", "pipelineName"]);
+  const INLINE_READONLY = new Set([
+    "createdAt",
+    "updatedAt",
+    "lastLeadAt",
+    "pipelineName",
+    "contactName",
+    "contactEmail",
+    "contactPhone",
+    "contactId",
+  ]);
 
-  async function inlineEditOpportunity(o: Opportunity, col: string) {
+  function startInlineEdit(o: Opportunity, col: string) {
     if (INLINE_READONLY.has(col)) return;
+    const current =
+      col === "tags" ? (o.tags ?? []).join(", ") : opportunityCell(o, col);
+    setEditingCell({ id: o.id, col, value: current });
+  }
+
+  async function commitInlineEdit(o: Opportunity, col: string, rawValue: string) {
+    if (INLINE_READONLY.has(col)) return;
+    const value = rawValue.trim();
     if (col === "stage") {
-      const next = window.prompt("עדכן שלב", o.stage ?? "");
-      if (next == null) return;
-      await saveOpportunityPatch(o.id, { stage: next });
+      const pipeline = pipelines.find((p) => p.id === o.pipelineId);
+      const allowedStages = pipeline?.stages ?? [];
+      if (!value) return;
+      if (allowedStages.length > 0 && !allowedStages.includes(value)) {
+        setErr(`השלב חייב להיות אחד מהשלבים בפייפליין: ${allowedStages.join(" / ")}`);
+        return;
+      }
+      await saveOpportunityPatch(o.id, { stage: value });
       return;
     }
     if (col === "status") {
-      const next = window.prompt("סטטוס: פתוח / זכיה / הפסד", o.status ?? "פתוח");
-      if (next == null) return;
-      const status =
-        next === "זכיה" || next === "הפסד" || next === "פתוח" ? next : "פתוח";
+      const status = value === "זכיה" || value === "הפסד" || value === "פתוח" ? value : "פתוח";
       await saveOpportunityPatch(o.id, { status });
       return;
     }
     if (col === "assignedRep") {
-      const next = window.prompt("משתמש משויך (מייל אדמין)", o.assignedRep ?? "");
-      if (next == null) return;
-      await saveOpportunityPatch(o.id, { assignedRep: next });
+      await saveOpportunityPatch(o.id, { assignedRep: value });
       return;
     }
     if (col === "tags") {
-      const next = window.prompt("תגיות (מופרדות בפסיק)", (o.tags ?? []).join(", "));
-      if (next == null) return;
-      const tags = next.split(",").map((x) => x.trim()).filter(Boolean);
+      const tags = value.split(",").map((x) => x.trim()).filter(Boolean);
       await saveOpportunityPatch(o.id, { tags });
       return;
     }
-    const current = opportunityCell(o, col);
-    const next = window.prompt(`עדכון ${col}`, current);
-    if (next == null) return;
     if (["name", "email", "phone", "utmSource", "utmCampaign", "utmMedium", "utmContent", "landingpage"].includes(col)) {
-      await saveOpportunityPatch(o.id, { [col]: next } as Record<string, unknown>);
+      await saveOpportunityPatch(o.id, { [col]: value } as Record<string, unknown>);
       return;
     }
     await saveOpportunityPatch(o.id, {
-      customValues: { ...(o.customValues ?? {}), [col]: next },
+      customValues: { ...(o.customValues ?? {}), [col]: value },
+    });
+  }
+
+  function onResizeColumnStart(col: string, startX: number) {
+    const base = oppColWidths[col] ?? 180;
+    const onMove = (ev: MouseEvent) => {
+      const next = Math.max(120, base + (ev.clientX - startX));
+      setOppColWidths((prev) => ({ ...prev, [col]: next }));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
+  const filteredSortedOpps = useMemo(() => {
+    const filtered = oppForSelectedPipeline.filter((o) =>
+      oppDisplayCols.every((col) => {
+        const q = (oppColFilters[col] ?? "").trim().toLowerCase();
+        if (!q) return true;
+        return opportunityCell(o, col).toLowerCase().includes(q);
+      })
+    );
+    if (!oppSort) return filtered;
+    const sorted = [...filtered];
+    sorted.sort((a, b) => {
+      const av = opportunityCell(a, oppSort.col).toLowerCase();
+      const bv = opportunityCell(b, oppSort.col).toLowerCase();
+      if (av < bv) return oppSort.dir === "asc" ? -1 : 1;
+      if (av > bv) return oppSort.dir === "asc" ? 1 : -1;
+      return 0;
+    });
+    return sorted;
+  }, [oppForSelectedPipeline, oppDisplayCols, oppColFilters, oppSort]);
+
+  function toggleSort(col: string) {
+    setOppSort((prev) => {
+      if (!prev || prev.col !== col) return { col, dir: "asc" };
+      return { col, dir: prev.dir === "asc" ? "desc" : "asc" };
+    });
+  }
+
+  function moveOppColumn(from: number, to: number) {
+    if (from === to || from < 0 || to < 0) return;
+    setOppColumnOrder((arr) => {
+      if (to >= arr.length || from >= arr.length) return arr;
+      const next = [...arr];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
     });
   }
 
@@ -602,43 +721,147 @@ export default function PipelineClient() {
                 <thead>
                   <tr>
                     {oppDisplayCols.map((h) => (
-                      <th key={h} style={{ textAlign: "right", padding: "10px 12px", borderBottom: "2px solid #e5e7eb", background: "#f8fafc", fontSize: 12, fontWeight: 900, whiteSpace: "nowrap" }}>{h}</th>
+                      <th key={h} style={{ textAlign: "right", padding: "8px 10px", borderBottom: "2px solid #e5e7eb", background: "#f8fafc", fontSize: 12, fontWeight: 900, whiteSpace: "nowrap", minWidth: oppColWidths[h] ?? 180, width: oppColWidths[h] ?? 180, position: "relative", verticalAlign: "top" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span>{h}</span>
+                          <button
+                            type="button"
+                            onClick={() => toggleSort(h)}
+                            style={{ border: "1px solid #e5e7eb", background: "#fff", borderRadius: 6, padding: "0 6px", cursor: "pointer", fontSize: 11, fontWeight: 800 }}
+                            title="מיון עולה/יורד"
+                          >
+                            {oppSort?.col === h ? (oppSort.dir === "asc" ? "↑" : "↓") : "↕"}
+                          </button>
+                        </div>
+                        <input
+                          value={oppColFilters[h] ?? ""}
+                          onChange={(e) =>
+                            setOppColFilters((prev) => ({ ...prev, [h]: e.target.value }))
+                          }
+                          placeholder="חיפוש בעמודה..."
+                          style={{ marginTop: 6, width: "100%", padding: "6px 8px", borderRadius: 8, border: "1px solid #e5e7eb", fontSize: 11 }}
+                        />
+                        <div
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            onResizeColumnStart(h, e.clientX);
+                          }}
+                          style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 8, cursor: "col-resize" }}
+                          title="גרור לשינוי רוחב"
+                        />
+                      </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {oppForSelectedPipeline.map((o) => (
+                  {filteredSortedOpps.map((o) => (
                     <tr key={o.id}>
                       {oppDisplayCols.map((col, idx) => (
-                        <td key={col} style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>
+                        <td key={col} style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6", minWidth: oppColWidths[col] ?? 180, width: oppColWidths[col] ?? 180 }}>
                           {idx === 0 ? (
                             <button type="button" onClick={() => void openOpportunityDetail(o.id)} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#4c1d95", fontWeight: 800, padding: 0 }}>
                               {opportunityCell(o, col)}
                             </button>
                           ) : (
-                            <button
-                              type="button"
-                              disabled={INLINE_READONLY.has(col)}
-                              onClick={() => void inlineEditOpportunity(o, col)}
-                              style={{
-                                border: "none",
-                                background: "transparent",
-                                cursor: INLINE_READONLY.has(col) ? "default" : "pointer",
-                                padding: 0,
-                                textAlign: "right",
-                                width: "100%",
-                                color: INLINE_READONLY.has(col) ? "#374151" : "#111827",
-                              }}
-                              title={INLINE_READONLY.has(col) ? "" : "לחץ לעריכה מהירה"}
-                            >
-                              {opportunityCell(o, col)}
-                            </button>
+                            editingCell?.id === o.id && editingCell.col === col ? (
+                              col === "stage" ? (
+                                <select
+                                  autoFocus
+                                  value={editingCell.value}
+                                  onChange={(e) =>
+                                    setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
+                                  }
+                                  onBlur={() => {
+                                    void commitInlineEdit(o, col, editingCell.value);
+                                    setEditingCell(null);
+                                  }}
+                                  style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
+                                >
+                                  {(pipelines.find((p) => p.id === o.pipelineId)?.stages ?? []).map((s) => (
+                                    <option key={s} value={s}>{s}</option>
+                                  ))}
+                                </select>
+                              ) : col === "status" ? (
+                                <select
+                                  autoFocus
+                                  value={editingCell.value || "פתוח"}
+                                  onChange={(e) =>
+                                    setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
+                                  }
+                                  onBlur={() => {
+                                    void commitInlineEdit(o, col, editingCell.value);
+                                    setEditingCell(null);
+                                  }}
+                                  style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
+                                >
+                                  {["פתוח", "זכיה", "הפסד"].map((s) => (
+                                    <option key={s} value={s}>{s}</option>
+                                  ))}
+                                </select>
+                              ) : col === "assignedRep" ? (
+                                <select
+                                  autoFocus
+                                  value={editingCell.value}
+                                  onChange={(e) =>
+                                    setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
+                                  }
+                                  onBlur={() => {
+                                    void commitInlineEdit(o, col, editingCell.value);
+                                    setEditingCell(null);
+                                  }}
+                                  style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
+                                >
+                                  <option value="">לא משויך</option>
+                                  {adminUsers.map((u) => (
+                                    <option key={u.email} value={u.email}>{u.email}</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <input
+                                  autoFocus
+                                  value={editingCell.value}
+                                  onChange={(e) =>
+                                    setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
+                                  }
+                                  onBlur={() => {
+                                    void commitInlineEdit(o, col, editingCell.value);
+                                    setEditingCell(null);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      void commitInlineEdit(o, col, editingCell.value);
+                                      setEditingCell(null);
+                                    }
+                                    if (e.key === "Escape") setEditingCell(null);
+                                  }}
+                                  style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
+                                />
+                              )
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={INLINE_READONLY.has(col)}
+                                onClick={() => startInlineEdit(o, col)}
+                                style={{
+                                  border: "none",
+                                  background: "transparent",
+                                  cursor: INLINE_READONLY.has(col) ? "default" : "pointer",
+                                  padding: 0,
+                                  textAlign: "right",
+                                  width: "100%",
+                                  color: INLINE_READONLY.has(col) ? "#374151" : "#111827",
+                                }}
+                                title={INLINE_READONLY.has(col) ? "" : "לחץ לעריכה מהירה"}
+                              >
+                                {opportunityCell(o, col)}
+                              </button>
+                            )
                           )}
                         </td>
                       ))}
                     </tr>
                   ))}
-                  {!loading && oppForSelectedPipeline.length === 0 && <tr><td colSpan={Math.max(oppDisplayCols.length, 1)} style={{ padding: 16, color: "#6b7280", fontWeight: 700 }}>אין הזדמנויות בפייפליין הנבחר.</td></tr>}
+                  {!loading && filteredSortedOpps.length === 0 && <tr><td colSpan={Math.max(oppDisplayCols.length, 1)} style={{ padding: 16, color: "#6b7280", fontWeight: 700 }}>אין הזדמנויות בפייפליין הנבחר.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -942,12 +1165,79 @@ export default function PipelineClient() {
           <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.2)" }} onMouseDown={() => setManageOppColsOpen(false)} />
           <div style={{ position: "absolute", top: 0, right: 0, height: "100%", width: "min(420px, 94vw)", overflow: "auto", background: "#fff", borderLeft: "1px solid #e5e7eb", padding: 16 }} onMouseDown={(e) => e.stopPropagation()}>
             <h3 style={{ margin: 0, marginBottom: 10 }}>ניהול עמודות (הזדמנויות)</h3>
-            {[...BASE_OPP_COLS, ...oppCustomFieldIds].map((h) => (
-              <label key={h} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0" }}>
-                <input type="checkbox" checked={oppVisibleCols.includes(h)} onChange={(e) => setOppVisibleCols((arr) => e.target.checked ? [...arr, h] : arr.filter((x) => x !== h))} />
-                <span>{h}</span>
-              </label>
-            ))}
+            <div style={{ display: "grid", gap: 8 }}>
+              {(oppColumnOrder.length
+                ? oppColumnOrder
+                : [...BASE_OPP_COLS, ...oppCustomFieldIds]).map((h, idx, arr) => (
+                <div
+                  key={h}
+                  draggable
+                  onDragStart={() => setOppDragIndex(idx)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => {
+                    if (oppDragIndex != null) moveOppColumn(oppDragIndex, idx);
+                    setOppDragIndex(null);
+                  }}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "auto 1fr auto auto",
+                    alignItems: "center",
+                    gap: 8,
+                    border: "1px solid #f3f4f6",
+                    borderRadius: 10,
+                    padding: "6px 8px",
+                  }}
+                >
+                  <span style={{ cursor: "grab", opacity: 0.7 }} title="גרור לשינוי סדר">
+                    ⋮⋮
+                  </span>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input
+                      type="checkbox"
+                      checked={oppVisibleCols.includes(h)}
+                      onChange={(e) =>
+                        setOppVisibleCols((vis) =>
+                          e.target.checked ? Array.from(new Set([...vis, h])) : vis.filter((x) => x !== h)
+                        )
+                      }
+                    />
+                    <span>{h}</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => moveOppColumn(idx, idx - 1)}
+                    disabled={idx === 0}
+                    style={{
+                      border: "1px solid #e5e7eb",
+                      background: "#fff",
+                      borderRadius: 8,
+                      padding: "4px 7px",
+                      cursor: idx === 0 ? "default" : "pointer",
+                      opacity: idx === 0 ? 0.5 : 1,
+                    }}
+                    title="הזז למעלה"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveOppColumn(idx, idx + 1)}
+                    disabled={idx === arr.length - 1}
+                    style={{
+                      border: "1px solid #e5e7eb",
+                      background: "#fff",
+                      borderRadius: 8,
+                      padding: "4px 7px",
+                      cursor: idx === arr.length - 1 ? "default" : "pointer",
+                      opacity: idx === arr.length - 1 ? 0.5 : 1,
+                    }}
+                    title="הזז למטה"
+                  >
+                    ↓
+                  </button>
+                </div>
+              ))}
+            </div>
             <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
               <button type="button" onClick={() => setManageOppColsOpen(false)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}>סגור</button>
             </div>
@@ -958,9 +1248,19 @@ export default function PipelineClient() {
       {selectedOpp && (
         <div style={{ position: "fixed", inset: 0, zIndex: 96 }}>
           <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.2)" }} onMouseDown={() => setSelectedOpp(null)} />
-          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 12 }} onMouseDown={(e) => e.stopPropagation()}>
-            <div style={{ width: "min(980px, 96vw)", maxHeight: "92vh", overflow: "auto", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: 16 }}>
-            <h3 style={{ margin: 0, marginBottom: 10, fontSize: 22 }}>{selectedOpp.name}</h3>
+          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 12 }}>
+            <div style={{ width: "min(980px, 96vw)", maxHeight: "92vh", overflow: "auto", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: 16 }} onMouseDown={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+              <h3 style={{ margin: 0, fontSize: 22 }}>{selectedOpp.name}</h3>
+              <button
+                type="button"
+                onClick={() => setSelectedOpp(null)}
+                style={{ border: "1px solid #e5e7eb", background: "#fff", borderRadius: 10, padding: "6px 10px", cursor: "pointer", fontWeight: 800 }}
+                title="סגור"
+              >
+                ✕
+              </button>
+            </div>
             <div style={{ display: "inline-flex", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden", marginBottom: 10 }}>
               {(["details", "notes", "tasks"] as const).map((t) => (
                 <button key={t} type="button" onClick={() => setOppDetailTab(t)} style={{ border: "none", background: oppDetailTab === t ? "#ede9fe" : "#fff", padding: "8px 10px", cursor: "pointer", fontWeight: 800 }}>
@@ -973,20 +1273,26 @@ export default function PipelineClient() {
                 <div style={{ border: "1px solid #f3f4f6", borderRadius: 12, padding: 12 }}>
                   <div style={{ fontWeight: 900, marginBottom: 8 }}>Contact details</div>
                   <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
-                    <input value={selectedOpp.contactName ?? ""} readOnly style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#f9fafb" }} />
-                    <input value={selectedOpp.contactPhone ?? ""} readOnly style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#f9fafb" }} />
-                    <input value={selectedOpp.contactEmail ?? ""} readOnly style={{ gridColumn: "1 / -1", padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#f9fafb" }} />
-                    <select
-                      value={selectedOpp.contactId}
-                      onChange={(e) => setSelectedOpp((x) => (x ? { ...x, contactId: e.target.value } : x))}
-                      style={{ gridColumn: "1 / -1", padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
-                    >
-                      {contacts.map((c) => (
-                        <option key={(c.id || c.email || c.phone) as string} value={String(c.id || "")}>
-                          {String(c.name || c.email || c.phone || c.id || "")}
-                        </option>
-                      ))}
-                    </select>
+                    <label style={{ display: "grid", gap: 4 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>שם איש קשר</span>
+                      <input value={selectedOpp.contactName ?? ""} readOnly style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#f9fafb" }} />
+                    </label>
+                    <label style={{ display: "grid", gap: 4 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>פלאפון איש קשר</span>
+                      <input value={selectedOpp.contactPhone ?? ""} readOnly style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#f9fafb" }} />
+                    </label>
+                    <label style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>מייל איש קשר</span>
+                      <input value={selectedOpp.contactEmail ?? ""} readOnly style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#f9fafb" }} />
+                    </label>
+                    <label style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>איש קשר ראשי (לא ניתן לשינוי)</span>
+                      <input
+                        value={selectedOpp.contactId}
+                        readOnly
+                        style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#f9fafb" }}
+                      />
+                    </label>
                     <button
                       type="button"
                       onClick={() => {
@@ -1004,33 +1310,72 @@ export default function PipelineClient() {
                 <div style={{ border: "1px solid #f3f4f6", borderRadius: 12, padding: 12 }}>
                   <div style={{ fontWeight: 900, marginBottom: 8 }}>Opportunity details</div>
                   <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
-                <input value={selectedOpp.name} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, name: e.target.value } : x))} style={{ gridColumn: "1 / -1", padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
-                <input value={selectedOpp.email ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, email: e.target.value } : x))} placeholder="Email" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
-                <input value={selectedOpp.phone ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, phone: e.target.value } : x))} placeholder="Phone" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
-                <select value={selectedOpp.stage} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, stage: e.target.value } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
-                  {(selectedPipeline?.stages ?? []).map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-                <select value={selectedOpp.status ?? "פתוח"} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, status: e.target.value as "פתוח" | "זכיה" | "הפסד" } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
-                  {["פתוח", "זכיה", "הפסד"].map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-                <select value={selectedOpp.assignedRep ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, assignedRep: e.target.value } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
-                  <option value="">Unassigned</option>
-                  {adminUsers.map((u) => (
-                    <option key={u.email} value={u.email}>{u.email}</option>
-                  ))}
-                </select>
-                <input value={selectedOpp.utmSource ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, utmSource: e.target.value } : x))} placeholder="utm_source" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
-                <input value={selectedOpp.utmCampaign ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, utmCampaign: e.target.value } : x))} placeholder="utm_campaign" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
-                <input value={selectedOpp.utmMedium ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, utmMedium: e.target.value } : x))} placeholder="utm_medium" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
-                <input value={selectedOpp.utmContent ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, utmContent: e.target.value } : x))} placeholder="utm_content" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
-                <input value={selectedOpp.landingpage ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, landingpage: e.target.value } : x))} placeholder="landingpage" style={{ gridColumn: "1 / -1", padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
-                <input value={(selectedOpp.tags ?? []).join(", ")} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, tags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) } : x))} placeholder="תגיות (מופרדות בפסיק)" style={{ gridColumn: "1 / -1", padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                <label style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>שם הזדמנות</span>
+                  <input value={selectedOpp.name} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, name: e.target.value } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                </label>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>מייל</span>
+                  <input value={selectedOpp.email ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, email: e.target.value } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                </label>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>פלאפון</span>
+                  <input value={selectedOpp.phone ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, phone: e.target.value } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                </label>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>שלב בפייפליין</span>
+                  <select value={selectedOpp.stage} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, stage: e.target.value } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+                    {(selectedOppPipeline?.stages ?? []).map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </label>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>סטטוס</span>
+                  <select value={selectedOpp.status ?? "פתוח"} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, status: e.target.value as "פתוח" | "זכיה" | "הפסד" } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+                    {["פתוח", "זכיה", "הפסד"].map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>נציג משויך</span>
+                  <select value={selectedOpp.assignedRep ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, assignedRep: e.target.value } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+                    <option value="">לא משויך</option>
+                    {adminUsers.map((u) => (
+                      <option key={u.email} value={u.email}>{u.email}</option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>utm_source</span>
+                  <input value={selectedOpp.utmSource ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, utmSource: e.target.value } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                </label>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>utm_campaign</span>
+                  <input value={selectedOpp.utmCampaign ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, utmCampaign: e.target.value } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                </label>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>utm_medium</span>
+                  <input value={selectedOpp.utmMedium ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, utmMedium: e.target.value } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                </label>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>utm_content</span>
+                  <input value={selectedOpp.utmContent ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, utmContent: e.target.value } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                </label>
+                <label style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>landingpage</span>
+                  <input value={selectedOpp.landingpage ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, landingpage: e.target.value } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                </label>
+                <label style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>תגיות</span>
+                  <input value={(selectedOpp.tags ?? []).join(", ")} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, tags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) } : x))} placeholder="מופרדות בפסיק" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                </label>
                 {oppCustomFieldIds.map((fid) => (
-                  <input key={fid} value={String((selectedOpp.customValues ?? {})[fid] ?? "")} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, customValues: { ...(x.customValues ?? {}), [fid]: e.target.value } } : x))} placeholder={fid} style={{ gridColumn: "1 / -1", padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                  <label key={fid} style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>{fid}</span>
+                    <input value={String((selectedOpp.customValues ?? {})[fid] ?? "")} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, customValues: { ...(x.customValues ?? {}), [fid]: e.target.value } } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                  </label>
                 ))}
-                <button type="button" onClick={() => void saveOpportunityPatch(selectedOpp.id, { name: selectedOpp.name, contactId: selectedOpp.contactId, email: selectedOpp.email ?? "", phone: selectedOpp.phone ?? "", stage: selectedOpp.stage, status: selectedOpp.status ?? "פתוח", pipelineId: selectedOpp.pipelineId, assignedRep: selectedOpp.assignedRep ?? "", utmSource: selectedOpp.utmSource ?? "", utmCampaign: selectedOpp.utmCampaign ?? "", utmMedium: selectedOpp.utmMedium ?? "", utmContent: selectedOpp.utmContent ?? "", landingpage: selectedOpp.landingpage ?? "", tags: selectedOpp.tags ?? [], customValues: selectedOpp.customValues ?? {} })} style={{ gridColumn: "1 / -1", padding: "9px 12px", borderRadius: 10, border: "none", background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)", color: "#fff", fontWeight: 800, cursor: "pointer" }}>שמור ועדכן</button>
+                <button type="button" onClick={() => void saveOpportunityPatch(selectedOpp.id, { name: selectedOpp.name, email: selectedOpp.email ?? "", phone: selectedOpp.phone ?? "", stage: selectedOpp.stage, status: selectedOpp.status ?? "פתוח", pipelineId: selectedOpp.pipelineId, assignedRep: selectedOpp.assignedRep ?? "", utmSource: selectedOpp.utmSource ?? "", utmCampaign: selectedOpp.utmCampaign ?? "", utmMedium: selectedOpp.utmMedium ?? "", utmContent: selectedOpp.utmContent ?? "", landingpage: selectedOpp.landingpage ?? "", tags: selectedOpp.tags ?? [], customValues: selectedOpp.customValues ?? {} })} style={{ gridColumn: "1 / -1", padding: "9px 12px", borderRadius: 10, border: "none", background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)", color: "#fff", fontWeight: 800, cursor: "pointer" }}>שמור ועדכן</button>
                   </div>
                 </div>
               </div>

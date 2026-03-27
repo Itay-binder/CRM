@@ -31,7 +31,7 @@ export type OpportunityRecord = {
   lastLeadAt?: Date | null;
   customValues?: Record<string, unknown>;
   assignedRep?: string;
-  notes?: Array<{ id: string; text: string; createdAt: string }>;
+  notes?: Array<{ id: string; text: string; createdAt: string; createdBy?: string }>;
   tasks?: Array<{
     id: string;
     title: string;
@@ -191,7 +191,7 @@ export async function listOpportunities(pipelineId?: string | null): Promise<Opp
           : undefined,
       assignedRep: typeof d.assignedRep === "string" ? d.assignedRep : undefined,
       notes: Array.isArray(d.notes)
-        ? (d.notes as Array<{ id: string; text: string; createdAt: string }>)
+        ? (d.notes as Array<{ id: string; text: string; createdAt: string; createdBy?: string }>)
         : undefined,
       tasks: Array.isArray(d.tasks)
         ? (d.tasks as Array<{
@@ -374,7 +374,7 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
         : undefined,
     assignedRep: typeof d.assignedRep === "string" ? d.assignedRep : undefined,
     notes: Array.isArray(d.notes)
-      ? (d.notes as Array<{ id: string; text: string; createdAt: string }>)
+      ? (d.notes as Array<{ id: string; text: string; createdAt: string; createdBy?: string }>)
       : undefined,
     tasks: Array.isArray(d.tasks)
       ? (d.tasks as Array<{
@@ -425,7 +425,7 @@ export async function getOpportunityById(id: string): Promise<OpportunityRecord 
         : undefined,
     assignedRep: typeof d.assignedRep === "string" ? d.assignedRep : undefined,
     notes: Array.isArray(d.notes)
-      ? (d.notes as Array<{ id: string; text: string; createdAt: string }>)
+      ? (d.notes as Array<{ id: string; text: string; createdAt: string; createdBy?: string }>)
       : undefined,
     tasks: Array.isArray(d.tasks)
       ? (d.tasks as Array<{ id: string; title: string; dueAt: string; done: boolean; createdAt: string }>)
@@ -454,7 +454,7 @@ export async function updateOpportunity(
     tags?: string[];
     assignedRep?: string;
     customValues?: Record<string, unknown>;
-    notes?: Array<{ id: string; text: string; createdAt: string }>;
+    notes?: Array<{ id: string; text: string; createdAt: string; createdBy?: string }>;
     tasks?: Array<{
       id: string;
       title: string;
@@ -499,6 +499,51 @@ export async function updateOpportunity(
   if (input.notes !== undefined) payload.notes = input.notes;
   if (input.tasks !== undefined) payload.tasks = input.tasks;
   await ref.set(payload, { merge: true });
+
+  // Keep contact-level activity history synced with opportunity activity.
+  if (input.notes !== undefined || input.tasks !== undefined) {
+    const existing = (snap.data() ?? {}) as Record<string, unknown>;
+    const contactId = String(
+      input.contactId?.trim() || existing.contactId || ""
+    ).trim();
+    if (contactId) {
+      const contactRef = getAdminDb().collection("leads").doc(contactId);
+      const contactSnap = await contactRef.get();
+      if (contactSnap.exists) {
+        const cd = (contactSnap.data() ?? {}) as Record<string, unknown>;
+        const contactNotes = Array.isArray(cd.notes)
+          ? (cd.notes as Array<{ id: string; text: string; createdAt: string; createdBy?: string }>)
+          : [];
+        const contactTasks = Array.isArray(cd.tasks)
+          ? (cd.tasks as Array<{
+              id: string;
+              title: string;
+              dueAt: string;
+              done: boolean;
+              status?: "todo" | "in_progress" | "done";
+              comments?: Array<{ id: string; text: string; createdAt: string }>;
+              createdAt: string;
+            }>)
+          : [];
+        const nextNotes = input.notes ?? [];
+        const nextTasks = input.tasks ?? [];
+
+        const notesMap = new Map(contactNotes.map((n) => [n.id, n]));
+        for (const n of nextNotes) notesMap.set(n.id, n);
+        const tasksMap = new Map(contactTasks.map((t) => [t.id, t]));
+        for (const t of nextTasks) tasksMap.set(t.id, t);
+
+        await contactRef.set(
+          {
+            notes: Array.from(notesMap.values()),
+            tasks: Array.from(tasksMap.values()),
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
+    }
+  }
   const again = await ref.get();
   return (await getOpportunityById(again.id)) as OpportunityRecord;
 }

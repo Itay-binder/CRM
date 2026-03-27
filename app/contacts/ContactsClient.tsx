@@ -14,7 +14,7 @@ type LeadsErr = { ok: false; error: string };
 type SortDir = "asc" | "desc";
 type AdvOp = "contains" | "equals" | "startsWith" | "isEmpty" | "notEmpty";
 type AdvFilter = { id: string; field: string; op: AdvOp; value: string };
-type NoteItem = { id: string; text: string; createdAt: string };
+type NoteItem = { id: string; text: string; createdAt: string; createdBy?: string };
 type TaskItem = {
   id: string;
   title: string;
@@ -108,6 +108,7 @@ export default function ContactsClient() {
   >([]);
   const [detailAggNotes, setDetailAggNotes] = useState<NoteItem[]>([]);
   const [detailAggTasks, setDetailAggTasks] = useState<TaskItem[]>([]);
+  const [newContactNoteText, setNewContactNoteText] = useState("");
 
   const query = useMemo(() => {
     const params = new URLSearchParams();
@@ -1143,24 +1144,41 @@ export default function ContactsClient() {
             {detailTab === "notes" && (
               <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
                 {(detail.notes ?? []).map((n) => (
-                  <textarea key={n.id} value={n.text} readOnly style={{ width: "100%", minHeight: 70, padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                  <div key={n.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, background: "#fff" }}>
+                    <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{n.text}</div>
+                    <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
+                      נוצר על ידי: {n.createdBy ?? "CRM User"} · {n.createdAt}
+                    </div>
+                  </div>
                 ))}
                 {(detailAggNotes ?? []).map((n) => (
-                  <textarea key={`agg-${n.id}`} value={n.text} readOnly style={{ width: "100%", minHeight: 60, padding: "8px 10px", borderRadius: 10, border: "1px dashed #cbd5e1", background: "#f8fafc" }} />
+                  <div key={`agg-${n.id}`} style={{ border: "1px dashed #cbd5e1", borderRadius: 10, padding: 10, background: "#f8fafc" }}>
+                    <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{n.text}</div>
+                    <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
+                      נוצר על ידי: {n.createdBy ?? "CRM User"} · {n.createdAt}
+                    </div>
+                  </div>
                 ))}
                 <button
                   type="button"
                   onClick={() => {
-                    const text = window.prompt("טקסט לפתק");
-                    if (!text?.trim()) return;
-                    const notes = [...(detail.notes ?? []), { id: crypto.randomUUID(), text: text.trim(), createdAt: new Date().toISOString() }];
+                    const text = newContactNoteText.trim();
+                    if (!text) return;
+                    const notes = [...(detail.notes ?? []), { id: crypto.randomUUID(), text, createdAt: new Date().toISOString(), createdBy: "CRM User" }];
                     setDetail((d) => (d ? { ...d, notes } : d));
+                    setNewContactNoteText("");
                     void saveDetail({ notes });
                   }}
                   style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
                 >
                   + הוסף פתק
                 </button>
+                <textarea
+                  value={newContactNoteText}
+                  onChange={(e) => setNewContactNoteText(e.target.value)}
+                  placeholder="כתוב פתק חדש..."
+                  style={{ minHeight: 120, padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb", lineHeight: 1.55 }}
+                />
               </div>
             )}
 

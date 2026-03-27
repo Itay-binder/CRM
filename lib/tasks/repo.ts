@@ -160,6 +160,33 @@ export async function updateTaskAndSync(
     { merge: true }
   );
 
+  // If this task belongs to an opportunity, also sync the documentation note to its contact.
+  if (input.entityType === "opportunity" && trimmedComment) {
+    const oppContactId = String(data.contactId ?? "").trim();
+    if (oppContactId) {
+      const contactRef = db.collection("leads").doc(oppContactId);
+      const contactSnap = await contactRef.get();
+      if (contactSnap.exists) {
+        const contactData = (contactSnap.data() ?? {}) as Record<string, unknown>;
+        const contactNotes = Array.isArray(contactData.notes)
+          ? [...(contactData.notes as Array<{ id: string; text: string; createdAt: string }>)]
+          : [];
+        contactNotes.push({
+          id: crypto.randomUUID(),
+          text: `[Task ${String(existing.title ?? "")}] ${trimmedComment}`,
+          createdAt: new Date().toISOString(),
+        });
+        await contactRef.set(
+          {
+            notes: contactNotes,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
+    }
+  }
+
   const entityName =
     (typeof data.name === "string" && data.name) ||
     (typeof data.email === "string" && data.email) ||

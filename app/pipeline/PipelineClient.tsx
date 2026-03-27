@@ -37,7 +37,7 @@ type Opportunity = {
 type ContactRow = Record<string, string>;
 type TabId = "opportunities" | "pipelines";
 type ViewMode = "board" | "list";
-type NoteItem = { id: string; text: string; createdAt: string };
+type NoteItem = { id: string; text: string; createdAt: string; createdBy?: string };
 type TaskItem = {
   id: string;
   title: string;
@@ -102,6 +102,7 @@ export default function PipelineClient() {
   );
   const [oppNotes, setOppNotes] = useState<NoteItem[]>([]);
   const [oppTasks, setOppTasks] = useState<TaskItem[]>([]);
+  const [newOppNoteText, setNewOppNoteText] = useState("");
   const [oppCustomFieldIds, setOppCustomFieldIds] = useState<string[]>([]);
   const [pipelineMenuOpenId, setPipelineMenuOpenId] = useState<string | null>(null);
   const [editPipelineOpen, setEditPipelineOpen] = useState(false);
@@ -1036,12 +1037,26 @@ export default function PipelineClient() {
             )}
             {oppDetailTab === "notes" && (
               <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-                {oppNotes.map((n) => <textarea key={n.id} value={n.text} readOnly style={{ minHeight: 70, padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />)}
+                {oppNotes.map((n) => (
+                  <div key={n.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, background: "#fff" }}>
+                    <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{n.text}</div>
+                    <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
+                      נוצר על ידי: {n.createdBy ?? "CRM User"} · {n.createdAt}
+                    </div>
+                  </div>
+                ))}
+                <textarea
+                  value={newOppNoteText}
+                  onChange={(e) => setNewOppNoteText(e.target.value)}
+                  placeholder="כתוב פתק חדש..."
+                  style={{ minHeight: 140, padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb", lineHeight: 1.55 }}
+                />
                 <button type="button" onClick={() => {
-                  const text = window.prompt("טקסט לפתק");
-                  if (!text?.trim()) return;
-                  const notes = [...oppNotes, { id: crypto.randomUUID(), text: text.trim(), createdAt: new Date().toISOString() }];
+                  const text = newOppNoteText.trim();
+                  if (!text) return;
+                  const notes = [...oppNotes, { id: crypto.randomUUID(), text, createdAt: new Date().toISOString(), createdBy: "CRM User" }];
                   setOppNotes(notes);
+                  setNewOppNoteText("");
                   void saveOpportunityPatch(selectedOpp.id, { notes });
                 }} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}>+ הוסף פתק</button>
               </div>

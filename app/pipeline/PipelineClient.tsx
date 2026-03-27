@@ -17,6 +17,7 @@ type Opportunity = {
   contactPhone?: string;
   pipelineId: string;
   stage: string;
+  lastNoteBody?: string;
   createdAt: string | null;
 };
 
@@ -47,6 +48,7 @@ export default function PipelineClient() {
   const [newOppName, setNewOppName] = useState("");
   const [newOppContactId, setNewOppContactId] = useState("");
   const [newOppStage, setNewOppStage] = useState("");
+  const [stageSavingId, setStageSavingId] = useState<string | null>(null);
 
   const selectedPipeline = useMemo(
     () => pipelines.find((p) => p.id === selectedPipelineId) ?? null,
@@ -156,6 +158,26 @@ export default function PipelineClient() {
     }
   }
 
+  async function patchOpportunityStage(opportunityId: string, stage: string) {
+    setStageSavingId(opportunityId);
+    setErr(null);
+    try {
+      const res = await fetch(`/api/opportunities/${encodeURIComponent(opportunityId)}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stage }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) throw new Error(j.error ?? "עדכון שלב נכשל");
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "עדכון שלב נכשל");
+    } finally {
+      setStageSavingId(null);
+    }
+  }
+
   async function createOpportunity() {
     try {
       const res = await fetch("/api/opportunities", {
@@ -238,24 +260,47 @@ export default function PipelineClient() {
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 980 }}>
                 <thead>
                   <tr>
-                    {["Opportunity name", "Contact", "Pipeline", "Stage", "Phone", "Email", "Created"].map((h) => (
+                    {["Opportunity name", "Contact", "Pipeline", "Stage", "Last note", "Phone", "Email", "Created"].map((h) => (
                       <th key={h} style={{ textAlign: "right", padding: "10px 12px", borderBottom: "2px solid #e5e7eb", background: "#f8fafc", fontSize: 12, fontWeight: 900, whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {oppForSelectedPipeline.map((o) => (
-                    <tr key={o.id}>
-                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{o.name}</td>
-                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{o.contactName || o.contactId}</td>
-                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{pipelines.find((p) => p.id === o.pipelineId)?.name || o.pipelineId}</td>
-                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{o.stage}</td>
-                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{o.contactPhone || ""}</td>
-                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{o.contactEmail || ""}</td>
-                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{o.createdAt ? String(o.createdAt).slice(0, 10) : ""}</td>
-                    </tr>
-                  ))}
-                  {!loading && oppForSelectedPipeline.length === 0 && <tr><td colSpan={7} style={{ padding: 16, color: "#6b7280", fontWeight: 700 }}>אין הזדמנויות בפייפליין הנבחר.</td></tr>}
+                  {oppForSelectedPipeline.map((o) => {
+                    const pipe = pipelines.find((p) => p.id === o.pipelineId);
+                    const stageOptions = pipe?.stages?.length ? pipe.stages : [o.stage];
+                    return (
+                      <tr key={o.id}>
+                        <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{o.name}</td>
+                        <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{o.contactName || o.contactId}</td>
+                        <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{pipe?.name || o.pipelineId}</td>
+                        <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>
+                          <select
+                            value={o.stage}
+                            disabled={stageSavingId === o.id}
+                            onChange={(e) => void patchOpportunityStage(o.id, e.target.value)}
+                            style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid #e5e7eb", minWidth: 140 }}
+                          >
+                            {stageOptions.includes(o.stage) ? null : (
+                              <option value={o.stage}>{o.stage}</option>
+                            )}
+                            {stageOptions.map((s) => (
+                              <option key={s} value={s}>
+                                {s}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6", fontSize: 13, color: "#374151" }}>
+                          {o.lastNoteBody || "—"}
+                        </td>
+                        <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{o.contactPhone || ""}</td>
+                        <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{o.contactEmail || ""}</td>
+                        <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{o.createdAt ? String(o.createdAt).slice(0, 10) : ""}</td>
+                      </tr>
+                    );
+                  })}
+                  {!loading && oppForSelectedPipeline.length === 0 && <tr><td colSpan={8} style={{ padding: 16, color: "#6b7280", fontWeight: 700 }}>אין הזדמנויות בפייפליין הנבחר.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -274,12 +319,34 @@ export default function PipelineClient() {
                         {list.length === 0 ? (
                           <div style={{ color: "#9ca3af", fontWeight: 700, fontSize: 12 }}>אין הזדמנויות כאן</div>
                         ) : (
-                          list.map((o) => (
-                            <div key={o.id} style={{ border: "1px solid #f3f4f6", borderRadius: 12, padding: 10, background: "#fafafa" }}>
-                              <div style={{ fontWeight: 900, fontSize: 12, wordBreak: "break-word" }}>{o.name}</div>
-                              <div style={{ marginTop: 4, fontSize: 12, color: "#6b7280" }}>{o.contactName || o.contactEmail || o.contactPhone || o.contactId}</div>
-                            </div>
-                          ))
+                          list.map((o) => {
+                            const pipe = pipelines.find((p) => p.id === o.pipelineId);
+                            const stageOptions = pipe?.stages?.length ? pipe.stages : [o.stage];
+                            return (
+                              <div key={o.id} style={{ border: "1px solid #f3f4f6", borderRadius: 12, padding: 10, background: "#fafafa" }}>
+                                <div style={{ fontWeight: 900, fontSize: 12, wordBreak: "break-word" }}>{o.name}</div>
+                                <div style={{ marginTop: 4, fontSize: 12, color: "#6b7280" }}>{o.contactName || o.contactEmail || o.contactPhone || o.contactId}</div>
+                                {o.lastNoteBody ? (
+                                  <div style={{ marginTop: 6, fontSize: 11, color: "#4b5563", fontWeight: 700 }}>פתק: {o.lastNoteBody}</div>
+                                ) : null}
+                                <select
+                                  value={o.stage}
+                                  disabled={stageSavingId === o.id}
+                                  onChange={(e) => void patchOpportunityStage(o.id, e.target.value)}
+                                  style={{ marginTop: 8, width: "100%", padding: "6px 8px", borderRadius: 8, border: "1px solid #e5e7eb", fontSize: 12 }}
+                                >
+                                  {stageOptions.includes(o.stage) ? null : (
+                                    <option value={o.stage}>{o.stage}</option>
+                                  )}
+                                  {stageOptions.map((s) => (
+                                    <option key={s} value={s}>
+                                      {s}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            );
+                          })
                         )}
                       </div>
                     </div>

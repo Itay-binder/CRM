@@ -58,17 +58,25 @@ export default function CrmShell({ email, children }: Props) {
 
         <nav style={{ display: "grid", gap: 8, marginTop: 8 }}>
           <NavItem href="/dashboard" label={'דשבורד מנכ"ל'} />
-          <NavItem href="/contacts" label="Contacts" />
-          <NavItem href="/pipeline" label="Pipeline" />
-          <NavItem href="/settings/fields" label="שדות מותאמים" />
+          <NavItem href="/contacts" label="אנשי קשר" />
+          <NavItem href="/pipeline" label="ניהול הזדמנויות" />
+          <NavItem href="/settings" label="הגדרות" />
         </nav>
-
-        <div style={{ marginTop: 24, display: "flex", justifyContent: "flex-end" }}>
-          <UserMenu email={email} />
-        </div>
       </aside>
 
-      <section style={{ flex: 1, padding: 18 }}>{children}</section>
+      <section style={{ flex: 1, padding: 18 }}>
+        <header
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "flex-start",
+            marginBottom: 12,
+          }}
+        >
+          <UserMenu email={email} />
+        </header>
+        {children}
+      </section>
     </div>
   );
 }

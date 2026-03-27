@@ -39,10 +39,25 @@ function normalizeUniqueKey(raw: string): string {
   return raw.trim().toLowerCase();
 }
 
+function normalizePhone(raw?: string): string | undefined {
+  if (!raw?.trim()) return undefined;
+  const digits = raw.replace(/[^\d+]/g, "").replace(/^\+/, "");
+  if (!digits) return undefined;
+
+  // Already in IL international prefix format.
+  if (digits.startsWith("972")) return digits;
+
+  // Local Israeli numbers (mobile/landline) like 052..., 03..., 072...
+  if (digits.startsWith("0")) return `972${digits.slice(1)}`;
+
+  // Fallback: keep numeric value as-is if not recognizable IL local format.
+  return digits.replace(/[^\d]/g, "");
+}
+
 function pickUniqueKey(input: LeadUpsertInput): { docId: string; email?: string; phone?: string } | null {
   if (input.uniqueKey && input.uniqueKey.trim()) {
     const docId = normalizeUniqueKey(input.uniqueKey);
-    return { docId, email: input.email, phone: input.phone };
+    return { docId, email: input.email, phone: normalizePhone(input.phone) };
   }
 
   if (input.email && input.email.trim()) {
@@ -51,8 +66,9 @@ function pickUniqueKey(input: LeadUpsertInput): { docId: string; email?: string;
   }
 
   if (input.phone && input.phone.trim()) {
-    // Keep original formatting in stored phone, but doc id normalized.
-    const phone = input.phone.trim();
+    // Store phones in normalized format to keep deduplication stable.
+    const phone = normalizePhone(input.phone);
+    if (!phone) return null;
     return { docId: normalizeUniqueKey(phone), phone };
   }
 

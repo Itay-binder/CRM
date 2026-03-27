@@ -48,10 +48,15 @@ export default function ContactsClient() {
   const filterWrapRef = useRef<HTMLDivElement>(null);
 
   const [visibleCols, setVisibleCols] = useState<string[]>([]);
+  const [columnOrder, setColumnOrder] = useState<string[]>([]);
   const [manageColsOpen, setManageColsOpen] = useState(false);
+  const [draftVisibleCols, setDraftVisibleCols] = useState<string[]>([]);
+  const [draftColumnOrder, setDraftColumnOrder] = useState<string[]>([]);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
 
   const [advOpen, setAdvOpen] = useState(false);
   const [advFilters, setAdvFilters] = useState<AdvFilter[]>([]);
+  const [draftAdvFilters, setDraftAdvFilters] = useState<AdvFilter[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");
@@ -103,6 +108,13 @@ export default function ContactsClient() {
         const hs = json.headers ?? [];
         const initial = BASE_COLS.filter((c) => hs.includes(c));
         const rest = hs.filter((h) => !initial.includes(h)).slice(0, 3);
+        return [...initial, ...rest];
+      });
+      setColumnOrder((prev) => {
+        if (prev.length) return prev;
+        const hs = json.headers ?? [];
+        const initial = BASE_COLS.filter((c) => hs.includes(c));
+        const rest = hs.filter((h) => !initial.includes(h));
         return [...initial, ...rest];
       });
     } catch {
@@ -171,9 +183,10 @@ export default function ContactsClient() {
   }, [rows, headers, search, columnFilters, advFilters, sortField, sortDir]);
 
   const displayHeaders = useMemo(() => {
-    if (visibleCols.length) return visibleCols;
-    return headers;
-  }, [visibleCols, headers]);
+    const order = columnOrder.length ? columnOrder : headers;
+    if (!visibleCols.length) return order;
+    return order.filter((h) => visibleCols.includes(h));
+  }, [visibleCols, headers, columnOrder]);
 
   function toggleSort(field: string) {
     if (sortField === field) {
@@ -290,6 +303,63 @@ export default function ContactsClient() {
     }
   }
 
+  function openManageColumns() {
+    const order = columnOrder.length ? columnOrder : headers;
+    const visible = visibleCols.length ? visibleCols : headers;
+    setDraftColumnOrder(order);
+    setDraftVisibleCols(visible);
+    setManageColsOpen(true);
+  }
+
+  function applyManageColumns() {
+    setColumnOrder(draftColumnOrder);
+    setVisibleCols(draftVisibleCols);
+    setManageColsOpen(false);
+  }
+
+  function resetColumnsToDefault() {
+    const initial = BASE_COLS.filter((c) => headers.includes(c));
+    const rest = headers.filter((h) => !initial.includes(h));
+    const order = [...initial, ...rest];
+    setDraftColumnOrder(order);
+    setDraftVisibleCols(order);
+  }
+
+  function moveDraftColumn(from: number, to: number) {
+    if (from === to || from < 0 || to < 0) return;
+    setDraftColumnOrder((arr) => {
+      if (to >= arr.length) return arr;
+      const next = [...arr];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  }
+
+  function addCustomFieldColumn() {
+    const raw = window.prompt("שם שדה מותאם (מפתח פנימי באנגלית/עברית ללא פסיקים):");
+    const name = (raw ?? "").trim();
+    if (!name) return;
+    if (headers.includes(name)) {
+      window.alert("השדה כבר קיים.");
+      return;
+    }
+    setHeaders((hs) => [...hs, name]);
+    setRows((rs) => rs.map((r) => ({ ...r, [name]: r[name] ?? "" })));
+    setDraftColumnOrder((arr) => [...arr, name]);
+    setDraftVisibleCols((arr) => [...arr, name]);
+  }
+
+  function openAdvancedFilters() {
+    setDraftAdvFilters(advFilters.length ? [...advFilters] : []);
+    setAdvOpen(true);
+  }
+
+  function applyAdvancedFilters() {
+    setAdvFilters(draftAdvFilters);
+    setAdvOpen(false);
+  }
+
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -311,14 +381,14 @@ export default function ContactsClient() {
 
         <button
           type="button"
-          onClick={() => setManageColsOpen(true)}
+          onClick={openManageColumns}
           style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fff", fontWeight: 700, cursor: "pointer" }}
         >
           ניהול עמודות
         </button>
         <button
           type="button"
-          onClick={() => setAdvOpen(true)}
+          onClick={openAdvancedFilters}
           style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fff", fontWeight: 700, cursor: "pointer" }}
         >
           פילטר מתקדם
@@ -553,55 +623,106 @@ export default function ContactsClient() {
       )}
 
       {manageColsOpen && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.2)",
-            display: "grid",
-            placeItems: "center",
-            zIndex: 80,
-          }}
-          onMouseDown={() => setManageColsOpen(false)}
-        >
+        <div style={{ position: "fixed", inset: 0, zIndex: 90 }}>
           <div
-            style={{ width: "min(520px, 94vw)", maxHeight: "80vh", overflow: "auto", background: "#fff", borderRadius: 16, border: "1px solid #e5e7eb", padding: 16 }}
+            style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.2)" }}
+            onMouseDown={() => setManageColsOpen(false)}
+          />
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              right: 0,
+              height: "100%",
+              width: "min(420px, 94vw)",
+              overflow: "auto",
+              background: "#fff",
+              borderLeft: "1px solid #e5e7eb",
+              padding: 16,
+              boxShadow: "-12px 0 30px rgba(0,0,0,0.08)",
+            }}
             onMouseDown={(e) => e.stopPropagation()}
           >
             <h3 style={{ margin: 0, marginBottom: 10 }}>ניהול עמודות</h3>
+            <input
+              placeholder="Search field"
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 12,
+                border: "1px solid #e5e7eb",
+                marginBottom: 10,
+              }}
+            />
             <div style={{ display: "grid", gap: 8 }}>
-              {headers.map((h) => {
-                const checked = visibleCols.includes(h);
+              {draftColumnOrder.map((h, i) => {
+                const checked = draftVisibleCols.includes(h);
                 return (
-                  <label key={h} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div
+                    key={h}
+                    draggable
+                    onDragStart={() => setDragIndex(i)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => {
+                      if (dragIndex != null) moveDraftColumn(dragIndex, i);
+                      setDragIndex(null);
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "6px 4px",
+                      borderRadius: 8,
+                      border: "1px solid #f3f4f6",
+                    }}
+                  >
+                    <span title="גרור" style={{ cursor: "grab", opacity: 0.7 }}>
+                      ⋮⋮
+                    </span>
                     <input
                       type="checkbox"
                       checked={checked}
                       onChange={(e) =>
-                        setVisibleCols((cols) =>
+                        setDraftVisibleCols((cols) =>
                           e.target.checked ? [...cols, h] : cols.filter((x) => x !== h)
                         )
                       }
                     />
                     <span>{h}</span>
-                  </label>
+                  </div>
                 );
               })}
             </div>
             <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
               <button
                 type="button"
-                onClick={() => setVisibleCols(headers)}
+                onClick={addCustomFieldColumn}
                 style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
               >
-                הצג הכל
+                Add custom field
               </button>
+              <button
+                type="button"
+                onClick={resetColumnsToDefault}
+                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
+              >
+                סדר ברירת מחדל
+              </button>
+            </div>
+            <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
               <button
                 type="button"
                 onClick={() => setManageColsOpen(false)}
                 style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
               >
-                סגור
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={applyManageColumns}
+                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
+              >
+                Apply
               </button>
             </div>
           </div>
@@ -609,43 +730,48 @@ export default function ContactsClient() {
       )}
 
       {advOpen && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.2)",
-            display: "grid",
-            placeItems: "center",
-            zIndex: 80,
-          }}
-          onMouseDown={() => setAdvOpen(false)}
-        >
+        <div style={{ position: "fixed", inset: 0, zIndex: 90 }}>
           <div
-            style={{ width: "min(760px, 94vw)", maxHeight: "80vh", overflow: "auto", background: "#fff", borderRadius: 16, border: "1px solid #e5e7eb", padding: 16 }}
+            style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.2)" }}
+            onMouseDown={() => setAdvOpen(false)}
+          />
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              right: 0,
+              height: "100%",
+              width: "min(420px, 94vw)",
+              overflow: "auto",
+              background: "#fff",
+              borderLeft: "1px solid #e5e7eb",
+              padding: 16,
+              boxShadow: "-12px 0 30px rgba(0,0,0,0.08)",
+            }}
             onMouseDown={(e) => e.stopPropagation()}
           >
             <h3 style={{ margin: 0, marginBottom: 10 }}>פילטר מתקדם</h3>
             <div style={{ display: "grid", gap: 8 }}>
-              {advFilters.map((f) => (
+              {draftAdvFilters.map((f) => (
                 <div key={f.id} style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1.4fr auto", gap: 8 }}>
-                  <select value={f.field} onChange={(e) => setAdvFilters((arr) => arr.map((x) => (x.id === f.id ? { ...x, field: e.target.value } : x)))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+                  <select value={f.field} onChange={(e) => setDraftAdvFilters((arr) => arr.map((x) => (x.id === f.id ? { ...x, field: e.target.value } : x)))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
                     {headers.map((h) => (
                       <option key={h} value={h}>
                         {h}
                       </option>
                     ))}
                   </select>
-                  <select value={f.op} onChange={(e) => setAdvFilters((arr) => arr.map((x) => (x.id === f.id ? { ...x, op: e.target.value as AdvOp } : x)))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+                  <select value={f.op} onChange={(e) => setDraftAdvFilters((arr) => arr.map((x) => (x.id === f.id ? { ...x, op: e.target.value as AdvOp } : x)))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
                     <option value="contains">כולל</option>
                     <option value="equals">שווה בדיוק</option>
                     <option value="startsWith">מתחיל ב...</option>
                     <option value="isEmpty">ריק</option>
                     <option value="notEmpty">לא ריק</option>
                   </select>
-                  <input value={f.value} onChange={(e) => setAdvFilters((arr) => arr.map((x) => (x.id === f.id ? { ...x, value: e.target.value } : x)))} disabled={f.op === "isEmpty" || f.op === "notEmpty"} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                  <input value={f.value} onChange={(e) => setDraftAdvFilters((arr) => arr.map((x) => (x.id === f.id ? { ...x, value: e.target.value } : x)))} disabled={f.op === "isEmpty" || f.op === "notEmpty"} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
                   <button
                     type="button"
-                    onClick={() => setAdvFilters((arr) => arr.filter((x) => x.id !== f.id))}
+                    onClick={() => setDraftAdvFilters((arr) => arr.filter((x) => x.id !== f.id))}
                     style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
                   >
                     מחק
@@ -657,7 +783,7 @@ export default function ContactsClient() {
               <button
                 type="button"
                 onClick={() =>
-                  setAdvFilters((arr) => [
+                  setDraftAdvFilters((arr) => [
                     ...arr,
                     {
                       id: crypto.randomUUID(),
@@ -673,7 +799,7 @@ export default function ContactsClient() {
               </button>
               <button
                 type="button"
-                onClick={() => setAdvFilters([])}
+                onClick={() => setDraftAdvFilters([])}
                 style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
               >
                 נקה הכל
@@ -683,7 +809,14 @@ export default function ContactsClient() {
                 onClick={() => setAdvOpen(false)}
                 style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
               >
-                סגור
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={applyAdvancedFilters}
+                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
+              >
+                Apply
               </button>
             </div>
           </div>

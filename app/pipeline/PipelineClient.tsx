@@ -87,6 +87,7 @@ export default function PipelineClient() {
   const [editPipelineId, setEditPipelineId] = useState<string | null>(null);
   const [editPipelineName, setEditPipelineName] = useState("");
   const [editStages, setEditStages] = useState<string[]>([]);
+  const [editDragIndex, setEditDragIndex] = useState<number | null>(null);
 
   const selectedPipeline = useMemo(
     () => pipelines.find((p) => p.id === selectedPipelineId) ?? null,
@@ -278,6 +279,7 @@ export default function PipelineClient() {
     id: string,
     patch: {
       name?: string;
+      contactId?: string;
       stage?: string;
       pipelineId?: string;
       assignedRep?: string;
@@ -360,6 +362,17 @@ export default function PipelineClient() {
     setEditPipelineOpen(false);
     setEditPipelineId(null);
     await load();
+  }
+
+  function moveEditStage(from: number, to: number) {
+    if (from === to || from < 0 || to < 0) return;
+    setEditStages((arr) => {
+      if (to >= arr.length) return arr;
+      const next = [...arr];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
   }
 
   async function duplicatePipelineById(id: string) {
@@ -684,7 +697,28 @@ export default function PipelineClient() {
             />
             <div style={{ display: "grid", gap: 8 }}>
               {editStages.map((s, i) => (
-                <div key={`${i}-${s}`} style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: 8 }}>
+                <div
+                  key={`${i}-${s}`}
+                  draggable
+                  onDragStart={() => setEditDragIndex(i)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => {
+                    if (editDragIndex != null) moveEditStage(editDragIndex, i);
+                    setEditDragIndex(null);
+                  }}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "auto 1fr auto",
+                    gap: 8,
+                    alignItems: "center",
+                    border: "1px solid #f3f4f6",
+                    borderRadius: 10,
+                    padding: 6,
+                  }}
+                >
+                  <span style={{ cursor: "grab", opacity: 0.7 }} title="גרור לשינוי סדר">
+                    ⋮⋮
+                  </span>
                   <input
                     value={s}
                     onChange={(e) =>
@@ -695,37 +729,18 @@ export default function PipelineClient() {
                   />
                   <button
                     type="button"
-                    onClick={() =>
-                      setEditStages((arr) => {
-                        if (i === 0) return arr;
-                        const next = [...arr];
-                        [next[i - 1], next[i]] = [next[i], next[i - 1]];
-                        return next;
-                      })
-                    }
-                    style={{ padding: "9px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
-                    title="הזז למעלה"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setEditStages((arr) => {
-                        if (i >= arr.length - 1) return arr;
-                        const next = [...arr];
-                        [next[i + 1], next[i]] = [next[i], next[i + 1]];
-                        return next;
-                      })
-                    }
-                    style={{ padding: "9px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
-                    title="הזז למטה"
-                  >
-                    ↓
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditStages((arr) => arr.filter((_, idx) => idx !== i))}
+                    onClick={() => {
+                      if (editStages.length <= 1) {
+                        window.alert("פייפליין חייב להכיל לפחות שלב אחד.");
+                        return;
+                      }
+                      const prevStage = editStages[i - 1] || editStages[0];
+                      const ok = window.confirm(
+                        `למחוק את השלב "${s}"?\nההזדמנויות בשלב זה יעברו לשלב הקודם: "${prevStage}".`
+                      );
+                      if (!ok) return;
+                      setEditStages((arr) => arr.filter((_, idx) => idx !== i));
+                    }}
                     style={{ padding: "9px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", color: "#b91c1c" }}
                     title="מחק שלב"
                   >
@@ -814,9 +829,10 @@ export default function PipelineClient() {
       {selectedOpp && (
         <div style={{ position: "fixed", inset: 0, zIndex: 96 }}>
           <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.2)" }} onMouseDown={() => setSelectedOpp(null)} />
-          <div style={{ position: "absolute", top: 0, left: 0, height: "100%", width: "min(520px, 94vw)", overflow: "auto", background: "#fff", borderRight: "1px solid #e5e7eb", padding: 16 }} onMouseDown={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: 0, marginBottom: 10 }}>{selectedOpp.name}</h3>
-            <div style={{ display: "inline-flex", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 12 }} onMouseDown={(e) => e.stopPropagation()}>
+            <div style={{ width: "min(980px, 96vw)", maxHeight: "92vh", overflow: "auto", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: 16 }}>
+            <h3 style={{ margin: 0, marginBottom: 10, fontSize: 22 }}>{selectedOpp.name}</h3>
+            <div style={{ display: "inline-flex", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden", marginBottom: 10 }}>
               {(["details", "notes", "tasks"] as const).map((t) => (
                 <button key={t} type="button" onClick={() => setOppDetailTab(t)} style={{ border: "none", background: oppDetailTab === t ? "#ede9fe" : "#fff", padding: "8px 10px", cursor: "pointer", fontWeight: 800 }}>
                   {t === "details" ? "פרטים" : t === "notes" ? "פתקים" : "משימות"}
@@ -824,16 +840,52 @@ export default function PipelineClient() {
               ))}
             </div>
             {oppDetailTab === "details" && (
-              <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-                <input value={selectedOpp.name} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, name: e.target.value } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+              <div style={{ marginTop: 4, display: "grid", gap: 16 }}>
+                <div style={{ border: "1px solid #f3f4f6", borderRadius: 12, padding: 12 }}>
+                  <div style={{ fontWeight: 900, marginBottom: 8 }}>Contact details</div>
+                  <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
+                    <input value={selectedOpp.contactName ?? ""} readOnly style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#f9fafb" }} />
+                    <input value={selectedOpp.contactPhone ?? ""} readOnly style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#f9fafb" }} />
+                    <input value={selectedOpp.contactEmail ?? ""} readOnly style={{ gridColumn: "1 / -1", padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#f9fafb" }} />
+                    <select
+                      value={selectedOpp.contactId}
+                      onChange={(e) => setSelectedOpp((x) => (x ? { ...x, contactId: e.target.value } : x))}
+                      style={{ gridColumn: "1 / -1", padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+                    >
+                      {contacts.map((c) => (
+                        <option key={(c.id || c.email || c.phone) as string} value={String(c.id || "")}>
+                          {String(c.name || c.email || c.phone || c.id || "")}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const id = selectedOpp.contactId;
+                        if (!id) return;
+                        window.location.href = `/contacts?openContactId=${encodeURIComponent(id)}`;
+                      }}
+                      style={{ gridColumn: "1 / -1", padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", fontWeight: 800 }}
+                    >
+                      פתח איש קשר
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ border: "1px solid #f3f4f6", borderRadius: 12, padding: 12 }}>
+                  <div style={{ fontWeight: 900, marginBottom: 8 }}>Opportunity details</div>
+                  <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
+                <input value={selectedOpp.name} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, name: e.target.value } : x))} style={{ gridColumn: "1 / -1", padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
                 <select value={selectedOpp.stage} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, stage: e.target.value } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
                   {(selectedPipeline?.stages ?? []).map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
                 <input value={selectedOpp.assignedRep ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, assignedRep: e.target.value } : x))} placeholder="נציג משויך" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
                 {oppCustomFieldIds.map((fid) => (
-                  <input key={fid} value={String((selectedOpp.customValues ?? {})[fid] ?? "")} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, customValues: { ...(x.customValues ?? {}), [fid]: e.target.value } } : x))} placeholder={fid} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                  <input key={fid} value={String((selectedOpp.customValues ?? {})[fid] ?? "")} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, customValues: { ...(x.customValues ?? {}), [fid]: e.target.value } } : x))} placeholder={fid} style={{ gridColumn: "1 / -1", padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
                 ))}
-                <button type="button" onClick={() => void saveOpportunityPatch(selectedOpp.id, { name: selectedOpp.name, stage: selectedOpp.stage, pipelineId: selectedOpp.pipelineId, assignedRep: selectedOpp.assignedRep ?? "", customValues: selectedOpp.customValues ?? {} })} style={{ padding: "9px 12px", borderRadius: 10, border: "none", background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)", color: "#fff", fontWeight: 800, cursor: "pointer" }}>שמור</button>
+                <button type="button" onClick={() => void saveOpportunityPatch(selectedOpp.id, { name: selectedOpp.name, contactId: selectedOpp.contactId, stage: selectedOpp.stage, pipelineId: selectedOpp.pipelineId, assignedRep: selectedOpp.assignedRep ?? "", customValues: selectedOpp.customValues ?? {} })} style={{ gridColumn: "1 / -1", padding: "9px 12px", borderRadius: 10, border: "none", background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)", color: "#fff", fontWeight: 800, cursor: "pointer" }}>Update</button>
+                  </div>
+                </div>
               </div>
             )}
             {oppDetailTab === "notes" && (
@@ -881,7 +933,7 @@ export default function PipelineClient() {
                 }} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}>+ הוסף משימה</button>
               </div>
             )}
-          </div>
+          </div></div>
         </div>
       )}
     </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 type LeadsOk = {
   ok: true;
@@ -55,6 +56,7 @@ function parseCsv(text: string): string[][] {
 }
 
 export default function ContactsClient() {
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -96,6 +98,7 @@ export default function ContactsClient() {
   const [detailTab, setDetailTab] = useState<"details" | "notes" | "tasks">("details");
   const [detail, setDetail] = useState<ContactDetail | null>(null);
   const [savingDetail, setSavingDetail] = useState(false);
+  const openedFromQueryRef = useRef(false);
 
   const query = useMemo(() => {
     const params = new URLSearchParams();
@@ -153,6 +156,15 @@ export default function ContactsClient() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
+
+  useEffect(() => {
+    if (openedFromQueryRef.current) return;
+    const openContactId = searchParams.get("openContactId")?.trim();
+    if (!openContactId) return;
+    openedFromQueryRef.current = true;
+    void openDetailById(openContactId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   useEffect(() => {
     if (!columnFilterOpen) return;
@@ -983,12 +995,14 @@ export default function ContactsClient() {
           <div
             style={{
               position: "absolute",
-              top: 0,
-              left: 0,
-              height: "100%",
-              width: "min(520px, 94vw)",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              width: "min(920px, 96vw)",
+              maxHeight: "92vh",
               background: "#fff",
-              borderRight: "1px solid #e5e7eb",
+              border: "1px solid #e5e7eb",
+              borderRadius: 16,
               boxShadow: "12px 0 30px rgba(0,0,0,0.08)",
               padding: 16,
               overflow: "auto",

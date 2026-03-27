@@ -44,6 +44,7 @@ export async function PATCH(
   try {
     const body = (await req.json()) as {
       name?: string;
+      contactId?: string;
       pipelineId?: string;
       stage?: string;
       value?: number | null;

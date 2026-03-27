@@ -290,6 +290,7 @@ export async function updateOpportunity(
   id: string,
   input: {
     name?: string;
+    contactId?: string;
     pipelineId?: string;
     stage?: string;
     value?: number | null;
@@ -312,6 +313,17 @@ export async function updateOpportunity(
   if (!snap.exists) throw new Error("Opportunity not found");
   const payload: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
   if (input.name !== undefined) payload.name = input.name.trim();
+  if (input.contactId !== undefined) {
+    const nextContactId = input.contactId.trim();
+    if (!nextContactId) throw new Error("contactId cannot be empty");
+    const contactSnap = await getAdminDb().collection("leads").doc(nextContactId).get();
+    if (!contactSnap.exists) throw new Error("Contact not found");
+    const cd = (contactSnap.data() ?? {}) as Record<string, unknown>;
+    payload.contactId = nextContactId;
+    payload.contactName = typeof cd.name === "string" ? cd.name : "";
+    payload.contactEmail = typeof cd.email === "string" ? cd.email : "";
+    payload.contactPhone = typeof cd.phone === "string" ? cd.phone : "";
+  }
   if (input.pipelineId !== undefined) payload.pipelineId = input.pipelineId.trim();
   if (input.stage !== undefined) payload.stage = input.stage.trim();
   if (input.value !== undefined) payload.value = input.value;
@@ -328,13 +340,59 @@ export async function updatePipeline(
   id: string,
   input: { name?: string; stages?: string[] }
 ): Promise<PipelineRecord> {
-  const ref = getAdminDb().collection("pipelines").doc(id);
+  const db = getAdminDb();
+  const ref = db.collection("pipelines").doc(id);
   const snap = await ref.get();
   if (!snap.exists) throw new Error("Pipeline not found");
+  const prev = (snap.data() ?? {}) as Record<string, unknown>;
+  const prevStages = normalizeStages((prev.stages as string[] | undefined) ?? []);
+  const nextStages = input.stages ? normalizeStages(input.stages) : undefined;
   const payload: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
   if (input.name !== undefined) payload.name = input.name.trim();
-  if (input.stages !== undefined) payload.stages = normalizeStages(input.stages);
+  if (nextStages !== undefined) {
+    if (nextStages.length === 0) throw new Error("At least one stage is required");
+    payload.stages = nextStages;
+  }
   await ref.set(payload, { merge: true });
+
+  // If stages were removed, move opportunities from removed stage
+  // to the nearest previous remaining stage (fallback to first stage).
+  if (nextStages) {
+    const nextSet = new Set(nextStages);
+    const removed = prevStages.filter((s) => !nextSet.has(s));
+    if (removed.length) {
+      const opportunitiesSnap = await db
+        .collection("opportunities")
+        .where("pipelineId", "==", id)
+        .get();
+      for (const removedStage of removed) {
+        const removedIdx = prevStages.indexOf(removedStage);
+        let fallback = nextStages[0];
+        for (let i = removedIdx - 1; i >= 0; i--) {
+          const candidate = prevStages[i];
+          if (nextSet.has(candidate)) {
+            fallback = candidate;
+            break;
+          }
+        }
+        const batch = db.batch();
+        let touched = 0;
+        for (const doc of opportunitiesSnap.docs) {
+          const d = (doc.data() ?? {}) as Record<string, unknown>;
+          if (String(d.stage ?? "") === removedStage) {
+            batch.set(
+              doc.ref,
+              { stage: fallback, updatedAt: FieldValue.serverTimestamp() },
+              { merge: true }
+            );
+            touched++;
+          }
+        }
+        if (touched > 0) await batch.commit();
+      }
+    }
+  }
+
   const again = await ref.get();
   const d = (again.data() ?? {}) as Record<string, unknown>;
   return {

@@ -6,6 +6,7 @@ type Pipeline = {
   id: string;
   name: string;
   stages: string[];
+  updatedAt?: string | null;
 };
 
 type Opportunity = {
@@ -73,9 +74,11 @@ export default function PipelineClient() {
   const [oppNotes, setOppNotes] = useState<NoteItem[]>([]);
   const [oppTasks, setOppTasks] = useState<TaskItem[]>([]);
   const [oppCustomFieldIds, setOppCustomFieldIds] = useState<string[]>([]);
-  const [editingPipelineId, setEditingPipelineId] = useState<string | null>(null);
+  const [pipelineMenuOpenId, setPipelineMenuOpenId] = useState<string | null>(null);
+  const [editPipelineOpen, setEditPipelineOpen] = useState(false);
+  const [editPipelineId, setEditPipelineId] = useState<string | null>(null);
   const [editPipelineName, setEditPipelineName] = useState("");
-  const [editPipelineStagesText, setEditPipelineStagesText] = useState("");
+  const [editStages, setEditStages] = useState<string[]>([]);
 
   const selectedPipeline = useMemo(
     () => pipelines.find((p) => p.id === selectedPipelineId) ?? null,
@@ -316,8 +319,91 @@ export default function PipelineClient() {
     return String((o.customValues ?? {})[col] ?? "");
   }
 
+  function openPipelineEdit(p: Pipeline) {
+    setEditPipelineId(p.id);
+    setEditPipelineName(p.name);
+    setEditStages(p.stages.length ? [...p.stages] : [""]);
+    setPipelineMenuOpenId(null);
+    setEditPipelineOpen(true);
+  }
+
+  async function savePipelineEdit() {
+    if (!editPipelineId) return;
+    const res = await fetch(
+      `/api/opportunities/pipelines/${encodeURIComponent(editPipelineId)}`,
+      {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editPipelineName,
+          stages: editStages,
+        }),
+      }
+    );
+    const j = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+    };
+    if (!res.ok || !j.ok) {
+      setErr(j.error ?? "עדכון פייפליין נכשל");
+      return;
+    }
+    setEditPipelineOpen(false);
+    setEditPipelineId(null);
+    await load();
+  }
+
+  async function duplicatePipelineById(id: string) {
+    const res = await fetch(
+      `/api/opportunities/pipelines/${encodeURIComponent(id)}`,
+      {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "duplicate" }),
+      }
+    );
+    const j = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      pipeline?: Pipeline;
+    };
+    if (!res.ok || !j.ok) {
+      setErr(j.error ?? "שכפול פייפליין נכשל");
+      return;
+    }
+    setPipelineMenuOpenId(null);
+    await load();
+  }
+
+  async function deletePipelineById(id: string) {
+    const ok = window.confirm("למחוק את הפייפליין הזה?");
+    if (!ok) return;
+    const res = await fetch(
+      `/api/opportunities/pipelines/${encodeURIComponent(id)}`,
+      {
+        method: "DELETE",
+        credentials: "include",
+      }
+    );
+    const j = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+    };
+    if (!res.ok || !j.ok) {
+      setErr(j.error ?? "מחיקת פייפליין נכשלה");
+      return;
+    }
+    setPipelineMenuOpenId(null);
+    if (selectedPipelineId === id) {
+      setSelectedPipelineId("");
+    }
+    await load();
+  }
+
   return (
-    <div>
+    <div style={{ width: "100%", maxWidth: "100%", minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
         <h1 style={{ margin: 0, fontSize: 24, fontWeight: 900 }}>ניהול הזדמנויות</h1>
         <div style={{ display: "inline-flex", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 4 }}>
@@ -376,7 +462,18 @@ export default function PipelineClient() {
       {tab === "opportunities" && (
         <>
           {viewMode === "list" ? (
-            <div style={{ marginTop: 14, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, overflow: "auto" }}>
+            <div
+              style={{
+                marginTop: 14,
+                background: "#fff",
+                border: "1px solid #e5e7eb",
+                borderRadius: 16,
+                width: "100%",
+                maxWidth: "100%",
+                overflowX: "auto",
+                overflowY: "hidden",
+              }}
+            >
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 980 }}>
                 <thead>
                   <tr>
@@ -406,7 +503,7 @@ export default function PipelineClient() {
               </table>
             </div>
           ) : (
-            <div style={{ marginTop: 16, overflowX: "auto", paddingBottom: 10 }}>
+            <div style={{ marginTop: 16, overflowX: "auto", maxWidth: "100%", paddingBottom: 10 }}>
               <div style={{ display: "flex", gap: 12, minWidth: 900 }}>
                 {(selectedPipeline?.stages ?? []).map((stage) => {
                   const list = grouped[stage] ?? [];
@@ -449,11 +546,22 @@ export default function PipelineClient() {
       )}
 
       {tab === "pipelines" && (
-        <div style={{ marginTop: 14, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, overflow: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
+        <div
+          style={{
+            marginTop: 14,
+            background: "#fff",
+            border: "1px solid #e5e7eb",
+            borderRadius: 16,
+            width: "100%",
+            maxWidth: "100%",
+            overflowX: "auto",
+            overflowY: "hidden",
+          }}
+        >
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 860 }}>
             <thead>
               <tr>
-                {["Pipeline name", "No. of stages"].map((h) => (
+                {["Actions", "Updated On", "No. of stages", "Pipeline name"].map((h) => (
                   <th key={h} style={{ textAlign: "right", padding: "10px 12px", borderBottom: "2px solid #e5e7eb", background: "#f8fafc", fontSize: 12, fontWeight: 900, whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
@@ -461,55 +569,51 @@ export default function PipelineClient() {
             <tbody>
               {pipelines.map((p) => (
                 <tr key={p.id}>
-                  <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>
-                    {editingPipelineId === p.id ? (
-                      <div style={{ display: "grid", gap: 8 }}>
-                        <input value={editPipelineName} onChange={(e) => setEditPipelineName(e.target.value)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
-                        <input value={editPipelineStagesText} onChange={(e) => setEditPipelineStagesText(e.target.value)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
-                        <div style={{ display: "flex", gap: 8 }}>
-                          <button type="button" onClick={async () => {
-                            const res = await fetch(`/api/opportunities/pipelines/${encodeURIComponent(p.id)}`, {
-                              method: "PATCH",
-                              credentials: "include",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({
-                                name: editPipelineName,
-                                stages: editPipelineStagesText.split(",").map((s) => s.trim()).filter(Boolean),
-                              }),
-                            });
-                            const j = await res.json().catch(() => ({}));
-                            if (!res.ok || !j.ok) {
-                              setErr(j.error ?? "עדכון פייפליין נכשל");
-                              return;
-                            }
-                            setEditingPipelineId(null);
-                            await load();
-                          }} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}>שמור</button>
-                          <button type="button" onClick={() => setEditingPipelineId(null)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}>ביטול</button>
-                        </div>
+                  <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6", position: "relative" }}>
+                    <button
+                      type="button"
+                      onClick={() => setPipelineMenuOpenId((x) => (x === p.id ? null : p.id))}
+                      style={{ border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff", padding: "4px 8px", cursor: "pointer" }}
+                      title="פעולות"
+                    >
+                      ⋮
+                    </button>
+                    {pipelineMenuOpenId === p.id && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: 34,
+                          right: 12,
+                          background: "#fff",
+                          border: "1px solid #e5e7eb",
+                          borderRadius: 10,
+                          boxShadow: "0 12px 24px rgba(0,0,0,0.08)",
+                          padding: 6,
+                          zIndex: 20,
+                          minWidth: 160,
+                        }}
+                      >
+                        <button type="button" onClick={() => openPipelineEdit(p)} style={{ display: "block", width: "100%", textAlign: "right", border: "none", background: "transparent", padding: "8px 10px", cursor: "pointer" }}>
+                          עריכת פייפליין
+                        </button>
+                        <button type="button" onClick={() => void duplicatePipelineById(p.id)} style={{ display: "block", width: "100%", textAlign: "right", border: "none", background: "transparent", padding: "8px 10px", cursor: "pointer" }}>
+                          שכפול
+                        </button>
+                        <button type="button" onClick={() => void deletePipelineById(p.id)} style={{ display: "block", width: "100%", textAlign: "right", border: "none", background: "transparent", padding: "8px 10px", cursor: "pointer", color: "#b91c1c" }}>
+                          מחיקה
+                        </button>
                       </div>
-                    ) : (
-                      <>
-                        <div style={{ fontWeight: 800 }}>{p.name}</div>
-                        <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{p.stages.join(" -> ")}</div>
-                      </>
                     )}
                   </td>
                   <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>
+                    {p.updatedAt ? String(p.updatedAt).slice(0, 10) : "—"}
+                  </td>
+                  <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>
                     {p.stages.length}
-                    {editingPipelineId !== p.id && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingPipelineId(p.id);
-                          setEditPipelineName(p.name);
-                          setEditPipelineStagesText(p.stages.join(", "));
-                        }}
-                        style={{ marginInlineStart: 8, padding: "6px 8px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
-                      >
-                        ערוך
-                      </button>
-                    )}
+                  </td>
+                  <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>
+                    <div style={{ fontWeight: 800 }}>{p.name}</div>
+                    <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{p.stages.join(" -> ")}</div>
                   </td>
                 </tr>
               ))}
@@ -537,6 +641,115 @@ export default function PipelineClient() {
             <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
               <button type="button" onClick={() => void createPipeline()} style={{ padding: "10px 12px", borderRadius: 12, border: "none", background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)", color: "#fff", cursor: "pointer", fontWeight: 800 }}>Create</button>
               <button type="button" onClick={() => setCreatePipelineOpen(false)} style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editPipelineOpen && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 90 }}>
+          <div
+            style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.2)" }}
+            onMouseDown={() => setEditPipelineOpen(false)}
+          />
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              right: 0,
+              width: "min(520px, 94vw)",
+              height: "100%",
+              background: "#fff",
+              borderLeft: "1px solid #e5e7eb",
+              boxShadow: "-12px 0 30px rgba(0,0,0,0.08)",
+              padding: 16,
+              overflow: "auto",
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: 0, marginBottom: 10 }}>עריכת פייפליין</h3>
+            <input
+              value={editPipelineName}
+              onChange={(e) => setEditPipelineName(e.target.value)}
+              placeholder="שם פייפליין"
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 12, border: "1px solid #e5e7eb", marginBottom: 10 }}
+            />
+            <div style={{ display: "grid", gap: 8 }}>
+              {editStages.map((s, i) => (
+                <div key={`${i}-${s}`} style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: 8 }}>
+                  <input
+                    value={s}
+                    onChange={(e) =>
+                      setEditStages((arr) => arr.map((x, idx) => (idx === i ? e.target.value : x)))
+                    }
+                    placeholder={`Stage ${i + 1}`}
+                    style={{ padding: "9px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditStages((arr) => {
+                        if (i === 0) return arr;
+                        const next = [...arr];
+                        [next[i - 1], next[i]] = [next[i], next[i - 1]];
+                        return next;
+                      })
+                    }
+                    style={{ padding: "9px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
+                    title="הזז למעלה"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditStages((arr) => {
+                        if (i >= arr.length - 1) return arr;
+                        const next = [...arr];
+                        [next[i + 1], next[i]] = [next[i], next[i + 1]];
+                        return next;
+                      })
+                    }
+                    style={{ padding: "9px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
+                    title="הזז למטה"
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditStages((arr) => arr.filter((_, idx) => idx !== i))}
+                    style={{ padding: "9px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", color: "#b91c1c" }}
+                    title="מחק שלב"
+                  >
+                    מחק
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <button
+                type="button"
+                onClick={() => setEditStages((arr) => [...arr, ""])}
+                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
+              >
+                Add Stage +
+              </button>
+            </div>
+            <div style={{ marginTop: 14, display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => void savePipelineEdit()}
+                style={{ padding: "10px 12px", borderRadius: 12, border: "none", background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)", color: "#fff", cursor: "pointer", fontWeight: 800 }}
+              >
+                שמור שינויים
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditPipelineOpen(false)}
+                style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
+              >
+                ביטול
+              </button>
             </div>
           </div>
         </div>

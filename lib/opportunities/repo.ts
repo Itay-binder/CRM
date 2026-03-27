@@ -314,3 +314,29 @@ export async function updatePipeline(
   };
 }
 
+export async function duplicatePipeline(id: string): Promise<PipelineRecord> {
+  const db = getAdminDb();
+  const src = await db.collection("pipelines").doc(id).get();
+  if (!src.exists) throw new Error("Pipeline not found");
+  const d = (src.data() ?? {}) as Record<string, unknown>;
+  const name = String(d.name ?? "").trim();
+  const stages = normalizeStages((d.stages as string[] | undefined) ?? []);
+  if (!name || stages.length === 0) throw new Error("Pipeline has invalid data");
+  return createPipeline({
+    name: `${name} (copy)`,
+    stages,
+  });
+}
+
+export async function deletePipeline(id: string): Promise<void> {
+  if (id === "default-sales") {
+    throw new Error("Default pipeline cannot be deleted");
+  }
+  const db = getAdminDb();
+  const snap = await db.collection("opportunities").where("pipelineId", "==", id).limit(1).get();
+  if (!snap.empty) {
+    throw new Error("Cannot delete pipeline with existing opportunities");
+  }
+  await db.collection("pipelines").doc(id).delete();
+}
+

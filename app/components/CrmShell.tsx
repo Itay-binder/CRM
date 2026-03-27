@@ -57,7 +57,17 @@ export default function CrmShell({ email, children }: Props) {
         </nav>
       </aside>
 
-      <section style={{ flex: 1, padding: 18 }}>{children}</section>
+      <section
+        style={{
+          flex: 1,
+          minWidth: 0,
+          maxWidth: "100%",
+          overflowX: "hidden",
+          padding: 18,
+        }}
+      >
+        {children}
+      </section>
     </div>
   );
 }

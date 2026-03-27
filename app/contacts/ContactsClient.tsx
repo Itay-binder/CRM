@@ -425,7 +425,7 @@ export default function ContactsClient() {
   }
 
   return (
-    <div>
+    <div style={{ width: "100%", maxWidth: "100%", minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0, fontSize: 24, fontWeight: 900 }}>אנשי קשר</h1>
         <span
@@ -543,7 +543,17 @@ export default function ContactsClient() {
         </div>
       </div>
 
-      <div style={{ marginTop: 14, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, overflow: "hidden" }}>
+      <div
+        style={{
+          marginTop: 14,
+          background: "#fff",
+          border: "1px solid #e5e7eb",
+          borderRadius: 16,
+          overflow: "hidden",
+          width: "100%",
+          maxWidth: "100%",
+        }}
+      >
         <div style={{ padding: 14, borderBottom: "1px solid #f3f4f6" }}>
           <div style={{ fontWeight: 900, fontSize: 18 }}>טבלת אנשי קשר</div>
           <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
@@ -558,8 +568,8 @@ export default function ContactsClient() {
         )}
 
         {!loading && headers.length > 0 ? (
-          <div style={{ overflow: "auto", maxHeight: 600 }}>
-            <table style={{ width: "max-content", borderCollapse: "collapse" }}>
+          <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: 600, maxWidth: "100%" }}>
+            <table style={{ minWidth: 980, width: "max-content", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
                   {displayHeaders.map((h) => (

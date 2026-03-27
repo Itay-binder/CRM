@@ -50,6 +50,13 @@ function normalizeFieldId(raw: string): string {
     .replace(/[^a-z0-9_]/g, "");
 }
 
+function ensureEntityPrefixedFieldId(entityType: CustomFieldEntity, raw: string): string {
+  const normalized = normalizeFieldId(raw);
+  const base = normalized.replace(/^(contact|opportunity|opportiunity)_+/g, "");
+  if (!base) return "";
+  return `${entityType}_${base}`;
+}
+
 function normalizeOptions(options?: string[]): string[] | undefined {
   if (!options?.length) return undefined;
   const out = options.map((s) => s.trim()).filter(Boolean);
@@ -86,7 +93,10 @@ export async function upsertCustomField(input: UpsertCustomFieldInput): Promise<
   const db = getAdminDb();
   const label = input.label.trim();
   if (!label) throw new Error("label is required");
-  const fieldId = normalizeFieldId(input.fieldId?.trim() || label);
+  const fieldId = ensureEntityPrefixedFieldId(
+    input.entityType,
+    input.fieldId?.trim() || label
+  );
   if (!fieldId) throw new Error("Invalid fieldId");
 
   const now = FieldValue.serverTimestamp();
@@ -141,8 +151,11 @@ export async function normalizeExistingCustomFieldIds(): Promise<{
   let updatedFields = 0;
 
   for (const f of fields) {
-    const normalizedBase = normalizeFieldId(f.fieldId || f.label);
-    const desired = normalizeFieldId(`${f.entityType}_${normalizedBase}`);
+    const normalizedBase = normalizeFieldId(f.fieldId || f.label).replace(
+      /^(contact|opportunity|opportiunity)_+/g,
+      ""
+    );
+    const desired = ensureEntityPrefixedFieldId(f.entityType, normalizedBase);
     if (!desired || desired === f.fieldId) continue;
 
     const srcRef = db.collection("customFields").doc(f.fieldId);

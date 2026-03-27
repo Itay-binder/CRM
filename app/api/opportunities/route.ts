@@ -50,9 +50,13 @@ export async function POST(req: NextRequest) {
       email?: string;
       phone?: string;
       utmSource?: string;
+      utm_source?: string;
       utmCampaign?: string;
+      utm_campaign?: string;
       utmMedium?: string;
+      utm_medium?: string;
       utmContent?: string;
+      utm_content?: string;
       landingpage?: string;
       tags?: string[];
       customValues?: Record<string, unknown>;
@@ -71,10 +75,10 @@ export async function POST(req: NextRequest) {
       value: body.value,
       email: body.email,
       phone: body.phone,
-      utmSource: body.utmSource,
-      utmCampaign: body.utmCampaign,
-      utmMedium: body.utmMedium,
-      utmContent: body.utmContent,
+      utmSource: body.utmSource ?? body.utm_source,
+      utmCampaign: body.utmCampaign ?? body.utm_campaign,
+      utmMedium: body.utmMedium ?? body.utm_medium,
+      utmContent: body.utmContent ?? body.utm_content,
       landingpage: body.landingpage,
       tags: body.tags,
       customValues,

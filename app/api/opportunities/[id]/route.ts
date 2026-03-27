@@ -52,9 +52,13 @@ export async function PATCH(
       email?: string;
       phone?: string;
       utmSource?: string;
+      utm_source?: string;
       utmCampaign?: string;
+      utm_campaign?: string;
       utmMedium?: string;
+      utm_medium?: string;
       utmContent?: string;
+      utm_content?: string;
       landingpage?: string;
       tags?: string[];
       assignedRep?: string;
@@ -69,6 +73,10 @@ export async function PATCH(
 
     const opportunity = await updateOpportunity(id, {
       ...body,
+      utmSource: body.utmSource ?? body.utm_source,
+      utmCampaign: body.utmCampaign ?? body.utm_campaign,
+      utmMedium: body.utmMedium ?? body.utm_medium,
+      utmContent: body.utmContent ?? body.utm_content,
       customValues,
     });
     return NextResponse.json({ ok: true, opportunity });

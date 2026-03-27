@@ -36,31 +36,31 @@ type SystemField = {
 };
 
 const CONTACT_SYSTEM_FIELDS: SystemField[] = [
-  { kind: "system", entityType: "contact", label: "שם מלא", fieldId: "name", type: "text", isRequired: true, isActive: true },
-  { kind: "system", entityType: "contact", label: "מייל", fieldId: "email", type: "email", isRequired: false, isActive: true },
-  { kind: "system", entityType: "contact", label: "פלאפון", fieldId: "phone", type: "phone", isRequired: false, isActive: true },
-  { kind: "system", entityType: "contact", label: "סטטוס", fieldId: "status", type: "select", isRequired: false, isActive: true, options: ["פתוח", "זכיה", "הפסד"] },
-  { kind: "system", entityType: "contact", label: "נציג משויך", fieldId: "assignedRep", type: "select", isRequired: false, isActive: true },
-  { kind: "system", entityType: "contact", label: "תאריך יצירה", fieldId: "createdAt", type: "readonly", isRequired: false, isActive: true },
+  { kind: "system", entityType: "contact", label: "שם מלא", fieldId: "contact_name", type: "text", isRequired: true, isActive: true },
+  { kind: "system", entityType: "contact", label: "מייל", fieldId: "contact_email", type: "email", isRequired: false, isActive: true },
+  { kind: "system", entityType: "contact", label: "פלאפון", fieldId: "contact_phone", type: "phone", isRequired: false, isActive: true },
+  { kind: "system", entityType: "contact", label: "סטטוס", fieldId: "contact_status", type: "select", isRequired: false, isActive: true, options: ["פתוח", "זכיה", "הפסד"] },
+  { kind: "system", entityType: "contact", label: "נציג משויך", fieldId: "contact_assigned_rep", type: "select", isRequired: false, isActive: true },
+  { kind: "system", entityType: "contact", label: "תאריך יצירה", fieldId: "contact_created_at", type: "readonly", isRequired: false, isActive: true },
 ];
 
 const OPPORTUNITY_SYSTEM_FIELDS: SystemField[] = [
-  { kind: "system", entityType: "opportunity", label: "שם הזדמנות", fieldId: "name", type: "text", isRequired: true, isActive: true },
-  { kind: "system", entityType: "opportunity", label: "פייפליין", fieldId: "pipelineId", type: "select", isRequired: true, isActive: true },
-  { kind: "system", entityType: "opportunity", label: "שלב בפייפליין", fieldId: "stage", type: "select", isRequired: true, isActive: true },
-  { kind: "system", entityType: "opportunity", label: "סטטוס", fieldId: "status", type: "select", isRequired: false, isActive: true, options: ["פתוח", "זכיה", "הפסד"] },
-  { kind: "system", entityType: "opportunity", label: "נציג משויך", fieldId: "assignedRep", type: "select", isRequired: false, isActive: true },
-  { kind: "system", entityType: "opportunity", label: "מייל", fieldId: "email", type: "email", isRequired: false, isActive: true },
-  { kind: "system", entityType: "opportunity", label: "פלאפון", fieldId: "phone", type: "phone", isRequired: false, isActive: true },
-  { kind: "system", entityType: "opportunity", label: "utm_source", fieldId: "utmSource", type: "text", isRequired: false, isActive: true },
-  { kind: "system", entityType: "opportunity", label: "utm_campaign", fieldId: "utmCampaign", type: "text", isRequired: false, isActive: true },
-  { kind: "system", entityType: "opportunity", label: "utm_medium", fieldId: "utmMedium", type: "text", isRequired: false, isActive: true },
-  { kind: "system", entityType: "opportunity", label: "utm_content", fieldId: "utmContent", type: "text", isRequired: false, isActive: true },
-  { kind: "system", entityType: "opportunity", label: "landingpage", fieldId: "landingpage", type: "text", isRequired: false, isActive: true },
-  { kind: "system", entityType: "opportunity", label: "תגיות", fieldId: "tags", type: "select", isRequired: false, isActive: true },
-  { kind: "system", entityType: "opportunity", label: "תאריך יצירה", fieldId: "createdAt", type: "readonly", isRequired: false, isActive: true },
-  { kind: "system", entityType: "opportunity", label: "תאריך עדכון", fieldId: "updatedAt", type: "readonly", isRequired: false, isActive: true },
-  { kind: "system", entityType: "opportunity", label: "תאריך ליד אחרון", fieldId: "lastLeadAt", type: "readonly", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "שם הזדמנות", fieldId: "opportunity_name", type: "text", isRequired: true, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "פייפליין", fieldId: "opportunity_pipeline_id", type: "select", isRequired: true, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "שלב בפייפליין", fieldId: "opportunity_stage", type: "select", isRequired: true, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "סטטוס", fieldId: "opportunity_status", type: "select", isRequired: false, isActive: true, options: ["פתוח", "זכיה", "הפסד"] },
+  { kind: "system", entityType: "opportunity", label: "נציג משויך", fieldId: "opportunity_assigned_rep", type: "select", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "מייל", fieldId: "opportunity_email", type: "email", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "פלאפון", fieldId: "opportunity_phone", type: "phone", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "utm_source", fieldId: "opportunity_utm_source", type: "text", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "utm_campaign", fieldId: "opportunity_utm_campaign", type: "text", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "utm_medium", fieldId: "opportunity_utm_medium", type: "text", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "utm_content", fieldId: "opportunity_utm_content", type: "text", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "landingpage", fieldId: "opportunity_landingpage", type: "text", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "תגיות", fieldId: "opportunity_tags", type: "select", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "תאריך יצירה", fieldId: "opportunity_created_at", type: "readonly", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "תאריך עדכון", fieldId: "opportunity_updated_at", type: "readonly", isRequired: false, isActive: true },
+  { kind: "system", entityType: "opportunity", label: "תאריך ליד אחרון", fieldId: "opportunity_last_lead_at", type: "readonly", isRequired: false, isActive: true },
 ];
 
 export default function FieldsClient() {

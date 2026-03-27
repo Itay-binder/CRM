@@ -78,6 +78,8 @@ export default function FieldsClient() {
   const [isActive, setIsActive] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+  const [deletingFieldId, setDeletingFieldId] = useState<string | null>(null);
+  const [normalizingIds, setNormalizingIds] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -177,6 +179,67 @@ export default function FieldsClient() {
     }
   }
 
+  async function removeField(fieldIdToDelete: string) {
+    const ok = window.confirm(`למחוק את השדה "${fieldIdToDelete}"?`);
+    if (!ok) return;
+    setDeletingFieldId(fieldIdToDelete);
+    setErr(null);
+    try {
+      const res = await fetch("/api/custom-fields", {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fieldId: fieldIdToDelete }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) {
+        setErr(j.error ?? "מחיקת שדה נכשלה");
+        return;
+      }
+      if (editingFieldId === fieldIdToDelete) resetForm();
+      await load();
+    } catch {
+      setErr("מחיקת שדה נכשלה");
+    } finally {
+      setDeletingFieldId(null);
+    }
+  }
+
+  async function normalizeFieldIds() {
+    const ok = window.confirm(
+      "לסדר את מזהי השדות לפורמט contact_xxx / opportunity_xxx?\nהפעולה תעדכן גם נתונים קיימים."
+    );
+    if (!ok) return;
+    setNormalizingIds(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/custom-fields", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "normalize_ids" }),
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        result?: { updatedFields: number; touchedContacts: number; touchedOpportunities: number };
+      };
+      if (!res.ok || !j.ok) {
+        setErr(j.error ?? "סידור מזהים נכשל");
+        return;
+      }
+      await load();
+      const updated = j.result?.updatedFields ?? 0;
+      const contacts = j.result?.touchedContacts ?? 0;
+      const opps = j.result?.touchedOpportunities ?? 0;
+      window.alert(`סידור הושלם: ${updated} שדות, ${contacts} אנשי קשר, ${opps} הזדמנויות.`);
+    } catch {
+      setErr("סידור מזהים נכשל");
+    } finally {
+      setNormalizingIds(false);
+    }
+  }
+
   function startEditField(f: CustomField) {
     setEditingFieldId(f.fieldId);
     setEntityType(f.entityType);
@@ -222,16 +285,21 @@ export default function FieldsClient() {
             <option value="opportunity">Opportunity</option>
           </select>
           <div style={{ flex: 1 }} />
-          <label style={{ fontWeight: 700 }}>תצוגה בטבלה:</label>
-          <select
-            value={scope}
-            onChange={(e) => setScope(e.target.value as FieldScope)}
-            style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+          <button
+            type="button"
+            onClick={() => void normalizeFieldIds()}
+            disabled={normalizingIds}
+            style={{
+              padding: "8px 10px",
+              borderRadius: 10,
+              border: "1px solid #e5e7eb",
+              background: "#fff",
+              cursor: "pointer",
+              fontWeight: 700,
+            }}
           >
-            <option value="all">הכל</option>
-            <option value="contact">אנשי קשר</option>
-            <option value="opportunity">הזדמנויות</option>
-          </select>
+            {normalizingIds ? "מסדר מזהים..." : "סידור מזהים אוטומטי"}
+          </button>
         </div>
 
         <div
@@ -256,6 +324,7 @@ export default function FieldsClient() {
             value={fieldId}
             onChange={(e) => setFieldId(e.target.value)}
             placeholder="fieldId (אופציונלי, ייווצר אוטומטית)"
+            disabled={Boolean(editingFieldId)}
             style={{
               padding: "10px 12px",
               borderRadius: 10,
@@ -360,6 +429,35 @@ export default function FieldsClient() {
           overflow: "auto",
         }}
       >
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 12, borderBottom: "1px solid #f3f4f6" }}>
+          <span style={{ fontWeight: 800 }}>תיקיות:</span>
+          {([
+            { id: "all", label: "כל השדות" },
+            { id: "contact", label: "תיקיית אנשי קשר" },
+            { id: "opportunity", label: "תיקיית הזדמנויות" },
+          ] as Array<{ id: FieldScope; label: string }>).map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setScope(f.id)}
+              style={{
+                border: "1px solid #e5e7eb",
+                background: scope === f.id ? "#ede9fe" : "#fff",
+                borderRadius: 999,
+                padding: "6px 10px",
+                cursor: "pointer",
+                fontWeight: 700,
+                fontSize: 12,
+              }}
+            >
+              {f.label}
+            </button>
+          ))}
+          <div style={{ flex: 1 }} />
+          <span style={{ color: "#6b7280", fontSize: 12 }}>
+            {filteredSystemRows.length + filteredCustomRows.length} שדות
+          </span>
+        </div>
         {err && (
           <div
             style={{
@@ -444,6 +542,22 @@ export default function FieldsClient() {
                     }}
                   >
                     עריכה
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void removeField(f.fieldId)}
+                    disabled={deletingFieldId === f.fieldId}
+                    style={{
+                      border: "1px solid #fecaca",
+                      color: "#b91c1c",
+                      borderRadius: 8,
+                      padding: "6px 8px",
+                      background: "#fff",
+                      cursor: "pointer",
+                      marginInlineStart: 8,
+                    }}
+                  >
+                    {deletingFieldId === f.fieldId ? "מוחק..." : "מחיקה"}
                   </button>
                 </td>
               </tr>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { signOut } from "firebase/auth";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 
@@ -17,6 +17,7 @@ function avatarLetter(email: string | null | undefined): string {
 
 export default function UserMenu({ email }: Props) {
   const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
 
   const onLogout = async () => {
     setOpen(false);
@@ -31,8 +32,19 @@ export default function UserMenu({ email }: Props) {
 
   const letter = useMemo(() => avatarLetter(email), [email]);
 
+  useEffect(() => {
+    if (!open) return;
+    function onDocMouseDown(e: MouseEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, [open]);
+
   return (
-    <div style={{ position: "relative" }}>
+    <div style={{ position: "relative" }} ref={wrapRef}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

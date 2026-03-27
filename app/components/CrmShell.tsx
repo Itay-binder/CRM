@@ -41,19 +41,12 @@ export default function CrmShell({ email, children }: Props) {
           padding: 16,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
-          <div
-            style={{
-              width: 38,
-              height: 38,
-              borderRadius: 12,
-              background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)",
-            }}
-          />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 18 }}>
           <div style={{ lineHeight: 1.1 }}>
             <div style={{ fontWeight: 800 }}>Liftygo CRM</div>
             <div style={{ fontSize: 12, color: "#6b7280" }}>MVP</div>
           </div>
+          <UserMenu email={email} />
         </div>
 
         <nav style={{ display: "grid", gap: 8, marginTop: 8 }}>
@@ -64,19 +57,7 @@ export default function CrmShell({ email, children }: Props) {
         </nav>
       </aside>
 
-      <section style={{ flex: 1, padding: 18 }}>
-        <header
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "flex-start",
-            marginBottom: 12,
-          }}
-        >
-          <UserMenu email={email} />
-        </header>
-        {children}
-      </section>
+      <section style={{ flex: 1, padding: 18 }}>{children}</section>
     </div>
   );
 }

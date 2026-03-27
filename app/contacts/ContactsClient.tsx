@@ -12,7 +12,24 @@ type LeadsOk = {
 type LeadsErr = { ok: false; error: string };
 
 type SortDir = "asc" | "desc";
-type AdvOp = "contains" | "equals" | "startsWith" | "isEmpty" | "notEmpty";
+type AdvOp =
+  | "contains"
+  | "equals"
+  | "startsWith"
+  | "endsWith"
+  | "notEquals"
+  | "isEmpty"
+  | "notEmpty"
+  | "numEq"
+  | "numGt"
+  | "numGte"
+  | "numLt"
+  | "numLte"
+  | "dateOn"
+  | "dateBefore"
+  | "dateAfter";
+type AdvLogic = "and" | "or";
+type FieldKind = "text" | "number" | "date" | "select";
 type AdvFilter = { id: string; field: string; op: AdvOp; value: string };
 type NoteItem = { id: string; text: string; createdAt: string; createdBy?: string };
 type TaskItem = {
@@ -55,6 +72,40 @@ function parseCsv(text: string): string[][] {
   return lines.map((l) => l.split(",").map((x) => x.trim()));
 }
 
+const ADV_OPS_BY_KIND: Record<FieldKind, AdvOp[]> = {
+  text: ["contains", "equals", "startsWith", "endsWith", "notEquals", "isEmpty", "notEmpty"],
+  number: ["numEq", "numGt", "numGte", "numLt", "numLte", "isEmpty", "notEmpty"],
+  date: ["dateOn", "dateBefore", "dateAfter", "isEmpty", "notEmpty"],
+  select: ["equals", "notEquals", "isEmpty", "notEmpty"],
+};
+
+const ADV_OP_LABEL: Record<AdvOp, string> = {
+  contains: "כולל",
+  equals: "שווה בדיוק",
+  startsWith: "מתחיל ב...",
+  endsWith: "מסתיים ב...",
+  notEquals: "שונה מ...",
+  isEmpty: "ריק",
+  notEmpty: "לא ריק",
+  numEq: "שווה ל...",
+  numGt: "גדול מ...",
+  numGte: "גדול/שווה ל...",
+  numLt: "קטן מ...",
+  numLte: "קטן/שווה ל...",
+  dateOn: "בתאריך",
+  dateBefore: "מוקדם יותר מ...",
+  dateAfter: "מאוחר יותר מ...",
+};
+
+function asDateKey(raw: string): string | null {
+  const s = raw.trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const t = Date.parse(s);
+  if (Number.isNaN(t)) return null;
+  return new Date(t).toISOString().slice(0, 10);
+}
+
 export default function ContactsClient() {
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
@@ -76,7 +127,9 @@ export default function ContactsClient() {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
 
   const [advOpen, setAdvOpen] = useState(false);
+  const [advLogic, setAdvLogic] = useState<AdvLogic>("and");
   const [advFilters, setAdvFilters] = useState<AdvFilter[]>([]);
+  const [draftAdvLogic, setDraftAdvLogic] = useState<AdvLogic>("and");
   const [draftAdvFilters, setDraftAdvFilters] = useState<AdvFilter[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -195,6 +248,102 @@ export default function ContactsClient() {
     })();
   }, []);
 
+  const fieldKinds = useMemo(() => {
+    const out: Record<string, FieldKind> = {};
+    for (const h of headers) {
+      const key = h.trim().toLowerCase();
+      const values = rows
+        .map((r) => String(r[h] ?? "").trim())
+        .filter(Boolean)
+        .slice(0, 80);
+      if (key === "status" || key === "assignedrep") {
+        out[h] = "select";
+        continue;
+      }
+      if (
+        key.includes("createdat") ||
+        key.includes("updatedat") ||
+        key.includes("lastleadat") ||
+        key.endsWith("date")
+      ) {
+        out[h] = "date";
+        continue;
+      }
+      if (
+        values.length > 0 &&
+        !key.includes("phone") &&
+        values.every((v) => !Number.isNaN(Number(v)))
+      ) {
+        out[h] = "number";
+        continue;
+      }
+      if (
+        values.length > 0 &&
+        values.every((v) => asDateKey(v) !== null)
+      ) {
+        out[h] = "date";
+        continue;
+      }
+      out[h] = "text";
+    }
+    return out;
+  }, [headers, rows]);
+
+  const selectFieldValues = useMemo(() => {
+    const out: Record<string, string[]> = {};
+    for (const h of headers) {
+      if (fieldKinds[h] !== "select") continue;
+      const uniq = Array.from(
+        new Set(
+          rows
+            .map((r) => String(r[h] ?? "").trim())
+            .filter(Boolean)
+        )
+      );
+      out[h] = uniq.sort((a, b) => a.localeCompare(b, "he"));
+    }
+    return out;
+  }, [headers, rows, fieldKinds]);
+
+  function defaultOpForField(field: string): AdvOp {
+    const kind = fieldKinds[field] ?? "text";
+    return ADV_OPS_BY_KIND[kind][0] ?? "contains";
+  }
+
+  function evaluateAdvFilter(row: Record<string, string>, f: AdvFilter): boolean {
+    const raw = String(row[f.field] ?? "");
+    const v = raw.trim();
+    const val = f.value.trim();
+    const vN = normalize(v);
+    const cN = normalize(val);
+    if (f.op === "isEmpty") return v === "";
+    if (f.op === "notEmpty") return v !== "";
+    if (f.op === "contains") return vN.includes(cN);
+    if (f.op === "equals") return vN === cN;
+    if (f.op === "startsWith") return vN.startsWith(cN);
+    if (f.op === "endsWith") return vN.endsWith(cN);
+    if (f.op === "notEquals") return vN !== cN;
+    if (["numEq", "numGt", "numGte", "numLt", "numLte"].includes(f.op)) {
+      const n1 = Number(v);
+      const n2 = Number(val);
+      if (Number.isNaN(n1) || Number.isNaN(n2)) return false;
+      if (f.op === "numEq") return n1 === n2;
+      if (f.op === "numGt") return n1 > n2;
+      if (f.op === "numGte") return n1 >= n2;
+      if (f.op === "numLt") return n1 < n2;
+      if (f.op === "numLte") return n1 <= n2;
+    }
+    if (["dateOn", "dateBefore", "dateAfter"].includes(f.op)) {
+      const d1 = asDateKey(v);
+      const d2 = asDateKey(val);
+      if (!d1 || !d2) return false;
+      if (f.op === "dateOn") return d1 === d2;
+      if (f.op === "dateBefore") return d1 < d2;
+      if (f.op === "dateAfter") return d1 > d2;
+    }
+    return true;
+  }
+
   const filteredRows = useMemo(() => {
     const q = normalize(search);
     let out = rows;
@@ -213,19 +362,12 @@ export default function ContactsClient() {
       return true;
     });
 
-    out = out.filter((r) => {
-      for (const f of advFilters) {
-        const v = String(r[f.field] ?? "");
-        const vN = normalize(v);
-        const cN = normalize(f.value);
-        if (f.op === "contains" && !vN.includes(cN)) return false;
-        if (f.op === "equals" && vN !== cN) return false;
-        if (f.op === "startsWith" && !vN.startsWith(cN)) return false;
-        if (f.op === "isEmpty" && v.trim() !== "") return false;
-        if (f.op === "notEmpty" && v.trim() === "") return false;
-      }
-      return true;
-    });
+    if (advFilters.length) {
+      out = out.filter((r) => {
+        const checks = advFilters.map((f) => evaluateAdvFilter(r, f));
+        return advLogic === "and" ? checks.every(Boolean) : checks.some(Boolean);
+      });
+    }
 
     const sf = sortField;
     out = [...out].sort((a, b) => {
@@ -235,7 +377,7 @@ export default function ContactsClient() {
       return sortDir === "asc" ? cmp : -cmp;
     });
     return out;
-  }, [rows, headers, search, columnFilters, advFilters, sortField, sortDir]);
+  }, [rows, headers, search, columnFilters, advFilters, advLogic, sortField, sortDir]);
 
   const displayHeaders = useMemo(() => {
     const order = columnOrder.length ? columnOrder : headers;
@@ -476,11 +618,13 @@ export default function ContactsClient() {
   }
 
   function openAdvancedFilters() {
+    setDraftAdvLogic(advLogic);
     setDraftAdvFilters(advFilters.length ? [...advFilters] : []);
     setAdvOpen(true);
   }
 
   function applyAdvancedFilters() {
+    setAdvLogic(draftAdvLogic);
     setAdvFilters(draftAdvFilters);
     setAdvOpen(false);
   }
@@ -953,10 +1097,33 @@ export default function ContactsClient() {
             onMouseDown={(e) => e.stopPropagation()}
           >
             <h3 style={{ margin: 0, marginBottom: 10 }}>פילטר מתקדם</h3>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <span style={{ fontSize: 12, fontWeight: 800, color: "#6b7280" }}>לוגיקה בין התנאים</span>
+              <select
+                value={draftAdvLogic}
+                onChange={(e) => setDraftAdvLogic(e.target.value as AdvLogic)}
+                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+              >
+                <option value="and">וגם (AND)</option>
+                <option value="or">או (OR)</option>
+              </select>
+            </div>
             <div style={{ display: "grid", gap: 8 }}>
               {draftAdvFilters.map((f) => (
                 <div key={f.id} style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1.4fr auto", gap: 8 }}>
-                  <select value={f.field} onChange={(e) => setDraftAdvFilters((arr) => arr.map((x) => (x.id === f.id ? { ...x, field: e.target.value } : x)))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+                  <select
+                    value={f.field}
+                    onChange={(e) =>
+                      setDraftAdvFilters((arr) =>
+                        arr.map((x) =>
+                          x.id === f.id
+                            ? { ...x, field: e.target.value, op: defaultOpForField(e.target.value), value: "" }
+                            : x
+                        )
+                      )
+                    }
+                    style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+                  >
                     {headers.map((h) => (
                       <option key={h} value={h}>
                         {h}
@@ -964,13 +1131,38 @@ export default function ContactsClient() {
                     ))}
                   </select>
                   <select value={f.op} onChange={(e) => setDraftAdvFilters((arr) => arr.map((x) => (x.id === f.id ? { ...x, op: e.target.value as AdvOp } : x)))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
-                    <option value="contains">כולל</option>
-                    <option value="equals">שווה בדיוק</option>
-                    <option value="startsWith">מתחיל ב...</option>
-                    <option value="isEmpty">ריק</option>
-                    <option value="notEmpty">לא ריק</option>
+                    {(ADV_OPS_BY_KIND[fieldKinds[f.field] ?? "text"] ?? ADV_OPS_BY_KIND.text).map((op) => (
+                      <option key={op} value={op}>
+                        {ADV_OP_LABEL[op]}
+                      </option>
+                    ))}
                   </select>
-                  <input value={f.value} onChange={(e) => setDraftAdvFilters((arr) => arr.map((x) => (x.id === f.id ? { ...x, value: e.target.value } : x)))} disabled={f.op === "isEmpty" || f.op === "notEmpty"} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                  {fieldKinds[f.field] === "select" && (f.op === "equals" || f.op === "notEquals") ? (
+                    <select
+                      value={f.value}
+                      onChange={(e) =>
+                        setDraftAdvFilters((arr) => arr.map((x) => (x.id === f.id ? { ...x, value: e.target.value } : x)))
+                      }
+                      style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+                    >
+                      <option value="">בחר ערך</option>
+                      {(selectFieldValues[f.field] ?? []).map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type={["dateOn", "dateBefore", "dateAfter"].includes(f.op) ? "date" : "text"}
+                      value={f.value}
+                      onChange={(e) =>
+                        setDraftAdvFilters((arr) => arr.map((x) => (x.id === f.id ? { ...x, value: e.target.value } : x)))
+                      }
+                      disabled={f.op === "isEmpty" || f.op === "notEmpty"}
+                      style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+                    />
+                  )}
                   <button
                     type="button"
                     onClick={() => setDraftAdvFilters((arr) => arr.filter((x) => x.id !== f.id))}
@@ -990,7 +1182,7 @@ export default function ContactsClient() {
                     {
                       id: crypto.randomUUID(),
                       field: headers[0] ?? "name",
-                      op: "contains",
+                      op: defaultOpForField(headers[0] ?? "name"),
                       value: "",
                     },
                   ])

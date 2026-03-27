@@ -151,6 +151,39 @@ function normalizeStages(stages: string[]): string[] {
   return Array.from(new Set(out));
 }
 
+/** Pipeline stage name that triggers win automation (note + customer pipeline opportunity). */
+export const WON_PIPELINE_STAGE_LABEL = "זכיה";
+
+const CUSTOMERS_PIPELINE_ID = "customers";
+
+function normalizeStageLabel(s: string): string {
+  return s.trim().replace(/\s+/g, " ");
+}
+
+export async function ensureCustomersPipeline(): Promise<PipelineRecord> {
+  const db = getAdminDb();
+  const ref = db.collection("pipelines").doc(CUSTOMERS_PIPELINE_ID);
+  const snap = await ref.get();
+  if (!snap.exists) {
+    const now = FieldValue.serverTimestamp();
+    await ref.set({
+      name: "לקוחות",
+      stages: ["חדש"],
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  const again = await ref.get();
+  const d = (again.data() ?? {}) as Record<string, unknown>;
+  return {
+    id: again.id,
+    name: String(d.name ?? "לקוחות"),
+    stages: normalizeStages((d.stages as string[] | undefined) ?? ["חדש"]),
+    createdAt: mapTs(d.createdAt),
+    updatedAt: mapTs(d.updatedAt),
+  };
+}
+
 function normalizeOpportunityStageByPipeline(
   pipelineStagesById: Map<string, string[]>,
   pipelineId: string,
@@ -171,17 +204,30 @@ export async function ensureDefaultPipeline(): Promise<PipelineRecord> {
     const now = FieldValue.serverTimestamp();
     await ref.set({
       name: "מוקד מכירות",
-      stages: ["Pending", "Contacted", "Proposal Sent", "Closed"],
+      stages: ["Pending", "Contacted", "Proposal Sent", "זכיה", "Closed"],
       createdAt: now,
       updatedAt: now,
     });
+  } else {
+    const d0 = (snap.data() ?? {}) as Record<string, unknown>;
+    const cur = normalizeStages((d0.stages as string[] | undefined) ?? []);
+    if (!cur.some((s) => normalizeStageLabel(s) === WON_PIPELINE_STAGE_LABEL)) {
+      const insertAt = Math.max(0, cur.length - 1);
+      const next = [...cur.slice(0, insertAt), WON_PIPELINE_STAGE_LABEL, ...cur.slice(insertAt)];
+      await ref.update({
+        stages: normalizeStages(next),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
   }
   const again = await ref.get();
   const d = (again.data() ?? {}) as Record<string, unknown>;
   return {
     id: again.id,
     name: String(d.name ?? "מוקד מכירות"),
-    stages: normalizeStages((d.stages as string[] | undefined) ?? ["Pending", "Contacted", "Proposal Sent", "Closed"]),
+    stages: normalizeStages(
+      (d.stages as string[] | undefined) ?? ["Pending", "Contacted", "Proposal Sent", "זכיה", "Closed"]
+    ),
     createdAt: mapTs(d.createdAt),
     updatedAt: mapTs(d.updatedAt),
   };
@@ -714,7 +760,121 @@ export async function updateOpportunity(
   if (input.customValues !== undefined) payload.customValues = input.customValues;
   if (input.notes !== undefined) payload.notes = input.notes;
   if (input.tasks !== undefined) payload.tasks = input.tasks;
+
+  const nextStageStr = String(
+    payload.stage !== undefined ? payload.stage : existing.stage ?? ""
+  ).trim();
+  const nextStatusVal =
+    payload.status !== undefined
+      ? payload.status
+      : existing.status === "זכיה" || existing.status === "הפסד" || existing.status === "פתוח"
+        ? existing.status
+        : "פתוח";
+  const prevStageStr = String(existing.stage ?? "").trim();
+  const prevStatusVal =
+    existing.status === "זכיה" || existing.status === "הפסד" || existing.status === "פתוח"
+      ? existing.status
+      : "פתוח";
+
+  const becameWon =
+    (normalizeStageLabel(nextStageStr) === WON_PIPELINE_STAGE_LABEL ||
+      nextStatusVal === "זכיה") &&
+    normalizeStageLabel(prevStageStr) !== WON_PIPELINE_STAGE_LABEL &&
+    prevStatusVal !== "זכיה";
+
+  let winNoteForContact: { id: string; text: string; createdAt: string; createdBy?: string } | null =
+    null;
+  let firstCustomerStageForNewOpp: string | null = null;
+
+  if (
+    becameWon &&
+    targetPipelineId !== CUSTOMERS_PIPELINE_ID &&
+    existing.winAutomationDone !== true
+  ) {
+    const dupSnap = await db
+      .collection("opportunities")
+      .where("sourceOpportunityId", "==", id)
+      .limit(1)
+      .get();
+    if (dupSnap.empty) {
+      await ensureCustomersPipeline();
+      const cpSnap = await db.collection("pipelines").doc(CUSTOMERS_PIPELINE_ID).get();
+      const cpd = (cpSnap.data() ?? {}) as Record<string, unknown>;
+      const custStages = normalizeStages((cpd.stages as string[] | undefined) ?? ["חדש"]);
+      firstCustomerStageForNewOpp = custStages[0] || "חדש";
+
+      const winNote = {
+        id: randomUUID(),
+        text: "לקוח חדש",
+        createdAt: new Date().toISOString(),
+        createdBy: "המערכת",
+      };
+      winNoteForContact = winNote;
+
+      const baseNotes =
+        input.notes !== undefined
+          ? [...input.notes]
+          : Array.isArray(existing.notes)
+            ? [
+                ...(existing.notes as Array<{
+                  id: string;
+                  text: string;
+                  createdAt: string;
+                  createdBy?: string;
+                }>),
+              ]
+            : [];
+      payload.notes = [...baseNotes, winNote];
+      payload.winAutomationDone = true;
+    } else {
+      payload.winAutomationDone = true;
+    }
+  }
+
   await ref.set(payload, { merge: true });
+
+  if (winNoteForContact && firstCustomerStageForNewOpp) {
+    const afterSnap = await ref.get();
+    const after = (afterSnap.data() ?? {}) as Record<string, unknown>;
+    const cid = String(after.contactId ?? "").trim();
+    if (cid) {
+      await mergeOpportunityNotesIntoContact(cid, [winNoteForContact]);
+      const opportunityCode = await allocateRunningCode("opportunities", "O-");
+      const exName = String(after.name ?? "").trim();
+      const now = FieldValue.serverTimestamp();
+      await db.collection("opportunities").add({
+        opportunityCode,
+        name: exName ? `${exName} — לקוח` : "לקוח חדש",
+        contactId: cid,
+        contactName: typeof after.contactName === "string" ? after.contactName : "",
+        contactEmail: typeof after.contactEmail === "string" ? after.contactEmail : "",
+        contactPhone: typeof after.contactPhone === "string" ? after.contactPhone : "",
+        email: typeof after.email === "string" ? after.email : "",
+        phone: typeof after.phone === "string" ? after.phone : "",
+        pipelineId: CUSTOMERS_PIPELINE_ID,
+        stage: firstCustomerStageForNewOpp,
+        status: "פתוח",
+        value: null,
+        utmSource: typeof after.utmSource === "string" ? after.utmSource : "",
+        utmCampaign: typeof after.utmCampaign === "string" ? after.utmCampaign : "",
+        utmMedium: typeof after.utmMedium === "string" ? after.utmMedium : "",
+        utmContent: typeof after.utmContent === "string" ? after.utmContent : "",
+        landingpage: typeof after.landingpage === "string" ? after.landingpage : "",
+        tags: Array.isArray(after.tags) ? after.tags : [],
+        customValues:
+          typeof after.customValues === "object" && after.customValues !== null
+            ? after.customValues
+            : {},
+        assignedRep: typeof after.assignedRep === "string" ? after.assignedRep : "",
+        sourceOpportunityId: id,
+        notes: [],
+        tasks: [],
+        lastLeadAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+  }
 
   // Keep contact-level activity history synced with opportunity activity.
   if (input.notes !== undefined || input.tasks !== undefined) {

@@ -409,9 +409,14 @@ export default function PipelineClient() {
       setErr(j.error ?? "שמירת הזדמנות נכשלה");
       return;
     }
-    setSelectedOpp(j.opportunity);
-    setOppNotes(j.opportunity.notes ?? []);
-    setOppTasks(j.opportunity.tasks ?? []);
+    setSelectedOpp((prev) => {
+      if (!prev || prev.id !== id) return prev;
+      return j.opportunity ?? prev;
+    });
+    if (selectedOpp?.id === id) {
+      setOppNotes(j.opportunity.notes ?? []);
+      setOppTasks(j.opportunity.tasks ?? []);
+    }
     await load();
   }
 

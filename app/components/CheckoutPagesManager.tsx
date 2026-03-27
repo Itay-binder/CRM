@@ -344,11 +344,13 @@ export default function CheckoutPagesManager({
                   transformOrigin: "top center",
                   transform:
                     !isPhoneViewport
-                      ? `scale(${Math.min(
+                      ? `translateX(-50%) scale(${Math.min(
                           1,
                           (Math.max(previewContainerWidth - 12, 1) || 1) / 1536
                         )})`
                       : "none",
+                  position: !isPhoneViewport ? "relative" : "static",
+                  left: !isPhoneViewport ? "50%" : undefined,
                 }}
                 onError={() =>
                   setIframeError(

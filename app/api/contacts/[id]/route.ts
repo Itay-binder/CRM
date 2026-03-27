@@ -66,7 +66,6 @@ export async function PATCH(
       name?: string;
       email?: string;
       phone?: string;
-      stage?: string;
       status?: "פתוח" | "זכיה" | "הפסד";
       assignedRep?: string;
       customFields?: Record<string, unknown>;

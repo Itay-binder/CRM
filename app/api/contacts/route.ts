@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     const leads = await listLeadsFiltered(dateFrom, dateTo);
 
     // Build dynamic headers based on customFields keys too.
-    const fixedHeaders = ["name", "email", "phone", "status", "assignedRep", "stage", "createdAt", "id"];
+    const fixedHeaders = ["name", "email", "phone", "status", "assignedRep", "createdAt", "id"];
     const customKeys = new Set<string>();
     const rows: Record<string, string>[] = [];
 
@@ -45,7 +45,6 @@ export async function GET(req: NextRequest) {
         phone: l.phone ?? "",
         status: l.status ?? "פתוח",
         assignedRep: l.assignedRep ?? "",
-        stage: l.stage ?? "",
         createdAt,
         ...Object.fromEntries(
           Object.entries(customFields).map(([k, v]) => [k, v == null ? "" : String(v)])
@@ -87,7 +86,6 @@ export async function POST(req: NextRequest) {
       name?: string;
       firstName?: string;
       lastName?: string;
-      stage?: string;
       status?: "פתוח" | "זכיה" | "הפסד";
       source?: string;
       customFields?: Record<string, unknown>;
@@ -108,7 +106,6 @@ export async function POST(req: NextRequest) {
       name: body.name,
       firstName: body.firstName,
       lastName: body.lastName,
-      stage: body.stage ?? "Pending",
       status: body.status ?? "פתוח",
       source: body.source ?? "manual",
       customFields: customValues,
@@ -122,7 +119,6 @@ export async function POST(req: NextRequest) {
         email: lead.email ?? "",
         phone: lead.phone ?? "",
         name: lead.name ?? "",
-        stage: lead.stage,
       },
     });
   } catch (e) {

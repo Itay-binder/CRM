@@ -29,7 +29,6 @@ type ContactDetail = {
   name?: string;
   email?: string;
   phone?: string;
-  stage: string;
   status?: "פתוח" | "זכיה" | "הפסד";
   assignedRep?: string;
   customFields?: Record<string, unknown>;
@@ -37,7 +36,7 @@ type ContactDetail = {
   tasks?: TaskItem[];
 };
 
-const BASE_COLS = ["name", "phone", "email", "stage", "createdAt"];
+const BASE_COLS = ["name", "phone", "email", "status", "assignedRep", "createdAt"];
 
 function normalize(v: unknown) {
   return String(v ?? "").trim().toLowerCase();
@@ -86,7 +85,6 @@ export default function ContactsClient() {
   const [createName, setCreateName] = useState("");
   const [createPhone, setCreatePhone] = useState("");
   const [createEmail, setCreateEmail] = useState("");
-  const [createStage, setCreateStage] = useState("Pending");
   const [createStatus, setCreateStatus] = useState<"פתוח" | "זכיה" | "הפסד">("פתוח");
   const [createAssignedRep, setCreateAssignedRep] = useState("");
   const [savingCreate, setSavingCreate] = useState(false);
@@ -277,7 +275,7 @@ export default function ContactsClient() {
     if (!id || CONTACT_INLINE_READONLY.has(col)) return;
     const value = valueRaw.trim();
     const body: Record<string, unknown> = {};
-    if (["name", "email", "phone", "stage", "assignedRep"].includes(col)) {
+    if (["name", "email", "phone", "assignedRep"].includes(col)) {
       body[col] = value;
     } else if (col === "status") {
       body.status = value === "זכיה" || value === "הפסד" || value === "פתוח" ? value : "פתוח";
@@ -331,7 +329,6 @@ export default function ContactsClient() {
           name: createName,
           phone: createPhone,
           email: createEmail,
-          stage: createStage || "Pending",
           status: createStatus,
           assignedRep: createAssignedRep,
           source: "manual",
@@ -346,7 +343,6 @@ export default function ContactsClient() {
       setCreateName("");
       setCreatePhone("");
       setCreateEmail("");
-      setCreateStage("Pending");
       setCreateStatus("פתוח");
       setCreateAssignedRep("");
       await load();
@@ -436,10 +432,9 @@ export default function ContactsClient() {
           name: obj.name ?? obj["contact name"] ?? obj["full name"] ?? "",
           email: obj.email ?? obj.Email ?? "",
           phone: obj.phone ?? obj.Phone ?? "",
-          stage: obj.stage ?? "Pending",
           source: "csv-import",
           customFields: Object.fromEntries(
-            Object.entries(obj).filter(([k]) => !["name", "contact name", "full name", "email", "Email", "phone", "Phone", "stage"].includes(k))
+            Object.entries(obj).filter(([k]) => !["name", "contact name", "full name", "email", "Email", "phone", "Phone"].includes(k))
           ),
         };
       });
@@ -1085,7 +1080,6 @@ export default function ContactsClient() {
               <input placeholder="שם מלא" value={createName} onChange={(e) => setCreateName(e.target.value)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
               <input placeholder="טלפון" value={createPhone} onChange={(e) => setCreatePhone(e.target.value)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
               <input placeholder="אימייל" value={createEmail} onChange={(e) => setCreateEmail(e.target.value)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", gridColumn: "1 / -1" }} />
-              <input placeholder="שלב" value={createStage} onChange={(e) => setCreateStage(e.target.value)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", gridColumn: "1 / -1" }} />
               <select value={createStatus} onChange={(e) => setCreateStatus(e.target.value as "פתוח" | "זכיה" | "הפסד")} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", gridColumn: "1 / -1" }}>
                 {["פתוח", "זכיה", "הפסד"].map((s) => (
                   <option key={s} value={s}>{s}</option>
@@ -1199,7 +1193,6 @@ export default function ContactsClient() {
                     <option key={u.email} value={u.email}>{u.email}</option>
                   ))}
                 </select>
-                <input value={detail.stage ?? ""} onChange={(e) => setDetail((d) => (d ? { ...d, stage: e.target.value } : d))} placeholder="שלב" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
                 <div style={{ border: "1px solid #f3f4f6", borderRadius: 10, padding: 8 }}>
                   <div style={{ fontWeight: 800, marginBottom: 6 }}>הזדמנויות פתוחות תחת איש קשר</div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1241,7 +1234,6 @@ export default function ContactsClient() {
                       email: detail.email ?? "",
                       status: detail.status ?? "פתוח",
                       assignedRep: detail.assignedRep ?? "",
-                      stage: detail.stage ?? "Pending",
                       customFields: detail.customFields ?? {},
                     })
                   }

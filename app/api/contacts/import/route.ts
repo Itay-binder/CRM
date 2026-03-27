@@ -25,7 +25,6 @@ export async function POST(req: NextRequest) {
         name?: string;
         firstName?: string;
         lastName?: string;
-        stage?: string;
         source?: string;
         uniqueKey?: string;
         customFields?: Record<string, unknown>;
@@ -59,7 +58,6 @@ export async function POST(req: NextRequest) {
           name: r.name,
           firstName: r.firstName,
           lastName: r.lastName,
-          stage: r.stage ?? "Pending",
           source: r.source ?? "import",
           customFields: customValues,
         });

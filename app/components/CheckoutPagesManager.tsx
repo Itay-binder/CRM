@@ -327,8 +327,9 @@ export default function CheckoutPagesManager({
                     ),
                 overflowX: "hidden",
                 overflowY: "auto",
-                display: "grid",
-                placeItems: "start center",
+                display: "flex",
+                justifyContent: isPhoneViewport ? "center" : "flex-end",
+                alignItems: "flex-start",
                 padding: isPhoneViewport ? "0" : "6px 0",
               }}
             >
@@ -341,16 +342,14 @@ export default function CheckoutPagesManager({
                   height: 860,
                   border: "none",
                   display: "block",
-                  transformOrigin: "top center",
+                  transformOrigin: isPhoneViewport ? "top center" : "top right",
                   transform:
                     !isPhoneViewport
-                      ? `translateX(-50%) scale(${Math.min(
+                      ? `scale(${Math.min(
                           1,
                           (Math.max(previewContainerWidth - 12, 1) || 1) / 1536
                         )})`
                       : "none",
-                  position: !isPhoneViewport ? "relative" : "static",
-                  left: !isPhoneViewport ? "50%" : undefined,
                 }}
                 onError={() =>
                   setIframeError(

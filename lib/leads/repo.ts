@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { allocateRunningCode } from "@/lib/counters/repo";
@@ -263,6 +264,54 @@ export async function getLeadById(id: string): Promise<LeadRecord | null> {
   const snap = await getAdminDb().collection("leads").doc(docId).get();
   if (!snap.exists) return null;
   return mapDocToLead(snap.id, (snap.data() ?? {}) as Record<string, unknown>);
+}
+
+export async function appendLeadNote(
+  id: string,
+  input: {
+    text: string;
+    createdBy?: string;
+    id?: string;
+    createdAt?: string;
+  }
+): Promise<LeadRecord> {
+  const docId = normalizeUniqueKey(id);
+  const ref = getAdminDb().collection("leads").doc(docId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new Error("Contact not found");
+
+  const text = input.text.trim();
+  if (!text) throw new Error("Note text is required");
+
+  const data = (snap.data() ?? {}) as Record<string, unknown>;
+  const prev = Array.isArray(data.notes)
+    ? [
+        ...(data.notes as Array<{
+          id: string;
+          text: string;
+          createdAt: string;
+          createdBy?: string;
+        }>),
+      ]
+    : [];
+
+  const note = {
+    id: input.id?.trim() || randomUUID(),
+    text,
+    createdAt: input.createdAt?.trim() || new Date().toISOString(),
+    ...(input.createdBy?.trim() ? { createdBy: input.createdBy.trim() } : {}),
+  };
+
+  await ref.set(
+    {
+      notes: [...prev, note],
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  const again = await ref.get();
+  return mapDocToLead(again.id, (again.data() ?? {}) as Record<string, unknown>);
 }
 
 export async function updateLead(

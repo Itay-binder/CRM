@@ -525,6 +525,56 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
   };
 }
 
+export async function appendOpportunityNote(
+  id: string,
+  input: {
+    text: string;
+    createdBy?: string;
+    id?: string;
+    createdAt?: string;
+  }
+): Promise<OpportunityRecord> {
+  const db = getAdminDb();
+  const ref = db.collection("opportunities").doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) throw new Error("Opportunity not found");
+
+  const text = input.text.trim();
+  if (!text) throw new Error("Note text is required");
+
+  const existing = (snap.data() ?? {}) as Record<string, unknown>;
+  const prev = Array.isArray(existing.notes)
+    ? [
+        ...(existing.notes as Array<{
+          id: string;
+          text: string;
+          createdAt: string;
+          createdBy?: string;
+        }>),
+      ]
+    : [];
+
+  const note = {
+    id: input.id?.trim() || randomUUID(),
+    text,
+    createdAt: input.createdAt?.trim() || new Date().toISOString(),
+    ...(input.createdBy?.trim() ? { createdBy: input.createdBy.trim() } : {}),
+  };
+
+  await ref.set(
+    {
+      notes: [...prev, note],
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  const contactId = String(existing.contactId ?? "").trim();
+  if (contactId) await mergeOpportunityNotesIntoContact(contactId, [note]);
+
+  return (await getOpportunityById(id)) as OpportunityRecord;
+}
+
 export async function getOpportunityById(id: string): Promise<OpportunityRecord | null> {
   const db = getAdminDb();
   const [snap, pipelinesSnap] = await Promise.all([

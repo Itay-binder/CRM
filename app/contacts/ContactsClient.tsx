@@ -13,6 +13,19 @@ type LeadsErr = { ok: false; error: string };
 type SortDir = "asc" | "desc";
 type AdvOp = "contains" | "equals" | "startsWith" | "isEmpty" | "notEmpty";
 type AdvFilter = { id: string; field: string; op: AdvOp; value: string };
+type NoteItem = { id: string; text: string; createdAt: string };
+type TaskItem = { id: string; title: string; dueAt: string; done: boolean; createdAt: string };
+type ContactDetail = {
+  id: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  stage: string;
+  assignedRep?: string;
+  customFields?: Record<string, unknown>;
+  notes?: NoteItem[];
+  tasks?: TaskItem[];
+};
 
 const BASE_COLS = ["name", "phone", "email", "stage", "createdAt"];
 
@@ -71,6 +84,10 @@ export default function ContactsClient() {
 
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailTab, setDetailTab] = useState<"details" | "notes" | "tasks">("details");
+  const [detail, setDetail] = useState<ContactDetail | null>(null);
+  const [savingDetail, setSavingDetail] = useState(false);
 
   const query = useMemo(() => {
     const params = new URLSearchParams();
@@ -246,6 +263,53 @@ export default function ContactsClient() {
       setErr("יצירת איש קשר נכשלה");
     } finally {
       setSavingCreate(false);
+    }
+  }
+
+  async function openDetailById(id: string) {
+    setErr(null);
+    try {
+      const res = await fetch(`/api/contacts/${encodeURIComponent(id)}`, {
+        credentials: "include",
+        cache: "no-store",
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        lead?: ContactDetail;
+      };
+      if (!res.ok || !j.ok || !j.lead) throw new Error(j.error ?? "טעינת איש קשר נכשלה");
+      setDetail(j.lead);
+      setDetailTab("details");
+      setDetailOpen(true);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "טעינת איש קשר נכשלה");
+    }
+  }
+
+  async function saveDetail(next: Partial<ContactDetail>) {
+    if (!detail) return;
+    setSavingDetail(true);
+    setErr(null);
+    try {
+      const res = await fetch(`/api/contacts/${encodeURIComponent(detail.id)}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(next),
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        lead?: ContactDetail;
+      };
+      if (!res.ok || !j.ok || !j.lead) throw new Error(j.error ?? "שמירה נכשלה");
+      setDetail(j.lead);
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "שמירה נכשלה");
+    } finally {
+      setSavingDetail(false);
     }
   }
 
@@ -589,7 +653,7 @@ export default function ContactsClient() {
               <tbody>
                 {filteredRows.map((row, i) => (
                   <tr key={i}>
-                    {displayHeaders.map((h) => (
+                    {displayHeaders.map((h, cellIdx) => (
                       <td
                         key={h}
                         style={{
@@ -601,7 +665,24 @@ export default function ContactsClient() {
                           wordBreak: "break-word",
                         }}
                       >
-                        {row[h] ?? ""}
+                        {cellIdx === 0 && row.id ? (
+                          <button
+                            type="button"
+                            onClick={() => void openDetailById(String(row.id))}
+                            style={{
+                              border: "none",
+                              background: "transparent",
+                              cursor: "pointer",
+                              color: "#4c1d95",
+                              fontWeight: 800,
+                              padding: 0,
+                            }}
+                          >
+                            {row[h] ?? ""}
+                          </button>
+                        ) : (
+                          row[h] ?? ""
+                        )}
                       </td>
                     ))}
                   </tr>
@@ -871,6 +952,154 @@ export default function ContactsClient() {
                 ביטול
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {detailOpen && detail && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 95 }}>
+          <div
+            style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.25)" }}
+            onMouseDown={() => setDetailOpen(false)}
+          />
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              height: "100%",
+              width: "min(520px, 94vw)",
+              background: "#fff",
+              borderRight: "1px solid #e5e7eb",
+              boxShadow: "12px 0 30px rgba(0,0,0,0.08)",
+              padding: 16,
+              overflow: "auto",
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 900 }}>
+                {detail.name || detail.email || detail.phone || detail.id}
+              </h3>
+              <div style={{ flex: 1 }} />
+              <button
+                type="button"
+                onClick={() => setDetailOpen(false)}
+                style={{ border: "1px solid #e5e7eb", background: "#fff", borderRadius: 10, padding: "6px 10px", cursor: "pointer" }}
+              >
+                סגור
+              </button>
+            </div>
+
+            <div style={{ marginTop: 10, display: "inline-flex", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+              {(["details", "notes", "tasks"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setDetailTab(t)}
+                  style={{
+                    border: "none",
+                    background: detailTab === t ? "#ede9fe" : "#fff",
+                    padding: "8px 10px",
+                    cursor: "pointer",
+                    fontWeight: 800,
+                  }}
+                >
+                  {t === "details" ? "פרטים" : t === "notes" ? "פתקים" : "משימות"}
+                </button>
+              ))}
+            </div>
+
+            {detailTab === "details" && (
+              <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+                <input value={detail.name ?? ""} onChange={(e) => setDetail((d) => (d ? { ...d, name: e.target.value } : d))} placeholder="שם" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                <input value={detail.phone ?? ""} onChange={(e) => setDetail((d) => (d ? { ...d, phone: e.target.value } : d))} placeholder="טלפון" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                <input value={detail.email ?? ""} onChange={(e) => setDetail((d) => (d ? { ...d, email: e.target.value } : d))} placeholder="אימייל" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                <input value={detail.assignedRep ?? ""} onChange={(e) => setDetail((d) => (d ? { ...d, assignedRep: e.target.value } : d))} placeholder="נציג משויך (שדה מערכת)" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                <input value={detail.stage ?? ""} onChange={(e) => setDetail((d) => (d ? { ...d, stage: e.target.value } : d))} placeholder="שלב" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                <button
+                  type="button"
+                  disabled={savingDetail}
+                  onClick={() =>
+                    void saveDetail({
+                      name: detail.name ?? "",
+                      phone: detail.phone ?? "",
+                      email: detail.email ?? "",
+                      assignedRep: detail.assignedRep ?? "",
+                      stage: detail.stage ?? "Pending",
+                      customFields: detail.customFields ?? {},
+                    })
+                  }
+                  style={{ padding: "9px 12px", borderRadius: 10, border: "none", background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)", color: "#fff", fontWeight: 800, cursor: "pointer" }}
+                >
+                  {savingDetail ? "שומר..." : "שמור שינויים"}
+                </button>
+              </div>
+            )}
+
+            {detailTab === "notes" && (
+              <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+                {(detail.notes ?? []).map((n) => (
+                  <textarea key={n.id} value={n.text} readOnly style={{ width: "100%", minHeight: 70, padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const text = window.prompt("טקסט לפתק");
+                    if (!text?.trim()) return;
+                    const notes = [...(detail.notes ?? []), { id: crypto.randomUUID(), text: text.trim(), createdAt: new Date().toISOString() }];
+                    setDetail((d) => (d ? { ...d, notes } : d));
+                    void saveDetail({ notes });
+                  }}
+                  style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
+                >
+                  + הוסף פתק
+                </button>
+              </div>
+            )}
+
+            {detailTab === "tasks" && (
+              <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+                {(detail.tasks ?? []).map((t) => (
+                  <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(t.done)}
+                      onChange={(e) => {
+                        const tasks = (detail.tasks ?? []).map((x) => (x.id === t.id ? { ...x, done: e.target.checked } : x));
+                        setDetail((d) => (d ? { ...d, tasks } : d));
+                        void saveDetail({ tasks });
+                      }}
+                    />
+                    <span style={{ fontWeight: 700 }}>{t.title}</span>
+                    <span style={{ color: "#6b7280", fontSize: 12 }}>{t.dueAt}</span>
+                  </label>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const title = window.prompt("כותרת משימה");
+                    if (!title?.trim()) return;
+                    const dueAt = window.prompt("תאריך ושעה (YYYY-MM-DD HH:mm)", new Date().toISOString().slice(0, 16).replace("T", " ")) || "";
+                    const tasks = [
+                      ...(detail.tasks ?? []),
+                      {
+                        id: crypto.randomUUID(),
+                        title: title.trim(),
+                        dueAt: dueAt.trim(),
+                        done: false,
+                        createdAt: new Date().toISOString(),
+                      },
+                    ];
+                    setDetail((d) => (d ? { ...d, tasks } : d));
+                    void saveDetail({ tasks });
+                  }}
+                  style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
+                >
+                  + הוסף משימה
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

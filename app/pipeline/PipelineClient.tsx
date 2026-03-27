@@ -17,12 +17,27 @@ type Opportunity = {
   contactPhone?: string;
   pipelineId: string;
   stage: string;
+  assignedRep?: string;
+  customValues?: Record<string, unknown>;
   createdAt: string | null;
 };
 
 type ContactRow = Record<string, string>;
 type TabId = "opportunities" | "pipelines";
 type ViewMode = "board" | "list";
+type NoteItem = { id: string; text: string; createdAt: string };
+type TaskItem = { id: string; title: string; dueAt: string; done: boolean; createdAt: string };
+
+const BASE_OPP_COLS = [
+  "name",
+  "contactName",
+  "pipelineName",
+  "stage",
+  "assignedRep",
+  "contactPhone",
+  "contactEmail",
+  "createdAt",
+];
 
 export default function PipelineClient() {
   const [loading, setLoading] = useState(false);
@@ -47,6 +62,20 @@ export default function PipelineClient() {
   const [newOppName, setNewOppName] = useState("");
   const [newOppContactId, setNewOppContactId] = useState("");
   const [newOppStage, setNewOppStage] = useState("");
+  const [newOppAssignedRep, setNewOppAssignedRep] = useState("");
+  const [oppVisibleCols, setOppVisibleCols] = useState<string[]>([]);
+  const [oppColumnOrder, setOppColumnOrder] = useState<string[]>([]);
+  const [manageOppColsOpen, setManageOppColsOpen] = useState(false);
+  const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
+  const [oppDetailTab, setOppDetailTab] = useState<"details" | "notes" | "tasks">(
+    "details"
+  );
+  const [oppNotes, setOppNotes] = useState<NoteItem[]>([]);
+  const [oppTasks, setOppTasks] = useState<TaskItem[]>([]);
+  const [oppCustomFieldIds, setOppCustomFieldIds] = useState<string[]>([]);
+  const [editingPipelineId, setEditingPipelineId] = useState<string | null>(null);
+  const [editPipelineName, setEditPipelineName] = useState("");
+  const [editPipelineStagesText, setEditPipelineStagesText] = useState("");
 
   const selectedPipeline = useMemo(
     () => pipelines.find((p) => p.id === selectedPipelineId) ?? null,
@@ -73,7 +102,7 @@ export default function PipelineClient() {
     setLoading(true);
     setErr(null);
     try {
-      const [pRes, oRes, cRes] = await Promise.all([
+      const [pRes, oRes, cRes, cfRes] = await Promise.all([
         fetch("/api/opportunities/pipelines", { credentials: "include", cache: "no-store" }),
         fetch(
           selectedPipelineId
@@ -82,9 +111,13 @@ export default function PipelineClient() {
           { credentials: "include", cache: "no-store" }
         ),
         fetch("/api/contacts", { credentials: "include", cache: "no-store" }),
+        fetch("/api/custom-fields?entityType=opportunity", {
+          credentials: "include",
+          cache: "no-store",
+        }),
       ]);
 
-      for (const r of [pRes, oRes, cRes]) {
+      for (const r of [pRes, oRes, cRes, cfRes]) {
         if (r.status === 401) {
           window.location.href = `/login?returnTo=${encodeURIComponent("/pipeline")}`;
           return;
@@ -110,6 +143,10 @@ export default function PipelineClient() {
         rows?: ContactRow[];
         error?: string;
       };
+      const cfJson = (await cfRes.json().catch(() => ({}))) as {
+        ok?: boolean;
+        fields?: Array<{ fieldId: string }>;
+      };
 
       if (!pJson.ok) throw new Error(pJson.error ?? "שגיאה בטעינת pipelines");
       if (!oJson.ok) throw new Error(oJson.error ?? "שגיאה בטעינת opportunities");
@@ -117,9 +154,32 @@ export default function PipelineClient() {
 
       const p = pJson.pipelines ?? [];
       setPipelines(p);
-      setOpportunities(oJson.opportunities ?? []);
+      const opp = oJson.opportunities ?? [];
+      setOpportunities(opp);
       setContacts(cJson.rows ?? []);
       setSelectedPipelineId((prev) => prev || p[0]?.id || "");
+      const customFromSettings =
+        cfJson.ok && Array.isArray(cfJson.fields)
+          ? cfJson.fields.map((f) => f.fieldId)
+          : [];
+      setOppCustomFieldIds(
+        Array.from(
+          new Set(
+            [
+              ...customFromSettings,
+              ...opp.flatMap((o) =>
+                Object.keys((o.customValues ?? {}) as Record<string, unknown>)
+              ),
+            ]
+          )
+        ).sort()
+      );
+      setOppColumnOrder((prev) =>
+        prev.length ? prev : [...BASE_OPP_COLS, ...Array.from(new Set(opp.flatMap((o) => Object.keys((o.customValues ?? {}) as Record<string, unknown>)))).sort()]
+      );
+      setOppVisibleCols((prev) =>
+        prev.length ? prev : ["name", "contactName", "stage", "assignedRep", "contactPhone", "createdAt"]
+      );
     } catch (e) {
       setErr(e instanceof Error ? e.message : "לא ניתן לטעון ניהול הזדמנויות");
     } finally {
@@ -167,6 +227,7 @@ export default function PipelineClient() {
           contactId: newOppContactId,
           pipelineId: selectedPipelineId,
           stage: newOppStage || selectedPipeline?.stages?.[0] || "New Lead",
+          assignedRep: newOppAssignedRep,
         }),
       });
       const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
@@ -175,10 +236,84 @@ export default function PipelineClient() {
       setNewOppName("");
       setNewOppContactId("");
       setNewOppStage("");
+      setNewOppAssignedRep("");
       await load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "יצירת הזדמנות נכשלה");
     }
+  }
+
+  async function openOpportunityDetail(id: string) {
+    const res = await fetch(`/api/opportunities/${encodeURIComponent(id)}`, {
+      credentials: "include",
+      cache: "no-store",
+    });
+    const j = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      opportunity?: Opportunity & { notes?: NoteItem[]; tasks?: TaskItem[] };
+    };
+    if (!res.ok || !j.ok || !j.opportunity) {
+      setErr(j.error ?? "טעינת הזדמנות נכשלה");
+      return;
+    }
+    setSelectedOpp(j.opportunity);
+    setOppNotes(j.opportunity.notes ?? []);
+    setOppTasks(j.opportunity.tasks ?? []);
+    setOppDetailTab("details");
+  }
+
+  async function saveOpportunityPatch(
+    id: string,
+    patch: {
+      name?: string;
+      stage?: string;
+      pipelineId?: string;
+      assignedRep?: string;
+      customValues?: Record<string, unknown>;
+      notes?: NoteItem[];
+      tasks?: TaskItem[];
+    }
+  ) {
+    const res = await fetch(`/api/opportunities/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    const j = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      opportunity?: Opportunity & { notes?: NoteItem[]; tasks?: TaskItem[] };
+    };
+    if (!res.ok || !j.ok || !j.opportunity) {
+      setErr(j.error ?? "שמירת הזדמנות נכשלה");
+      return;
+    }
+    setSelectedOpp(j.opportunity);
+    setOppNotes(j.opportunity.notes ?? []);
+    setOppTasks(j.opportunity.tasks ?? []);
+    await load();
+  }
+
+  async function onDropOpportunity(oppId: string, stage: string) {
+    const opp = opportunities.find((o) => o.id === oppId);
+    if (!opp || opp.stage === stage) return;
+    await saveOpportunityPatch(opp.id, { stage, pipelineId: selectedPipelineId });
+  }
+
+  const oppDisplayCols = useMemo(() => {
+    const order = oppColumnOrder.length ? oppColumnOrder : BASE_OPP_COLS;
+    const visible = oppVisibleCols.length ? oppVisibleCols : order;
+    return order.filter((h) => visible.includes(h));
+  }, [oppColumnOrder, oppVisibleCols]);
+
+  function opportunityCell(o: Opportunity, col: string): string {
+    if (col === "pipelineName") {
+      return pipelines.find((p) => p.id === o.pipelineId)?.name || o.pipelineId;
+    }
+    if (col in o) return String((o as Record<string, unknown>)[col] ?? "");
+    return String((o.customValues ?? {})[col] ?? "");
   }
 
   return (
@@ -218,6 +353,13 @@ export default function PipelineClient() {
             <button type="button" onClick={() => { setCreateOpportunityOpen(true); setNewOppContactId((contacts[0]?.id as string) || ""); setNewOppStage(selectedPipeline?.stages?.[0] || "New Lead"); }} style={{ padding: "10px 12px", borderRadius: 12, border: "none", background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)", color: "#fff", cursor: "pointer", fontWeight: 800 }}>
               + Add opportunity
             </button>
+            <button
+              type="button"
+              onClick={() => setManageOppColsOpen(true)}
+              style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", fontWeight: 800 }}
+            >
+              ניהול עמודות
+            </button>
           </>
         )}
 
@@ -238,7 +380,7 @@ export default function PipelineClient() {
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 980 }}>
                 <thead>
                   <tr>
-                    {["Opportunity name", "Contact", "Pipeline", "Stage", "Phone", "Email", "Created"].map((h) => (
+                    {oppDisplayCols.map((h) => (
                       <th key={h} style={{ textAlign: "right", padding: "10px 12px", borderBottom: "2px solid #e5e7eb", background: "#f8fafc", fontSize: 12, fontWeight: 900, whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
@@ -246,16 +388,20 @@ export default function PipelineClient() {
                 <tbody>
                   {oppForSelectedPipeline.map((o) => (
                     <tr key={o.id}>
-                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{o.name}</td>
-                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{o.contactName || o.contactId}</td>
-                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{pipelines.find((p) => p.id === o.pipelineId)?.name || o.pipelineId}</td>
-                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{o.stage}</td>
-                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{o.contactPhone || ""}</td>
-                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{o.contactEmail || ""}</td>
-                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{o.createdAt ? String(o.createdAt).slice(0, 10) : ""}</td>
+                      {oppDisplayCols.map((col, idx) => (
+                        <td key={col} style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>
+                          {idx === 0 ? (
+                            <button type="button" onClick={() => void openOpportunityDetail(o.id)} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#4c1d95", fontWeight: 800, padding: 0 }}>
+                              {opportunityCell(o, col)}
+                            </button>
+                          ) : (
+                            opportunityCell(o, col)
+                          )}
+                        </td>
+                      ))}
                     </tr>
                   ))}
-                  {!loading && oppForSelectedPipeline.length === 0 && <tr><td colSpan={7} style={{ padding: 16, color: "#6b7280", fontWeight: 700 }}>אין הזדמנויות בפייפליין הנבחר.</td></tr>}
+                  {!loading && oppForSelectedPipeline.length === 0 && <tr><td colSpan={Math.max(oppDisplayCols.length, 1)} style={{ padding: 16, color: "#6b7280", fontWeight: 700 }}>אין הזדמנויות בפייפליין הנבחר.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -270,13 +416,24 @@ export default function PipelineClient() {
                         <div style={{ fontWeight: 900 }}>{stage}</div>
                         <div style={{ background: "#f5f3ff", border: "1px solid #e9d5ff", padding: "4px 8px", borderRadius: 999, fontWeight: 900, color: "#6d28d9" }}>{list.length}</div>
                       </div>
-                      <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                      <div style={{ marginTop: 10, display: "grid", gap: 8, minHeight: 90 }}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          const oppId = e.dataTransfer.getData("text/opportunity-id");
+                          if (oppId) void onDropOpportunity(oppId, stage);
+                        }}
+                      >
                         {list.length === 0 ? (
                           <div style={{ color: "#9ca3af", fontWeight: 700, fontSize: 12 }}>אין הזדמנויות כאן</div>
                         ) : (
                           list.map((o) => (
-                            <div key={o.id} style={{ border: "1px solid #f3f4f6", borderRadius: 12, padding: 10, background: "#fafafa" }}>
-                              <div style={{ fontWeight: 900, fontSize: 12, wordBreak: "break-word" }}>{o.name}</div>
+                            <div
+                              key={o.id}
+                              draggable
+                              onDragStart={(e) => e.dataTransfer.setData("text/opportunity-id", o.id)}
+                              style={{ border: "1px solid #f3f4f6", borderRadius: 12, padding: 10, background: "#fafafa", cursor: "grab" }}
+                            >
+                              <button type="button" onClick={() => void openOpportunityDetail(o.id)} style={{ border: "none", background: "transparent", padding: 0, textAlign: "right", cursor: "pointer", fontWeight: 900, fontSize: 12, wordBreak: "break-word", color: "#111827" }}>{o.name}</button>
                               <div style={{ marginTop: 4, fontSize: 12, color: "#6b7280" }}>{o.contactName || o.contactEmail || o.contactPhone || o.contactId}</div>
                             </div>
                           ))
@@ -305,10 +462,55 @@ export default function PipelineClient() {
               {pipelines.map((p) => (
                 <tr key={p.id}>
                   <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>
-                    <div style={{ fontWeight: 800 }}>{p.name}</div>
-                    <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{p.stages.join(" -> ")}</div>
+                    {editingPipelineId === p.id ? (
+                      <div style={{ display: "grid", gap: 8 }}>
+                        <input value={editPipelineName} onChange={(e) => setEditPipelineName(e.target.value)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                        <input value={editPipelineStagesText} onChange={(e) => setEditPipelineStagesText(e.target.value)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button type="button" onClick={async () => {
+                            const res = await fetch(`/api/opportunities/pipelines/${encodeURIComponent(p.id)}`, {
+                              method: "PATCH",
+                              credentials: "include",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                name: editPipelineName,
+                                stages: editPipelineStagesText.split(",").map((s) => s.trim()).filter(Boolean),
+                              }),
+                            });
+                            const j = await res.json().catch(() => ({}));
+                            if (!res.ok || !j.ok) {
+                              setErr(j.error ?? "עדכון פייפליין נכשל");
+                              return;
+                            }
+                            setEditingPipelineId(null);
+                            await load();
+                          }} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}>שמור</button>
+                          <button type="button" onClick={() => setEditingPipelineId(null)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}>ביטול</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ fontWeight: 800 }}>{p.name}</div>
+                        <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{p.stages.join(" -> ")}</div>
+                      </>
+                    )}
                   </td>
-                  <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{p.stages.length}</td>
+                  <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>
+                    {p.stages.length}
+                    {editingPipelineId !== p.id && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingPipelineId(p.id);
+                          setEditPipelineName(p.name);
+                          setEditPipelineStagesText(p.stages.join(", "));
+                        }}
+                        style={{ marginInlineStart: 8, padding: "6px 8px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
+                      >
+                        ערוך
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -360,11 +562,94 @@ export default function PipelineClient() {
                   </option>
                 ))}
               </select>
+              <input value={newOppAssignedRep} onChange={(e) => setNewOppAssignedRep(e.target.value)} placeholder="נציג משויך" style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #e5e7eb" }} />
             </div>
             <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
               <button type="button" onClick={() => void createOpportunity()} style={{ padding: "10px 12px", borderRadius: 12, border: "none", background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)", color: "#fff", cursor: "pointer", fontWeight: 800 }}>Create</button>
               <button type="button" onClick={() => setCreateOpportunityOpen(false)} style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}>Cancel</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {manageOppColsOpen && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 90 }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.2)" }} onMouseDown={() => setManageOppColsOpen(false)} />
+          <div style={{ position: "absolute", top: 0, right: 0, height: "100%", width: "min(420px, 94vw)", overflow: "auto", background: "#fff", borderLeft: "1px solid #e5e7eb", padding: 16 }} onMouseDown={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: 0, marginBottom: 10 }}>ניהול עמודות (הזדמנויות)</h3>
+            {[...BASE_OPP_COLS, ...oppCustomFieldIds].map((h) => (
+              <label key={h} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0" }}>
+                <input type="checkbox" checked={oppVisibleCols.includes(h)} onChange={(e) => setOppVisibleCols((arr) => e.target.checked ? [...arr, h] : arr.filter((x) => x !== h))} />
+                <span>{h}</span>
+              </label>
+            ))}
+            <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+              <button type="button" onClick={() => setManageOppColsOpen(false)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}>סגור</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedOpp && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 96 }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.2)" }} onMouseDown={() => setSelectedOpp(null)} />
+          <div style={{ position: "absolute", top: 0, left: 0, height: "100%", width: "min(520px, 94vw)", overflow: "auto", background: "#fff", borderRight: "1px solid #e5e7eb", padding: 16 }} onMouseDown={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: 0, marginBottom: 10 }}>{selectedOpp.name}</h3>
+            <div style={{ display: "inline-flex", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+              {(["details", "notes", "tasks"] as const).map((t) => (
+                <button key={t} type="button" onClick={() => setOppDetailTab(t)} style={{ border: "none", background: oppDetailTab === t ? "#ede9fe" : "#fff", padding: "8px 10px", cursor: "pointer", fontWeight: 800 }}>
+                  {t === "details" ? "פרטים" : t === "notes" ? "פתקים" : "משימות"}
+                </button>
+              ))}
+            </div>
+            {oppDetailTab === "details" && (
+              <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+                <input value={selectedOpp.name} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, name: e.target.value } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                <select value={selectedOpp.stage} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, stage: e.target.value } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+                  {(selectedPipeline?.stages ?? []).map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <input value={selectedOpp.assignedRep ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, assignedRep: e.target.value } : x))} placeholder="נציג משויך" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                {oppCustomFieldIds.map((fid) => (
+                  <input key={fid} value={String((selectedOpp.customValues ?? {})[fid] ?? "")} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, customValues: { ...(x.customValues ?? {}), [fid]: e.target.value } } : x))} placeholder={fid} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                ))}
+                <button type="button" onClick={() => void saveOpportunityPatch(selectedOpp.id, { name: selectedOpp.name, stage: selectedOpp.stage, pipelineId: selectedOpp.pipelineId, assignedRep: selectedOpp.assignedRep ?? "", customValues: selectedOpp.customValues ?? {} })} style={{ padding: "9px 12px", borderRadius: 10, border: "none", background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)", color: "#fff", fontWeight: 800, cursor: "pointer" }}>שמור</button>
+              </div>
+            )}
+            {oppDetailTab === "notes" && (
+              <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+                {oppNotes.map((n) => <textarea key={n.id} value={n.text} readOnly style={{ minHeight: 70, padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />)}
+                <button type="button" onClick={() => {
+                  const text = window.prompt("טקסט לפתק");
+                  if (!text?.trim()) return;
+                  const notes = [...oppNotes, { id: crypto.randomUUID(), text: text.trim(), createdAt: new Date().toISOString() }];
+                  setOppNotes(notes);
+                  void saveOpportunityPatch(selectedOpp.id, { notes });
+                }} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}>+ הוסף פתק</button>
+              </div>
+            )}
+            {oppDetailTab === "tasks" && (
+              <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+                {oppTasks.map((t) => (
+                  <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+                    <input type="checkbox" checked={Boolean(t.done)} onChange={(e) => {
+                      const tasks = oppTasks.map((x) => (x.id === t.id ? { ...x, done: e.target.checked } : x));
+                      setOppTasks(tasks);
+                      void saveOpportunityPatch(selectedOpp.id, { tasks });
+                    }} />
+                    <span style={{ fontWeight: 700 }}>{t.title}</span>
+                    <span style={{ color: "#6b7280", fontSize: 12 }}>{t.dueAt}</span>
+                  </label>
+                ))}
+                <button type="button" onClick={() => {
+                  const title = window.prompt("כותרת משימה");
+                  if (!title?.trim()) return;
+                  const dueAt = window.prompt("תאריך ושעה (YYYY-MM-DD HH:mm)", new Date().toISOString().slice(0, 16).replace("T", " ")) || "";
+                  const tasks = [...oppTasks, { id: crypto.randomUUID(), title: title.trim(), dueAt: dueAt.trim(), done: false, createdAt: new Date().toISOString() }];
+                  setOppTasks(tasks);
+                  void saveOpportunityPatch(selectedOpp.id, { tasks });
+                }} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}>+ הוסף משימה</button>
+              </div>
+            )}
           </div>
         </div>
       )}

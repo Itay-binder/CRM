@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { createOpportunity, listOpportunities } from "@/lib/opportunities/repo";
+import { validateCustomValues } from "@/lib/customFields/repo";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -45,13 +46,21 @@ export async function POST(req: NextRequest) {
       pipelineId?: string;
       stage?: string;
       value?: number;
+      customValues?: Record<string, unknown>;
+      assignedRep?: string;
     };
+    const customValues = await validateCustomValues(
+      "opportunity",
+      body.customValues
+    );
     const created = await createOpportunity({
       name: body.name,
       contactId: body.contactId ?? "",
       pipelineId: body.pipelineId ?? "",
       stage: body.stage,
       value: body.value,
+      customValues,
+      assignedRep: body.assignedRep,
     });
     return NextResponse.json({ ok: true, opportunity: created });
   } catch (e) {

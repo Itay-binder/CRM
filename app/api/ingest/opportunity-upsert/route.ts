@@ -3,28 +3,12 @@ import { getExternalRef, upsertExternalRef } from "@/lib/externalRefs/repo";
 import { validateCustomValues } from "@/lib/customFields/repo";
 import { createOpportunity } from "@/lib/opportunities/repo";
 import { getAdminDb } from "@/lib/firebase/admin";
+import { isValidIngestApiKeyAsync } from "@/lib/ingest/apiKey";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 type ApiErr = { ok: false; error: string };
-
-function providedApiKey(req: NextRequest): string | null {
-  const direct = req.headers.get("x-api-key");
-  if (direct?.trim()) return direct.trim();
-  const legacy = req.headers.get("x-crm-api-key");
-  if (legacy?.trim()) return legacy.trim();
-  const authz = req.headers.get("authorization");
-  if (authz?.startsWith("Bearer ")) return authz.slice(7).trim();
-  return null;
-}
-
-function checkIngestAuth(req: NextRequest): boolean {
-  const expected = process.env.CRM_INGEST_API_KEY?.trim();
-  if (!expected) return false;
-  const got = providedApiKey(req);
-  return Boolean(got && got === expected);
-}
 
 function pickString(
   obj: Record<string, unknown>,
@@ -86,7 +70,7 @@ async function updateOpportunityById(
 }
 
 export async function POST(req: NextRequest) {
-  if (!checkIngestAuth(req)) {
+  if (!(await isValidIngestApiKeyAsync(req))) {
     return NextResponse.json(
       { ok: false, error: "Unauthorized" } satisfies ApiErr,
       { status: 401 }

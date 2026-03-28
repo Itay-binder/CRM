@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { upsertLead, listLeadsFiltered } from "@/lib/leads/repo";
+import { isValidIngestApiKeyAsync } from "@/lib/ingest/apiKey";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -8,23 +9,8 @@ export const revalidate = 0;
 type ApiOk = { ok: true; lead: { id: string; stage: string } };
 type ApiErr = { ok: false; error: string };
 
-function getIngestApiKeyFromHeader(req: NextRequest): string | null {
-  const direct = req.headers.get("x-crm-api-key");
-  if (direct?.trim()) return direct.trim();
-  const authz = req.headers.get("authorization");
-  if (authz?.startsWith("Bearer ")) return authz.slice(7).trim();
-  return null;
-}
-
-function checkIngestAuth(req: NextRequest): boolean {
-  const expected = process.env.CRM_INGEST_API_KEY?.trim();
-  if (!expected) return false;
-  const provided = getIngestApiKeyFromHeader(req);
-  return Boolean(provided && provided === expected);
-}
-
 export async function POST(req: NextRequest) {
-  if (!checkIngestAuth(req)) {
+  if (!(await isValidIngestApiKeyAsync(req))) {
     return NextResponse.json({ ok: false, error: "Unauthorized" } satisfies ApiErr, {
       status: 401,
     });

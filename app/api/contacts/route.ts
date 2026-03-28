@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { listLeadsFiltered, upsertLead } from "@/lib/leads/repo";
+import { phoneSearchMatches } from "@/lib/phoneSearch";
 import { validateCustomValues } from "@/lib/customFields/repo";
 
 export const dynamic = "force-dynamic";
@@ -24,9 +25,13 @@ export async function GET(req: NextRequest) {
 
   const dateFrom = req.nextUrl.searchParams.get("date_from");
   const dateTo = req.nextUrl.searchParams.get("date_to");
+  const phoneQ = req.nextUrl.searchParams.get("phone")?.trim() ?? "";
 
   try {
-    const leads = await listLeadsFiltered(dateFrom, dateTo);
+    let leads = await listLeadsFiltered(dateFrom, dateTo);
+    if (phoneQ) {
+      leads = leads.filter((l) => phoneSearchMatches(l.phone, phoneQ));
+    }
 
     // Build dynamic headers based on customFields keys too.
     const fixedHeaders = ["contactCode", "name", "email", "phone", "status", "assignedRep", "createdAt", "id"];

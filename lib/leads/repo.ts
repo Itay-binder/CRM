@@ -56,7 +56,7 @@ function normalizeUniqueKey(raw: string): string {
   return raw.trim().toLowerCase();
 }
 
-function normalizePhone(raw?: string): string | undefined {
+export function normalizePhone(raw?: string): string | undefined {
   if (!raw?.trim()) return undefined;
   const digits = raw.replace(/[^\d+]/g, "").replace(/^\+/, "");
   if (!digits) return undefined;

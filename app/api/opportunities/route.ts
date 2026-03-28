@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { createOpportunity, listOpportunities } from "@/lib/opportunities/repo";
+import { phoneSearchMatches } from "@/lib/phoneSearch";
 import { validateCustomValues } from "@/lib/customFields/repo";
 
 export const dynamic = "force-dynamic";
@@ -18,9 +19,15 @@ export async function GET(req: NextRequest) {
   }
 
   const pipelineId = req.nextUrl.searchParams.get("pipelineId");
+  const phoneQ = req.nextUrl.searchParams.get("phone")?.trim() ?? "";
 
   try {
-    const opportunities = await listOpportunities(pipelineId);
+    let opportunities = await listOpportunities(pipelineId);
+    if (phoneQ) {
+      opportunities = opportunities.filter(
+        (o) => phoneSearchMatches(o.phone, phoneQ) || phoneSearchMatches(o.contactPhone, phoneQ)
+      );
+    }
     return NextResponse.json({ ok: true, opportunities });
   } catch (e) {
     return NextResponse.json(

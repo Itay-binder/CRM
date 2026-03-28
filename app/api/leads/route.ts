@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApprovedUser } from "@/lib/auth/guard";
+import { requireApprovedUserOrIngestApiKey } from "@/lib/auth/guard";
 import { upsertLead, listLeadsFiltered } from "@/lib/leads/repo";
 import { phoneSearchMatches } from "@/lib/phoneSearch";
 import { isValidIngestApiKeyAsync } from "@/lib/ingest/apiKey";
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
  * Browser UI uses `/api/contacts` instead.
  */
 export async function GET(req: NextRequest) {
-  const auth = await requireApprovedUser(req);
+  const auth = await requireApprovedUserOrIngestApiKey(req);
   if (!auth.ok) {
     return NextResponse.json({ ok: false, error: auth.error } satisfies ApiErr, { status: auth.status });
   }

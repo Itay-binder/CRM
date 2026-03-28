@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApprovedUser } from "@/lib/auth/guard";
+import { requireApprovedUser, requireApprovedUserOrIngestApiKey } from "@/lib/auth/guard";
 import { createOpportunity, listOpportunities } from "@/lib/opportunities/repo";
 import { phoneSearchMatches } from "@/lib/phoneSearch";
 import { validateCustomValues } from "@/lib/customFields/repo";
@@ -10,7 +10,7 @@ export const revalidate = 0;
 type ApiErr = { ok: false; error: string };
 
 export async function GET(req: NextRequest) {
-  const auth = await requireApprovedUser(req);
+  const auth = await requireApprovedUserOrIngestApiKey(req);
   if (!auth.ok) {
     return NextResponse.json(
       { ok: false, error: auth.error } satisfies ApiErr,

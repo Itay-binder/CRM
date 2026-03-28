@@ -3,6 +3,7 @@ import { getVerifiedAuthFromRequest } from "@/lib/auth/fromRequest";
 import { ensureUserDoc } from "@/lib/auth/profile";
 import { authDisabled } from "@/lib/auth/session";
 import { getRequestTenantDatabaseId, getAdminDb } from "@/lib/firebase/admin";
+import { isValidIngestApiKeyAsync } from "@/lib/ingest/apiKey";
 import { getTenantByDatabaseId } from "@/lib/tenant/config";
 import { canAccessTenant } from "@/lib/tenant/access";
 
@@ -53,4 +54,27 @@ export async function requireApprovedUser(req: NextRequest): Promise<
       profile,
     },
   };
+}
+
+/** Browser session (approved user) OR ingest API key — for read/list APIs used from Make, etc. */
+export async function requireApprovedUserOrIngestApiKey(req: NextRequest): Promise<
+  | { ok: true; user?: ApprovedUser }
+  | { ok: false; status: 401 | 403; error: string }
+> {
+  if (authDisabled()) {
+    return {
+      ok: true,
+      user: {
+        uid: "dev",
+        email: undefined,
+        profile: { email: "", role: "admin", approved: true } as ApprovedUser["profile"],
+      },
+    };
+  }
+
+  if (await isValidIngestApiKeyAsync(req)) {
+    return { ok: true };
+  }
+
+  return requireApprovedUser(req);
 }

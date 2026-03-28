@@ -2,6 +2,10 @@ import { randomUUID } from "crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { allocateRunningCode } from "@/lib/counters/repo";
+import {
+  propagateExactNotesToAllOpportunities,
+  reconcileContactNotesAcrossEntities,
+} from "@/lib/notes/contactNotesSync";
 
 export type LeadRecord = {
   id: string; // doc id = normalized unique key
@@ -355,6 +359,13 @@ export async function updateLead(
   if (input.notes !== undefined) payload.notes = input.notes;
   if (input.tasks !== undefined) payload.tasks = input.tasks;
   await ref.set(payload, { merge: true });
+
+  if (input.notes !== undefined && Array.isArray(input.notes)) {
+    await propagateExactNotesToAllOpportunities(
+      docId,
+      input.notes as Array<{ id: string; text: string; createdAt: string; createdBy?: string }>
+    );
+  }
 
   const again = await ref.get();
   return mapDocToLead(again.id, (again.data() ?? {}) as Record<string, unknown>);

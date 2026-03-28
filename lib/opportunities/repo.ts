@@ -3,6 +3,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb, getRequestTenantDatabaseId } from "@/lib/firebase/admin";
 import { allocateRunningCode } from "@/lib/counters/repo";
 import { getTenantByDatabaseId } from "@/lib/tenant/config";
+import { reconcileContactNotesAcrossEntities } from "@/lib/notes/contactNotesSync";
 
 export type PipelineRecord = {
   id: string;
@@ -126,31 +127,6 @@ function buildNewOpportunityLeadNoteText(params: {
     `utm_content: ${dash(params.utmContent)}`,
     `תאריך יצירה: ${params.createdAtLabel}`,
   ].join("\n");
-}
-
-async function mergeOpportunityNotesIntoContact(
-  contactId: string,
-  opportunityNotes: Array<{ id: string; text: string; createdAt: string; createdBy?: string }>
-): Promise<void> {
-  const cid = contactId.trim();
-  if (!cid || opportunityNotes.length === 0) return;
-  const db = await getAdminDb();
-  const contactRef = db.collection("leads").doc(cid);
-  const contactSnap = await contactRef.get();
-  if (!contactSnap.exists) return;
-  const cdata = (contactSnap.data() ?? {}) as Record<string, unknown>;
-  const contactNotes = Array.isArray(cdata.notes)
-    ? (cdata.notes as Array<{ id: string; text: string; createdAt: string; createdBy?: string }>)
-    : [];
-  const notesMap = new Map(contactNotes.map((n) => [n.id, n]));
-  for (const n of opportunityNotes) notesMap.set(n.id, n);
-  await contactRef.set(
-    {
-      notes: Array.from(notesMap.values()),
-      updatedAt: FieldValue.serverTimestamp(),
-    },
-    { merge: true }
-  );
 }
 
 function normalizeStages(stages: string[]): string[] {
@@ -544,7 +520,7 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
     updatedAt: now,
   });
 
-  await mergeOpportunityNotesIntoContact(contactId, [initialNote]);
+  await reconcileContactNotesAcrossEntities(contactId);
 
   const snap = await ref.get();
   const d = (snap.data() ?? {}) as Record<string, unknown>;
@@ -641,7 +617,7 @@ export async function appendOpportunityNote(
   );
 
   const contactId = String(existing.contactId ?? "").trim();
-  if (contactId) await mergeOpportunityNotesIntoContact(contactId, [note]);
+  if (contactId) await reconcileContactNotesAcrossEntities(contactId);
 
   return (await getOpportunityById(id)) as OpportunityRecord;
 }
@@ -864,7 +840,6 @@ export async function updateOpportunity(
     const after = (afterSnap.data() ?? {}) as Record<string, unknown>;
     const cid = String(after.contactId ?? "").trim();
     if (cid) {
-      await mergeOpportunityNotesIntoContact(cid, [winNoteForContact]);
       const opportunityCode = await allocateRunningCode("opportunities", "O-");
       const exName = String(after.name ?? "").trim();
       const now = FieldValue.serverTimestamp();
@@ -946,8 +921,20 @@ export async function updateOpportunity(
       }
     }
   }
+
+  const notesPayloadTouched = Object.prototype.hasOwnProperty.call(payload, "notes");
   const again = await ref.get();
-  return (await getOpportunityById(again.id)) as OpportunityRecord;
+  const againData = (again.data() ?? {}) as Record<string, unknown>;
+  const finalContactId = String(againData.contactId ?? "").trim();
+  if (
+    finalContactId &&
+    (input.notes !== undefined || winNoteForContact != null || notesPayloadTouched)
+  ) {
+    await reconcileContactNotesAcrossEntities(finalContactId);
+  }
+
+  const refreshed = await ref.get();
+  return (await getOpportunityById(refreshed.id)) as OpportunityRecord;
 }
 
 export async function updatePipeline(

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getExternalRef, upsertExternalRef } from "@/lib/externalRefs/repo";
 import { validateCustomValues } from "@/lib/customFields/repo";
-import { createOpportunity } from "@/lib/opportunities/repo";
-import { getAdminDb } from "@/lib/firebase/admin";
+import { createOpportunity, updateOpportunity } from "@/lib/opportunities/repo";
 import { isValidIngestApiKeyAsync } from "@/lib/ingest/apiKey";
 
 export const dynamic = "force-dynamic";
@@ -53,20 +52,6 @@ function pickStringArray(
     }
   }
   return undefined;
-}
-
-async function updateOpportunityById(
-  id: string,
-  updates: Record<string, unknown>
-): Promise<void> {
-  const db = await getAdminDb();
-  await db.collection("opportunities").doc(id).set(
-    {
-      ...updates,
-      updatedAt: new Date(),
-    },
-    { merge: true }
-  );
 }
 
 export async function POST(req: NextRequest) {
@@ -171,14 +156,15 @@ export async function POST(req: NextRequest) {
     }
 
     if (oppId) {
-      await updateOpportunityById(oppId, {
+      const status =
+        statusRaw === "זכיה" || statusRaw === "הפסד" || statusRaw === "פתוח"
+          ? statusRaw
+          : undefined;
+      await updateOpportunity(oppId, {
         name: name || undefined,
         stage: stage || undefined,
         pipelineId: pipelineId || undefined,
-        status:
-          statusRaw === "זכיה" || statusRaw === "הפסד" || statusRaw === "פתוח"
-            ? statusRaw
-            : undefined,
+        status,
         value: value ?? undefined,
         email: email ?? undefined,
         phone: phone ?? undefined,

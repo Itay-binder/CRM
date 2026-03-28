@@ -309,6 +309,10 @@ export async function listOpportunities(pipelineId?: string | null): Promise<Opp
     const d = (doc.data() ?? {}) as Record<string, unknown>;
     return {
       id: doc.id,
+      opportunityCode:
+        typeof d.opportunityCode === "string" && d.opportunityCode.trim()
+          ? d.opportunityCode.trim()
+          : undefined,
       name: String(d.name ?? ""),
       contactId: String(d.contactId ?? ""),
       contactName: typeof d.contactName === "string" ? d.contactName : undefined,

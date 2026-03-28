@@ -15,7 +15,7 @@ function canManageApiKeys(user: {
   return user.profile.role === "admin" || isAdminEmail(user.email);
 }
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   const auth = await requireApprovedUser(req);
   if (!auth.ok) {
     return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });

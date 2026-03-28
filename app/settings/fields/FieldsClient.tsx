@@ -79,7 +79,6 @@ export default function FieldsClient() {
   const [saving, setSaving] = useState(false);
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
   const [deletingFieldId, setDeletingFieldId] = useState<string | null>(null);
-  const [normalizingIds, setNormalizingIds] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -205,41 +204,6 @@ export default function FieldsClient() {
     }
   }
 
-  async function normalizeFieldIds() {
-    const ok = window.confirm(
-      "לסדר את מזהי השדות לפורמט contact_xxx / opportunity_xxx?\nהפעולה תעדכן גם נתונים קיימים."
-    );
-    if (!ok) return;
-    setNormalizingIds(true);
-    setErr(null);
-    try {
-      const res = await fetch("/api/custom-fields", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "normalize_ids" }),
-      });
-      const j = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        error?: string;
-        result?: { updatedFields: number; touchedContacts: number; touchedOpportunities: number };
-      };
-      if (!res.ok || !j.ok) {
-        setErr(j.error ?? "סידור מזהים נכשל");
-        return;
-      }
-      await load();
-      const updated = j.result?.updatedFields ?? 0;
-      const contacts = j.result?.touchedContacts ?? 0;
-      const opps = j.result?.touchedOpportunities ?? 0;
-      window.alert(`סידור הושלם: ${updated} שדות, ${contacts} אנשי קשר, ${opps} הזדמנויות.`);
-    } catch {
-      setErr("סידור מזהים נכשל");
-    } finally {
-      setNormalizingIds(false);
-    }
-  }
-
   function startEditField(f: CustomField) {
     setEditingFieldId(f.fieldId);
     setEntityType(f.entityType);
@@ -284,22 +248,6 @@ export default function FieldsClient() {
             <option value="contact">Contact</option>
             <option value="opportunity">Opportunity</option>
           </select>
-          <div style={{ flex: 1 }} />
-          <button
-            type="button"
-            onClick={() => void normalizeFieldIds()}
-            disabled={normalizingIds}
-            style={{
-              padding: "8px 10px",
-              borderRadius: 10,
-              border: "1px solid #e5e7eb",
-              background: "#fff",
-              cursor: "pointer",
-              fontWeight: 700,
-            }}
-          >
-            {normalizingIds ? "מסדר מזהים..." : "סידור מזהים אוטומטי"}
-          </button>
         </div>
 
         <div

@@ -3,7 +3,6 @@ import { requireApprovedUser } from "@/lib/auth/guard";
 import {
   deleteCustomField,
   listCustomFields,
-  normalizeExistingCustomFieldIds,
   type CustomFieldEntity,
   type CustomFieldType,
   upsertCustomField,
@@ -51,7 +50,6 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = (await req.json()) as {
-      action?: "normalize_ids";
       fieldId?: string;
       entityType?: CustomFieldEntity;
       label?: string;
@@ -60,10 +58,6 @@ export async function POST(req: NextRequest) {
       isRequired?: boolean;
       isActive?: boolean;
     };
-    if (body.action === "normalize_ids") {
-      const result = await normalizeExistingCustomFieldIds();
-      return NextResponse.json({ ok: true, result });
-    }
 
     const field = await upsertCustomField({
       fieldId: body.fieldId,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApprovedUserOrIngestApiKey } from "@/lib/auth/guard";
-import { getOpportunityById, updateOpportunity } from "@/lib/opportunities/repo";
+import { requireApprovedUser, requireApprovedUserOrIngestApiKey } from "@/lib/auth/guard";
+import { deleteOpportunity, getOpportunityById, updateOpportunity } from "@/lib/opportunities/repo";
 import { validateCustomValues } from "@/lib/customFields/repo";
 
 export const dynamic = "force-dynamic";
@@ -80,6 +80,29 @@ export async function PATCH(
       customValues,
     });
     return NextResponse.json({ ok: true, opportunity });
+  } catch (e) {
+    return NextResponse.json(
+      { ok: false, error: e instanceof Error ? e.message : "Unknown error" } satisfies ApiErr,
+      { status: 400 }
+    );
+  }
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const auth = await requireApprovedUser(_req);
+  if (!auth.ok) {
+    return NextResponse.json(
+      { ok: false, error: auth.error } satisfies ApiErr,
+      { status: auth.status }
+    );
+  }
+  const { id } = await params;
+  try {
+    await deleteOpportunity(id);
+    return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "Unknown error" } satisfies ApiErr,

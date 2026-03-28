@@ -174,6 +174,11 @@ export default function PipelineClient() {
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
   const [openedOpportunityFromQuery, setOpenedOpportunityFromQuery] = useState(false);
   const [boardPreviewFields, setBoardPreviewFields] = useState<string[]>([]);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [confettiOn, setConfettiOn] = useState(false);
+  const [confettiKey, setConfettiKey] = useState(0);
+  const [oppDeleteOpen, setOppDeleteOpen] = useState(false);
+  const [oppDeleteConfirm, setOppDeleteConfirm] = useState("");
 
   const selectedPipeline = useMemo(
     () => pipelines.find((p) => p.id === selectedPipelineId) ?? null,
@@ -320,6 +325,12 @@ export default function PipelineClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPipelineId]);
 
+  useEffect(() => {
+    if (!toastMessage) return;
+    const t = window.setTimeout(() => setToastMessage(null), 4200);
+    return () => window.clearTimeout(t);
+  }, [toastMessage]);
+
   const adminLabelByEmail = useMemo(() => {
     const map = new Map<string, string>();
     for (const u of adminUsers) {
@@ -457,7 +468,11 @@ export default function PipelineClient() {
       notes?: NoteItem[];
       tasks?: TaskItem[];
     },
-    options?: { fromDetail?: boolean }
+    options?: {
+      fromDetail?: boolean;
+      showSavedToast?: boolean;
+      prevStatusBeforeSave?: "פתוח" | "זכיה" | "הפסד";
+    }
   ) {
     const res = await fetch(`/api/opportunities/${encodeURIComponent(id)}`, {
       method: "PATCH",
@@ -473,6 +488,15 @@ export default function PipelineClient() {
     if (!res.ok || !j.ok || !j.opportunity) {
       setErr(j.error ?? "שמירת הזדמנות נכשלה");
       return;
+    }
+    if (options?.showSavedToast) {
+      setToastMessage("העדכון נשמר בהצלחה");
+      const nextStatus = j.opportunity.status ?? "פתוח";
+      if (options.prevStatusBeforeSave !== "זכיה" && nextStatus === "זכיה") {
+        setConfettiKey((k) => k + 1);
+        setConfettiOn(true);
+        window.setTimeout(() => setConfettiOn(false), 2600);
+      }
     }
     if (options?.fromDetail) {
       setSelectedOpp((prev) => {
@@ -1180,7 +1204,8 @@ export default function PipelineClient() {
             width: "100%",
             maxWidth: "100%",
             overflowX: "auto",
-            overflowY: "hidden",
+            overflowY: "visible",
+            paddingBottom: 100,
           }}
         >
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 860 }}>
@@ -1192,9 +1217,9 @@ export default function PipelineClient() {
               </tr>
             </thead>
             <tbody>
-              {pipelines.map((p) => (
+              {pipelines.map((p, rowIdx) => (
                 <tr key={p.id}>
-                  <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6", position: "relative" }}>
+                  <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6", position: "relative", verticalAlign: "top" }}>
                     <button
                       type="button"
                       onClick={() => setPipelineMenuOpenId((x) => (x === p.id ? null : p.id))}
@@ -1207,14 +1232,16 @@ export default function PipelineClient() {
                       <div
                         style={{
                           position: "absolute",
-                          top: 34,
+                          ...(rowIdx === pipelines.length - 1
+                            ? { bottom: "100%", top: "auto", marginBottom: 6 }
+                            : { top: 34, bottom: "auto" }),
                           right: 12,
                           background: "#fff",
                           border: "1px solid #e5e7eb",
                           borderRadius: 10,
                           boxShadow: "0 12px 24px rgba(0,0,0,0.08)",
                           padding: 6,
-                          zIndex: 20,
+                          zIndex: 50,
                           minWidth: 160,
                         }}
                       >
@@ -1852,7 +1879,63 @@ export default function PipelineClient() {
                     <input value={String((selectedOpp.customValues ?? {})[fid] ?? "")} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, customValues: { ...(x.customValues ?? {}), [fid]: e.target.value } } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
                   </label>
                 ))}
-                <button type="button" onClick={() => void saveOpportunityPatch(selectedOpp.id, { name: selectedOpp.name, email: selectedOpp.email ?? "", phone: selectedOpp.phone ?? "", stage: selectedOpp.stage, status: selectedOpp.status ?? "פתוח", pipelineId: selectedOpp.pipelineId, assignedRep: selectedOpp.assignedRep ?? "", utmSource: selectedOpp.utmSource ?? "", utmCampaign: selectedOpp.utmCampaign ?? "", utmMedium: selectedOpp.utmMedium ?? "", utmContent: selectedOpp.utmContent ?? "", landingpage: selectedOpp.landingpage ?? "", tags: selectedOpp.tags ?? [], customValues: selectedOpp.customValues ?? {} }, { fromDetail: true })} style={{ gridColumn: "1 / -1", padding: "9px 12px", borderRadius: 10, border: "none", background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)", color: "#fff", fontWeight: 800, cursor: "pointer" }}>שמור ועדכן</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const prev = selectedOpp.status ?? "פתוח";
+                    void saveOpportunityPatch(
+                      selectedOpp.id,
+                      {
+                        name: selectedOpp.name,
+                        email: selectedOpp.email ?? "",
+                        phone: selectedOpp.phone ?? "",
+                        stage: selectedOpp.stage,
+                        status: selectedOpp.status ?? "פתוח",
+                        pipelineId: selectedOpp.pipelineId,
+                        assignedRep: selectedOpp.assignedRep ?? "",
+                        utmSource: selectedOpp.utmSource ?? "",
+                        utmCampaign: selectedOpp.utmCampaign ?? "",
+                        utmMedium: selectedOpp.utmMedium ?? "",
+                        utmContent: selectedOpp.utmContent ?? "",
+                        landingpage: selectedOpp.landingpage ?? "",
+                        tags: selectedOpp.tags ?? [],
+                        customValues: selectedOpp.customValues ?? {},
+                      },
+                      { fromDetail: true, showSavedToast: true, prevStatusBeforeSave: prev }
+                    );
+                  }}
+                  style={{
+                    gridColumn: "1 / -1",
+                    padding: "9px 12px",
+                    borderRadius: 10,
+                    border: "none",
+                    background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)",
+                    color: "#fff",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                  }}
+                >
+                  שמור ועדכן
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOppDeleteConfirm("");
+                    setOppDeleteOpen(true);
+                  }}
+                  style={{
+                    gridColumn: "1 / -1",
+                    padding: "9px 12px",
+                    borderRadius: 10,
+                    border: "1px solid #fecaca",
+                    background: "#fff",
+                    color: "#b91c1c",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                  }}
+                >
+                  מחק הזדמנות
+                </button>
                   </div>
                 </div>
               </div>
@@ -1919,6 +2002,149 @@ export default function PipelineClient() {
           </div></div>
         </div>
       )}
+
+      {selectedOpp && oppDeleteOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 110,
+            background: "rgba(0,0,0,0.35)",
+            display: "grid",
+            placeItems: "center",
+            padding: 16,
+          }}
+          onMouseDown={() => {
+            setOppDeleteOpen(false);
+            setOppDeleteConfirm("");
+          }}
+        >
+          <div
+            style={{
+              width: "min(420px, 94vw)",
+              background: "#fff",
+              borderRadius: 16,
+              border: "1px solid #e5e7eb",
+              padding: 20,
+              boxShadow: "0 20px 50px rgba(0,0,0,0.12)",
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>מחיקת הזדמנות</div>
+            <p style={{ margin: "0 0 12px", color: "#4b5563", lineHeight: 1.55, fontSize: 14 }}>
+              פעולה זו תמחק לצמיתות את ההזדמנות <strong dir="ltr">{selectedOpp.name}</strong>. אי אפשר לבטל.
+            </p>
+            <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 700 }}>
+              כדי לאשר, הקלידו במדויק: <code dir="ltr">DELETE</code>
+            </p>
+            <input
+              dir="ltr"
+              value={oppDeleteConfirm}
+              onChange={(e) => setOppDeleteConfirm(e.target.value)}
+              placeholder="DELETE"
+              autoComplete="off"
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #e5e7eb",
+                marginBottom: 14,
+                fontFamily: "monospace",
+              }}
+            />
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setOppDeleteOpen(false);
+                  setOppDeleteConfirm("");
+                }}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "1px solid #e5e7eb",
+                  background: "#fff",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                }}
+              >
+                ביטול
+              </button>
+              <button
+                type="button"
+                disabled={oppDeleteConfirm.trim() !== "DELETE"}
+                onClick={() => void (async () => {
+                  if (!selectedOpp || oppDeleteConfirm.trim() !== "DELETE") return;
+                  const res = await fetch(`/api/opportunities/${encodeURIComponent(selectedOpp.id)}`, {
+                    method: "DELETE",
+                    credentials: "include",
+                  });
+                  const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+                  if (!res.ok || !j.ok) {
+                    setErr(j.error ?? "מחיקת הזדמנות נכשלה");
+                    return;
+                  }
+                  setOppDeleteOpen(false);
+                  setOppDeleteConfirm("");
+                  setSelectedOpp(null);
+                  setToastMessage("ההזדמנות נמחקה");
+                  await load();
+                })()}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: oppDeleteConfirm.trim() === "DELETE" ? "#b91c1c" : "#fca5a5",
+                  color: "#fff",
+                  cursor: oppDeleteConfirm.trim() === "DELETE" ? "pointer" : "not-allowed",
+                  fontWeight: 800,
+                }}
+              >
+                מחק (DELETE)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toastMessage && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            bottom: 24,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 200,
+            maxWidth: "min(420px, 92vw)",
+            padding: "14px 20px",
+            borderRadius: 14,
+            background: "#111827",
+            color: "#fff",
+            fontWeight: 700,
+            fontSize: 15,
+            boxShadow: "0 16px 40px rgba(0,0,0,0.2)",
+            textAlign: "center",
+            lineHeight: 1.45,
+          }}
+        >
+          {toastMessage}
+        </div>
+      )}
+
+      {confettiOn &&
+        [...Array(42)].map((_, i) => (
+          <div
+            key={`${confettiKey}-${i}`}
+            className="crm-confetti-piece"
+            style={{
+              left: `${(i * 41 + (confettiKey % 7) * 13) % 100}%`,
+              backgroundColor: ["#a78bfa", "#f472b6", "#34d399", "#fbbf24", "#60a5fa", "#f87171"][i % 6],
+              animationDelay: `${i * 0.035}s`,
+            }}
+          />
+        ))}
     </div>
   );
 }

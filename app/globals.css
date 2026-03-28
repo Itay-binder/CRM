@@ -21,3 +21,25 @@ a {
   color: inherit;
 }
 
+@keyframes crm-confetti-fall {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100vh) rotate(720deg);
+    opacity: 0;
+  }
+}
+
+.crm-confetti-piece {
+  position: fixed;
+  top: -12px;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 200;
+  animation: crm-confetti-fall 2.4s ease-in forwards;
+}
+

@@ -1019,6 +1019,16 @@ export async function duplicatePipeline(id: string): Promise<PipelineRecord> {
   });
 }
 
+export async function deleteOpportunity(id: string): Promise<void> {
+  const raw = id.trim();
+  if (!raw) throw new Error("Opportunity id is required");
+  const db = await getAdminDb();
+  const ref = db.collection("opportunities").doc(raw);
+  const snap = await ref.get();
+  if (!snap.exists) throw new Error("Opportunity not found");
+  await ref.delete();
+}
+
 export async function deletePipeline(id: string): Promise<void> {
   if (id === "default-sales" && (await shouldSeedDefaultPipeline())) {
     throw new Error("Default pipeline cannot be deleted");

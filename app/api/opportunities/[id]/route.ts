@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApprovedUser } from "@/lib/auth/guard";
+import { requireApprovedUserOrIngestApiKey } from "@/lib/auth/guard";
 import { getOpportunityById, updateOpportunity } from "@/lib/opportunities/repo";
 import { validateCustomValues } from "@/lib/customFields/repo";
 
@@ -11,7 +11,7 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireApprovedUser(req);
+  const auth = await requireApprovedUserOrIngestApiKey(req);
   if (!auth.ok) {
     return NextResponse.json(
       { ok: false, error: auth.error } satisfies ApiErr,
@@ -33,7 +33,7 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireApprovedUser(req);
+  const auth = await requireApprovedUserOrIngestApiKey(req);
   if (!auth.ok) {
     return NextResponse.json(
       { ok: false, error: auth.error } satisfies ApiErr,

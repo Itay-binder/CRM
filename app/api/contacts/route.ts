@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApprovedUser, requireApprovedUserOrIngestApiKey } from "@/lib/auth/guard";
+import {
+  requireApprovedUser,
+  requireApprovedUserOrIngestApiKey,
+} from "@/lib/auth/guard";
 import { listLeadsFiltered, upsertLead } from "@/lib/leads/repo";
 import { phoneSearchMatches } from "@/lib/phoneSearch";
 import { validateCustomValues } from "@/lib/customFields/repo";
@@ -77,7 +80,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireApprovedUser(req);
+  const auth = await requireApprovedUserOrIngestApiKey(req);
   if (!auth.ok) {
     return NextResponse.json(
       { ok: false, error: auth.error } satisfies ApiErr,

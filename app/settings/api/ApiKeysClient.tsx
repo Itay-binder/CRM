@@ -12,7 +12,41 @@ type KeyRow = {
   hint?: string;
 };
 
-export default function ApiKeysClient() {
+type Props = {
+  baseUrl: string;
+  tenantLabel: string;
+  tenantDatabaseId: string;
+  multiTenant: boolean;
+};
+
+function CodeBlock({ text }: { text: string }) {
+  return (
+    <pre
+      dir="ltr"
+      style={{
+        margin: "10px 0 0",
+        padding: 12,
+        borderRadius: 10,
+        background: "#f9fafb",
+        border: "1px solid #e5e7eb",
+        fontSize: 12,
+        lineHeight: 1.45,
+        overflowX: "auto",
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-word",
+      }}
+    >
+      {text}
+    </pre>
+  );
+}
+
+export default function ApiKeysClient({
+  baseUrl,
+  tenantLabel,
+  tenantDatabaseId,
+  multiTenant,
+}: Props) {
   const [keys, setKeys] = useState<KeyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -275,6 +309,199 @@ export default function ApiKeysClient() {
           </ul>
         )}
       </div>
+
+      <HttpApiGuide
+        baseUrl={baseUrl}
+        tenantLabel={tenantLabel}
+        tenantDatabaseId={tenantDatabaseId}
+        multiTenant={multiTenant}
+      />
+    </div>
+  );
+}
+
+function HttpApiGuide({
+  baseUrl,
+  tenantLabel,
+  tenantDatabaseId,
+  multiTenant,
+}: Props) {
+  const base = baseUrl.trim() || "https://YOUR-CRM-DOMAIN.example";
+  const tid = tenantDatabaseId;
+  const hKey = '  -H "x-api-key: YOUR_KEY_HERE" \\';
+  const hJson = '  -H "Content-Type: application/json" \\';
+  const hTenant = `  -H "x-crm-tenant-database-id: ${tid}" \\`;
+  const tenantHeaderLine = `  -H "x-crm-tenant-database-id: ${tid}"`;
+
+  const sectionTitle = (n: string, t: string) => (
+    <h2 style={{ margin: "24px 0 8px", fontSize: 17, fontWeight: 800 }}>{n}. {t}</h2>
+  );
+
+  return (
+    <div
+      style={{
+        maxWidth: 880,
+        marginTop: 24,
+        background: "#fff",
+        borderRadius: 16,
+        border: "1px solid #e5e7eb",
+        padding: 20,
+      }}
+    >
+      <h1 style={{ margin: "0 0 8px", fontSize: 22 }}>מדריך HTTP — העסק הנוכחי</h1>
+      <p style={{ margin: "0 0 12px", color: "#374151", lineHeight: 1.6, fontSize: 14 }}>
+        המדריך מותאם לעסק <strong>{tenantLabel}</strong>. כל הקריאות למטה פונות למסד הנתונים של
+        הדייר הפעיל בלבד, כשמשתמשים במפתח API ובכותרת המזהה למטה.
+      </p>
+      <div
+        style={{
+          padding: 12,
+          borderRadius: 12,
+          background: "#eff6ff",
+          border: "1px solid #bfdbfe",
+          marginBottom: 8,
+        }}
+      >
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>מזהה מסד (להעתקה לכותרת)</div>
+        <code dir="ltr" style={{ fontSize: 13, wordBreak: "break-all" }}>
+          {tid}
+        </code>
+        <div style={{ fontSize: 13, color: "#1e40af", marginTop: 8, lineHeight: 1.5 }}>
+          כותרת HTTP: <code dir="ltr">x-crm-tenant-database-id</code>
+          {multiTenant ? (
+            <>
+              {" "}
+              — <strong>חובה</strong> בכל בקשה כשיש כמה עסקים במערכת.
+            </>
+          ) : (
+            <>
+              {" "}
+              — מומלץ תמיד באינטגרציות; בעסק יחיד עם מסד ברירת מחדל לעיתים השרת יזהה בלי הכותרת.
+            </>
+          )}
+        </div>
+      </div>
+      <p style={{ margin: "0 0 8px", color: "#6b7280", fontSize: 13, lineHeight: 1.5 }}>
+        בסיס כתובות לדוגמה: <code dir="ltr">{base}</code> (הוחלף אוטומטית לפי הדפדפן; אם ריק —
+        החליפו בדומיין שלכם).
+      </p>
+      <p style={{ margin: "0 0 16px", color: "#6b7280", fontSize: 13, lineHeight: 1.5 }}>
+        אימות: <code dir="ltr">x-api-key</code>, <code dir="ltr">x-crm-api-key</code>, או{" "}
+        <code dir="ltr">Authorization: Bearer …</code> עם מפתח מהמסך למעלה או עם{" "}
+        <code dir="ltr">CRM_INGEST_API_KEY</code> מהסביבה.
+      </p>
+
+      {sectionTitle("1", "יצירת / עדכון איש קשר (REST)")}
+      <p style={{ margin: 0, color: "#4b5563", fontSize: 14, lineHeight: 1.55 }}>
+        <strong>POST</strong> יוצר או ממזג לפי אימייל/טלפון (כמו בממשק). גוף JSON: לפחות אחד מ־
+        <code dir="ltr">email</code> / <code dir="ltr">phone</code>, ושדות אופציונליים כמו{" "}
+        <code dir="ltr">name</code>, <code dir="ltr">status</code>, <code dir="ltr">customValues</code>.
+      </p>
+      <CodeBlock
+        text={`curl -X POST "${base}/api/contacts" \\
+${hJson}
+${hKey}
+${hTenant}
+  -d '{"phone":"0501234567","name":"ישראל ישראלי","email":"israel@example.com"}'`}
+      />
+
+      <p style={{ margin: "14px 0 0", color: "#4b5563", fontSize: 14, lineHeight: 1.55 }}>
+        <strong>PATCH</strong> לפי מזהה מסמך (ה־<code dir="ltr">id</code> שחוזר מה־API או מהטבלה):
+      </p>
+      <CodeBlock
+        text={`curl -X PATCH "${base}/api/contacts/CONTACT_ID" \\
+${hJson}
+${hKey}
+${hTenant}
+  -d '{"name":"שם מעודכן","phone":"0509999999","status":"פתוח"}'`}
+      />
+
+      {sectionTitle("2", "שליפת אנשי קשר")}
+      <p style={{ margin: 0, color: "#4b5563", fontSize: 14, lineHeight: 1.55 }}>
+        <strong>GET</strong> רשימה; אופציונלי <code dir="ltr">?phone=</code> (התאמה גמישה לפי מספר),
+        <code dir="ltr">date_from</code>, <code dir="ltr">date_to</code>.
+      </p>
+      <CodeBlock
+        text={`curl -s "${base}/api/contacts?phone=526660006" \\
+${hKey}
+${hTenant.replace(" \\", "")}`}
+      />
+      <p style={{ margin: "8px 0 0", color: "#4b5563", fontSize: 13 }}>
+        פירוט איש קשר + הזדמנויות מקושרות: <strong>GET</strong>{" "}
+        <code dir="ltr">{`${base}/api/contacts/CONTACT_ID`}</code>
+      </p>
+
+      {sectionTitle("3", "יצירת / עדכון הזדמנות (REST)")}
+      <p style={{ margin: 0, color: "#4b5563", fontSize: 14, lineHeight: 1.55 }}>
+        <strong>POST</strong> — חובה <code dir="ltr">contactId</code> (מזהה איש קשר). מומלץ גם{" "}
+        <code dir="ltr">pipelineId</code>, <code dir="ltr">stage</code>, <code dir="ltr">name</code>.
+      </p>
+      <CodeBlock
+        text={`curl -X POST "${base}/api/opportunities" \\
+${hJson}
+${hKey}
+${hTenant}
+  -d '{"contactId":"CONTACT_ID","pipelineId":"PIPELINE_ID","stage":"Pending","name":"ליד חדש","phone":"0501234567"}'`}
+      />
+      <p style={{ margin: "12px 0 0", color: "#4b5563", fontSize: 14, lineHeight: 1.55 }}>
+        <strong>PATCH</strong> לפי מזהה הזדמנות:
+      </p>
+      <CodeBlock
+        text={`curl -X PATCH "${base}/api/opportunities/OPPORTUNITY_ID" \\
+${hJson}
+${hKey}
+${hTenant}
+  -d '{"stage":"Contacted","value":1500,"status":"פתוח"}'`}
+      />
+
+      {sectionTitle("4", "שליפת הזדמנויות")}
+      <p style={{ margin: 0, color: "#4b5563", fontSize: 14, lineHeight: 1.55 }}>
+        <strong>GET</strong> — אופציונלי <code dir="ltr">pipelineId</code>, <code dir="ltr">phone</code>.
+      </p>
+      <CodeBlock
+        text={`curl -s "${base}/api/opportunities?phone=526660006" \\
+${hKey}
+${tenantHeaderLine}`}
+      />
+      <p style={{ margin: "8px 0 0", color: "#4b5563", fontSize: 13 }}>
+        הזדמנות בודדת: <strong>GET</strong> <code dir="ltr">{`${base}/api/opportunities/OPPORTUNITY_ID`}</code>
+      </p>
+
+      {sectionTitle("5", "קליטה עם מזהה חיצוני (מומלץ ל-Make)")}
+      <p style={{ margin: 0, color: "#4b5563", fontSize: 14, lineHeight: 1.55 }}>
+        כששולחים <code dir="ltr">provider</code> + <code dir="ltr">externalId</code>, אותה בקשה חוזרת
+        מעדכנת את אותו רשומה במקום ליצור כפילויות.
+      </p>
+      <p style={{ margin: "10px 0 0", fontWeight: 700, fontSize: 13 }}>איש קשר</p>
+      <CodeBlock
+        text={`curl -X POST "${base}/api/ingest/contact-upsert" \\
+${hJson}
+${hKey}
+${hTenant}
+  -d '{"provider":"make","externalId":"row-123","contact":{"phone":"0501234567","name":"ישראל","email":"a@b.com"}}'`}
+      />
+      <p style={{ margin: "10px 0 0", fontWeight: 700, fontSize: 13 }}>הזדמנות (דורש contactId)</p>
+      <CodeBlock
+        text={`curl -X POST "${base}/api/ingest/opportunity-upsert" \\
+${hJson}
+${hKey}
+${hTenant}
+  -d '{"provider":"make","externalId":"deal-456","opportunity":{"contactId":"CONTACT_ID","pipelineId":"PIPELINE_ID","stage":"Pending","name":"עסקה"}}'`}
+      />
+
+      {sectionTitle("6", "נתיב חלופי לליד")}
+      <p style={{ margin: 0, color: "#4b5563", fontSize: 14, lineHeight: 1.55 }}>
+        <strong>POST</strong> <code dir="ltr">/api/leads</code> — גוף JSON גמיש (שדות ליד); מתאים לסקריפטים
+        פשוטים.
+      </p>
+      <p style={{ margin: "8px 0 0", color: "#4b5563", fontSize: 14, lineHeight: 1.55 }}>
+        <strong>GET</strong> — תקציר לידים; אופציונלי <code dir="ltr">phone</code>, תאריכים.
+      </p>
+      <CodeBlock
+        text={`curl -s "${base}/api/leads?phone=526660006" \\
+${hKey}
+${tenantHeaderLine}`}
+      />
     </div>
   );
 }

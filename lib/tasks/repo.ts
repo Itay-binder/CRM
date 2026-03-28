@@ -7,6 +7,7 @@ export type UnifiedTask = {
   id: string;
   title: string;
   dueAt: string;
+  reminderAt?: string;
   status: TaskStatus;
   done: boolean;
   comments: TaskComment[];
@@ -15,12 +16,18 @@ export type UnifiedTask = {
   entityId: string;
   entityName: string;
   createdAt: string;
+  /** "__contact__" for contact tasks, else opportunity pipeline id */
+  pipelineId: string;
+  pipelineName: string;
 };
 
 type RawTask = {
   id?: string;
   title?: string;
   dueAt?: string;
+  reminderAt?: string;
+  reminderWebhookFiredAt?: string;
+  deadline15mWebhookFiredAt?: string;
   done?: boolean;
   status?: TaskStatus;
   comments?: TaskComment[];
@@ -39,10 +46,12 @@ function normalizeTask(raw: RawTask): UnifiedTask | null {
   const title = String(raw.title ?? "").trim();
   if (!id || !title) return null;
   const status = normalizeStatus(raw);
+  const rem = String(raw.reminderAt ?? "").trim();
   return {
     id,
     title,
     dueAt: String(raw.dueAt ?? ""),
+    ...(rem ? { reminderAt: rem } : {}),
     status,
     done: status === "done",
     comments: Array.isArray(raw.comments) ? raw.comments : [],
@@ -50,15 +59,25 @@ function normalizeTask(raw: RawTask): UnifiedTask | null {
     entityType: "contact",
     entityId: "",
     entityName: "",
+    pipelineId: "__contact__",
+    pipelineName: "אנשי קשר",
   };
 }
 
 export async function listUnifiedTasks(): Promise<UnifiedTask[]> {
   const db = await getAdminDb();
-  const [leadsSnap, oppSnap] = await Promise.all([
+  const [leadsSnap, oppSnap, pipelinesSnap] = await Promise.all([
     db.collection("leads").get(),
     db.collection("opportunities").get(),
+    db.collection("pipelines").get(),
   ]);
+
+  const pipelineNameById = new Map(
+    pipelinesSnap.docs.map((d) => {
+      const pd = (d.data() ?? {}) as Record<string, unknown>;
+      return [d.id, String(pd.name ?? d.id)] as const;
+    })
+  );
 
   const out: UnifiedTask[] = [];
   for (const doc of leadsSnap.docs) {
@@ -109,6 +128,7 @@ export async function updateTaskAndSync(
     status?: TaskStatus;
     title?: string;
     dueAt?: string;
+    reminderAt?: string;
     commentText?: string;
   }
 ): Promise<UnifiedTask> {
@@ -133,7 +153,13 @@ export async function updateTaskAndSync(
       createdAt: new Date().toISOString(),
     });
   }
-  tasks[idx] = {
+
+  const prevDue = String(existing.dueAt ?? "").trim();
+  const prevRem = String(existing.reminderAt ?? "").trim();
+  const effDue = (input.dueAt !== undefined ? input.dueAt : String(existing.dueAt ?? "")).trim();
+  const effRem = (input.reminderAt !== undefined ? input.reminderAt : String(existing.reminderAt ?? "")).trim();
+
+  const nextTask: RawTask = {
     ...existing,
     title: input.title !== undefined ? input.title.trim() : existing.title,
     dueAt: input.dueAt !== undefined ? input.dueAt.trim() : existing.dueAt,
@@ -141,6 +167,16 @@ export async function updateTaskAndSync(
     done: nextStatus === "done",
     comments,
   };
+  if (input.reminderAt !== undefined) {
+    const r = input.reminderAt.trim();
+    if (r) nextTask.reminderAt = r;
+    else delete nextTask.reminderAt;
+  }
+  if (effDue !== prevDue || effRem !== prevRem) {
+    delete nextTask.reminderWebhookFiredAt;
+    delete nextTask.deadline15mWebhookFiredAt;
+  }
+  tasks[idx] = nextTask;
 
   const notes = Array.isArray(data.notes) ? [...(data.notes as Array<{ id: string; text: string; createdAt: string }>)] : [];
   if (trimmedComment) {
@@ -193,12 +229,25 @@ export async function updateTaskAndSync(
     input.entityId;
   const normalized = normalizeTask(tasks[idx]);
   if (!normalized) throw new Error("Task became invalid");
+
+  let pipelineId = "__contact__";
+  let pipelineName = "אנשי קשר";
+  if (input.entityType === "opportunity") {
+    pipelineId = String(data.pipelineId ?? "").trim() || "__unknown_pipeline__";
+    const pSnap = await db.collection("pipelines").doc(pipelineId).get();
+    pipelineName = pSnap.exists
+      ? String((pSnap.data() as Record<string, unknown>).name ?? pipelineId)
+      : pipelineId;
+  }
+
   return {
     ...normalized,
     assignedRep: typeof data.assignedRep === "string" ? data.assignedRep : undefined,
     entityType: input.entityType,
     entityId: input.entityId,
     entityName,
+    pipelineId,
+    pipelineName,
   };
 }
 

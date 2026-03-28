@@ -36,11 +36,33 @@ type TaskItem = {
   id: string;
   title: string;
   dueAt: string;
+  reminderAt?: string;
   done: boolean;
   status?: "todo" | "in_progress" | "done";
   comments?: Array<{ id: string; text: string; createdAt: string }>;
   createdAt: string;
 };
+
+function pad2Task(n: number) {
+  return String(n).padStart(2, "0");
+}
+function toLocalInputTask(iso: string): string {
+  const s = String(iso ?? "").trim();
+  if (!s) return "";
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) {
+    return `${d.getFullYear()}-${pad2Task(d.getMonth() + 1)}-${pad2Task(d.getDate())}T${pad2Task(d.getHours())}:${pad2Task(d.getMinutes())}`;
+  }
+  const d2 = new Date(s.replace(" ", "T"));
+  if (Number.isNaN(d2.getTime())) return "";
+  return `${d2.getFullYear()}-${pad2Task(d2.getMonth() + 1)}-${pad2Task(d2.getDate())}T${pad2Task(d2.getHours())}:${pad2Task(d2.getMinutes())}`;
+}
+function fromLocalInputTask(v: string): string {
+  const s = v.trim();
+  if (!s) return "";
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? s : d.toISOString();
+}
 type ContactDetail = {
   id: string;
   contactCode?: string;
@@ -166,6 +188,13 @@ export default function ContactsClient() {
   const [detailAggNotes, setDetailAggNotes] = useState<NoteItem[]>([]);
   const [detailAggTasks, setDetailAggTasks] = useState<TaskItem[]>([]);
   const [newContactNoteText, setNewContactNoteText] = useState("");
+  const [contactTaskModal, setContactTaskModal] = useState<
+    null | { mode: "new" } | { mode: "edit"; task: TaskItem }
+  >(null);
+  const [ctTaskTitle, setCtTaskTitle] = useState("");
+  const [ctTaskDue, setCtTaskDue] = useState("");
+  const [ctTaskRem, setCtTaskRem] = useState("");
+  const [ctTaskStatus, setCtTaskStatus] = useState<"todo" | "in_progress" | "done">("todo");
 
   const query = useMemo(() => {
     const params = new URLSearchParams();
@@ -248,6 +277,22 @@ export default function ContactsClient() {
       } catch {}
     })();
   }, []);
+
+  useEffect(() => {
+    if (!contactTaskModal) return;
+    if (contactTaskModal.mode === "new") {
+      setCtTaskTitle("");
+      setCtTaskDue("");
+      setCtTaskRem("");
+      setCtTaskStatus("todo");
+      return;
+    }
+    const t = contactTaskModal.task;
+    setCtTaskTitle(t.title);
+    setCtTaskDue(toLocalInputTask(t.dueAt));
+    setCtTaskRem(toLocalInputTask(t.reminderAt ?? ""));
+    setCtTaskStatus((t.status ?? (t.done ? "done" : "todo")) as "todo" | "in_progress" | "done");
+  }, [contactTaskModal]);
 
   const adminLabelByEmail = useMemo(() => {
     const map = new Map<string, string>();
@@ -1459,7 +1504,18 @@ export default function ContactsClient() {
             {detailTab === "tasks" && (
               <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
                 {(detail.tasks ?? []).map((t) => (
-                  <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+                  <div
+                    key={t.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "8px 10px",
+                      borderRadius: 10,
+                      border: "1px solid #e5e7eb",
+                      flexWrap: "wrap",
+                    }}
+                  >
                     <input
                       type="checkbox"
                       checked={Boolean((t.status ?? (t.done ? "done" : "todo")) === "done")}
@@ -1469,9 +1525,7 @@ export default function ContactsClient() {
                             ? {
                                 ...x,
                                 done: e.target.checked,
-                                status: (e.target.checked ? "done" : "todo") as
-                                  | "done"
-                                  | "todo",
+                                status: (e.target.checked ? "done" : "todo") as "done" | "todo",
                               }
                             : x
                         );
@@ -1479,44 +1533,184 @@ export default function ContactsClient() {
                         void saveDetail({ tasks });
                       }}
                     />
-                    <span style={{ fontWeight: 700 }}>{t.title}</span>
-                    <span style={{ color: "#6b7280", fontSize: 12 }}>{t.dueAt}</span>
-                  </label>
+                    <span style={{ fontWeight: 700, flex: 1, minWidth: 120 }}>{t.title}</span>
+                    <span style={{ color: "#6b7280", fontSize: 12 }}>{t.dueAt ? new Date(t.dueAt).toLocaleString("he-IL") : "—"}</span>
+                    {t.reminderAt ? (
+                      <span style={{ color: "#7c3aed", fontSize: 11 }}>תזכורת: {new Date(t.reminderAt).toLocaleString("he-IL")}</span>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => setContactTaskModal({ mode: "edit", task: t })}
+                      style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 12 }}
+                    >
+                      ערוך
+                    </button>
+                  </div>
                 ))}
                 {(detailAggTasks ?? []).map((t) => (
-                  <label key={`agg-${t.id}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 10, border: "1px dashed #cbd5e1", background: "#f8fafc" }}>
+                  <div
+                    key={`agg-${t.id}`}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "8px 10px",
+                      borderRadius: 10,
+                      border: "1px dashed #cbd5e1",
+                      background: "#f8fafc",
+                      flexWrap: "wrap",
+                    }}
+                  >
                     <input type="checkbox" checked={Boolean((t.status ?? (t.done ? "done" : "todo")) === "done")} readOnly />
                     <span style={{ fontWeight: 700 }}>{t.title}</span>
-                    <span style={{ color: "#6b7280", fontSize: 12 }}>{t.dueAt}</span>
-                  </label>
+                    <span style={{ color: "#6b7280", fontSize: 12 }}>{t.dueAt ? new Date(t.dueAt).toLocaleString("he-IL") : "—"}</span>
+                    {t.reminderAt ? (
+                      <span style={{ color: "#7c3aed", fontSize: 11 }}>תזכורת: {new Date(t.reminderAt).toLocaleString("he-IL")}</span>
+                    ) : null}
+                    <span style={{ fontSize: 11, color: "#94a3b8" }}>מהזדמנות (קריאה בלבד)</span>
+                  </div>
                 ))}
                 <button
                   type="button"
-                  onClick={() => {
-                    const title = window.prompt("כותרת משימה");
-                    if (!title?.trim()) return;
-                    const dueAt = window.prompt("תאריך ושעה (YYYY-MM-DD HH:mm)", new Date().toISOString().slice(0, 16).replace("T", " ")) || "";
-                    const tasks = [
-                      ...(detail.tasks ?? []),
-                      {
-                        id: crypto.randomUUID(),
-                        title: title.trim(),
-                        dueAt: dueAt.trim(),
-                        done: false,
-                        status: "todo" as const,
-                        comments: [] as Array<{ id: string; text: string; createdAt: string }>,
-                        createdAt: new Date().toISOString(),
-                      },
-                    ];
-                    setDetail((d) => (d ? { ...d, tasks } : d));
-                    void saveDetail({ tasks });
-                  }}
+                  onClick={() => setContactTaskModal({ mode: "new" })}
                   style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
                 >
                   + הוסף משימה
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {contactTaskModal && detail && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 100,
+            background: "rgba(0,0,0,0.35)",
+            display: "grid",
+            placeItems: "center",
+            padding: 16,
+          }}
+          onMouseDown={() => setContactTaskModal(null)}
+        >
+          <div
+            style={{
+              width: "min(440px, 94vw)",
+              background: "#fff",
+              borderRadius: 16,
+              border: "1px solid #e5e7eb",
+              padding: 16,
+              boxShadow: "0 20px 50px rgba(0,0,0,0.12)",
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: "0 0 12px", fontSize: 17, fontWeight: 900 }}>
+              {contactTaskModal.mode === "new" ? "משימה חדשה" : "עריכת משימה"}
+            </h3>
+            <div style={{ display: "grid", gap: 8 }}>
+              <input
+                value={ctTaskTitle}
+                onChange={(e) => setCtTaskTitle(e.target.value)}
+                placeholder="כותרת"
+                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+              />
+              <label style={{ fontWeight: 700, fontSize: 12 }}>דדליין (אופציונלי)</label>
+              <input
+                type="datetime-local"
+                value={ctTaskDue}
+                onChange={(e) => setCtTaskDue(e.target.value)}
+                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+              />
+              <label style={{ fontWeight: 700, fontSize: 12 }}>תזכורת (אופציונלי)</label>
+              <input
+                type="datetime-local"
+                value={ctTaskRem}
+                onChange={(e) => setCtTaskRem(e.target.value)}
+                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+              />
+              <select
+                value={ctTaskStatus}
+                onChange={(e) =>
+                  setCtTaskStatus(e.target.value as "todo" | "in_progress" | "done")
+                }
+                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+              >
+                <option value="todo">To Do</option>
+                <option value="in_progress">In Progress</option>
+                <option value="done">Done</option>
+              </select>
+              <p style={{ margin: 0, fontSize: 11, color: "#6b7280" }}>
+                15 דקות לפני הדדליין נשלחת תזכורת אוטומטית לוובהוק (בנוסף לתזכורת שתקבעו).
+              </p>
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button
+                  type="button"
+                  disabled={savingDetail || !ctTaskTitle.trim()}
+                  onClick={() => {
+                    if (!detail) return;
+                    const dueIso = ctTaskDue.trim() ? fromLocalInputTask(ctTaskDue) : "";
+                    const remIso = ctTaskRem.trim() ? fromLocalInputTask(ctTaskRem) : "";
+                    const title = ctTaskTitle.trim();
+                    if (!title) return;
+                    if (contactTaskModal.mode === "new") {
+                      const tasks = [
+                        ...(detail.tasks ?? []),
+                        {
+                          id: crypto.randomUUID(),
+                          title,
+                          dueAt: dueIso,
+                          reminderAt: remIso,
+                          done: ctTaskStatus === "done",
+                          status: ctTaskStatus,
+                          comments: [] as Array<{ id: string; text: string; createdAt: string }>,
+                          createdAt: new Date().toISOString(),
+                        },
+                      ];
+                      setDetail((d) => (d ? { ...d, tasks } : d));
+                      void saveDetail({ tasks });
+                    } else {
+                      const tid = contactTaskModal.task.id;
+                      const tasks = (detail.tasks ?? []).map((x) =>
+                        x.id === tid
+                          ? {
+                              ...x,
+                              title,
+                              dueAt: dueIso,
+                              reminderAt: remIso,
+                              done: ctTaskStatus === "done",
+                              status: ctTaskStatus,
+                            }
+                          : x
+                      );
+                      setDetail((d) => (d ? { ...d, tasks } : d));
+                      void saveDetail({ tasks });
+                    }
+                    setContactTaskModal(null);
+                  }}
+                  style={{
+                    padding: "9px 12px",
+                    borderRadius: 10,
+                    border: "none",
+                    background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)",
+                    color: "#fff",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                  }}
+                >
+                  שמור
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setContactTaskModal(null)}
+                  style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
+                >
+                  ביטול
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

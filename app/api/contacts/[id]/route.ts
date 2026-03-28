@@ -70,7 +70,16 @@ export async function PATCH(
       assignedRep?: string;
       customFields?: Record<string, unknown>;
       notes?: Array<{ id: string; text: string; createdAt: string }>;
-      tasks?: Array<{ id: string; title: string; dueAt: string; done: boolean; createdAt: string }>;
+      tasks?: Array<{
+        id: string;
+        title: string;
+        dueAt: string;
+        reminderAt?: string;
+        done: boolean;
+        status?: "todo" | "in_progress" | "done";
+        comments?: Array<{ id: string; text: string; createdAt: string }>;
+        createdAt: string;
+      }>;
     };
     const customFields =
       body.customFields === undefined

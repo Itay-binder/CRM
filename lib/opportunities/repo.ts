@@ -4,6 +4,7 @@ import { getAdminDb, getRequestTenantDatabaseId } from "@/lib/firebase/admin";
 import { allocateRunningCode } from "@/lib/counters/repo";
 import { getTenantByDatabaseId } from "@/lib/tenant/config";
 import { reconcileContactNotesAcrossEntities } from "@/lib/notes/contactNotesSync";
+import { mergeTaskArrays, type RawTaskIn } from "@/lib/tasks/merge";
 
 export type PipelineRecord = {
   id: string;
@@ -41,6 +42,7 @@ export type OpportunityRecord = {
     id: string;
     title: string;
     dueAt: string;
+    reminderAt?: string;
     done: boolean;
     status?: "todo" | "in_progress" | "done";
     comments?: Array<{ id: string; text: string; createdAt: string }>;
@@ -704,6 +706,7 @@ export async function updateOpportunity(
       id: string;
       title: string;
       dueAt: string;
+      reminderAt?: string;
       done: boolean;
       status?: "todo" | "in_progress" | "done";
       comments?: Array<{ id: string; text: string; createdAt: string }>;
@@ -760,7 +763,10 @@ export async function updateOpportunity(
   if (input.assignedRep !== undefined) payload.assignedRep = input.assignedRep.trim();
   if (input.customValues !== undefined) payload.customValues = input.customValues;
   if (input.notes !== undefined) payload.notes = input.notes;
-  if (input.tasks !== undefined) payload.tasks = input.tasks;
+  if (input.tasks !== undefined) {
+    const prevTasks = Array.isArray(existing.tasks) ? [...(existing.tasks as RawTaskIn[])] : [];
+    payload.tasks = mergeTaskArrays(prevTasks, input.tasks as RawTaskIn[]);
+  }
 
   const nextStageStr = String(
     payload.stage !== undefined ? payload.stage : existing.stage ?? ""

@@ -6,6 +6,7 @@ import {
   propagateExactNotesToAllOpportunities,
   reconcileContactNotesAcrossEntities,
 } from "@/lib/notes/contactNotesSync";
+import { mergeTaskArrays, type RawTaskIn } from "@/lib/tasks/merge";
 
 export type LeadRecord = {
   id: string; // doc id = normalized unique key
@@ -335,6 +336,7 @@ export async function updateLead(
       id: string;
       title: string;
       dueAt: string;
+      reminderAt?: string;
       done: boolean;
       status?: "todo" | "in_progress" | "done";
       comments?: Array<{ id: string; text: string; createdAt: string }>;
@@ -357,7 +359,11 @@ export async function updateLead(
   if (input.assignedRep !== undefined) payload.assignedRep = input.assignedRep.trim();
   if (input.customFields !== undefined) payload.customFields = input.customFields;
   if (input.notes !== undefined) payload.notes = input.notes;
-  if (input.tasks !== undefined) payload.tasks = input.tasks;
+  if (input.tasks !== undefined) {
+    const prevData = (snap.data() ?? {}) as Record<string, unknown>;
+    const prevTasks = Array.isArray(prevData.tasks) ? [...(prevData.tasks as RawTaskIn[])] : [];
+    payload.tasks = mergeTaskArrays(prevTasks, input.tasks as RawTaskIn[]);
+  }
   await ref.set(payload, { merge: true });
 
   if (input.notes !== undefined && Array.isArray(input.notes)) {

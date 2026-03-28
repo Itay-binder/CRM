@@ -52,6 +52,7 @@ export async function PATCH(req: NextRequest) {
       status?: TaskStatus;
       title?: string;
       dueAt?: string;
+      reminderAt?: string;
       commentText?: string;
     };
     const entityType = body.entityType;
@@ -67,6 +68,7 @@ export async function PATCH(req: NextRequest) {
       status: body.status,
       title: body.title,
       dueAt: body.dueAt,
+      reminderAt: body.reminderAt,
       commentText: body.commentText,
     });
     return NextResponse.json({ ok: true, task });

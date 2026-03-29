@@ -52,7 +52,7 @@ jobs:
           fi
           # Vercel אמור להחזיר JSON עם job.id; בלי זה — אין באמת תור בנייה (או תגובה לא צפויה)
           python3 <<'PY'
-          import json, sys
+          import json, sys, os
           try:
               with open("/tmp/hook_body.out", "r", encoding="utf-8") as f:
                   data = json.load(f)
@@ -70,6 +70,19 @@ jobs:
               sys.exit(1)
           state = job.get("state") if isinstance(job, dict) else None
           print(f">>> Vercel job: id={jid} state={state}")
-          print(">>> חפש ב-Vercel → Deployments לפי זמן או לפי ה-job; אם אין שורה — בדוק חיבור Git לפרויקט (Settings → Git)")
+          sha = (os.environ.get("GITHUB_SHA") or "")[:7]
+          print(f"::notice::Vercel job id (לתמיכה / חיפוש): {jid}  |  commit {sha}")
+          gss = os.environ.get("GITHUB_STEP_SUMMARY")
+          if gss:
+              with open(gss, "a", encoding="utf-8") as f:
+                  f.write("### Vercel Deploy Hook\n\n")
+                  f.write(f"- **Job id:** `{jid}`\n")
+                  f.write(f"- **Commit:** `{sha}`\n\n")
+                  f.write("**GitHub ירוק = Vercel קיבל את הבקשה ויצר job.** אם אין שורה חדשה ברשימה:\n\n")
+                  f.write("1. צוות + פרויקט נכונים (למשל **liftygo** / **crm**).\n")
+                  f.write("2. **Deployments** → תצוגה **All**; חפש את ה-commit או זמן הריצה.\n")
+                  f.write("3. בדוק סינון **Production בלבד** — deploy מ-hook לפעמים מסווג אחרת.\n")
+                  f.write("4. שורות **Canceled / Error** — build שנפל מהר לא תמיד בולט בראש.\n")
+                  f.write("5. **Settings → Git**: Production Branch = `main`; ה-hook לענף **main**.\n")
           PY
           echo ">>> OK"

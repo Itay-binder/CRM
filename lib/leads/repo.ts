@@ -7,6 +7,7 @@ import {
   reconcileContactNotesAcrossEntities,
 } from "@/lib/notes/contactNotesSync";
 import { mergeTaskArrays, type RawTaskIn } from "@/lib/tasks/merge";
+import { fireServerWebhooks } from "@/lib/webhooks/dispatchServerWebhooks";
 
 export type LeadRecord = {
   id: string; // doc id = normalized unique key
@@ -208,6 +209,17 @@ export async function upsertLead(input: LeadUpsertInput): Promise<LeadRecord> {
     if (input.customFields) payload.customFields = input.customFields;
     if (input.assignedRep?.trim()) payload.assignedRep = input.assignedRep.trim();
     await docRef.set(payload);
+    fireServerWebhooks(db, "lead_created", {
+      lead: {
+        id: picked.docId,
+        stage,
+        name: name ?? null,
+        email: picked.email ?? null,
+        phone: picked.phone ?? null,
+        pipelineId: pipelineId ?? null,
+        source: source ?? null,
+      },
+    });
   } else {
     const prev = (snap.data() ?? {}) as Record<string, unknown>;
     const payload: Record<string, unknown> = {
@@ -228,7 +240,18 @@ export async function upsertLead(input: LeadUpsertInput): Promise<LeadRecord> {
     if (input.customFields ?? prev.customFields) payload.customFields = input.customFields ?? prev.customFields;
     const assignedRep = input.assignedRep?.trim() || (prev.assignedRep as string | undefined);
     if (assignedRep) payload.assignedRep = assignedRep;
+    const prevStage = String(prev.stage ?? "Pending").trim() || "Pending";
     await docRef.set(payload, { merge: true });
+    if (prevStage !== stage) {
+      fireServerWebhooks(db, "lead_stage_changed", {
+        lead: {
+          id: picked.docId,
+          stage,
+          previousStage: prevStage,
+          name: (name ?? (typeof prev.name === "string" ? prev.name : undefined)) as string | undefined,
+        },
+      });
+    }
   }
 
   const again = await docRef.get();
@@ -376,7 +399,23 @@ export async function updateLead(
     const prevTasks = Array.isArray(prevData.tasks) ? [...(prevData.tasks as RawTaskIn[])] : [];
     payload.tasks = mergeTaskArrays(prevTasks, input.tasks as RawTaskIn[]);
   }
+  const beforeLead = (snap.data() ?? {}) as Record<string, unknown>;
   await ref.set(payload, { merge: true });
+
+  if (input.stage !== undefined) {
+    const prevStage = String(beforeLead.stage ?? "Pending").trim() || "Pending";
+    const nextStage = input.stage.trim() || "Pending";
+    if (prevStage !== nextStage) {
+      fireServerWebhooks(db, "lead_stage_changed", {
+        lead: {
+          id: docId,
+          stage: nextStage,
+          previousStage: prevStage,
+          name: typeof beforeLead.name === "string" ? beforeLead.name : undefined,
+        },
+      });
+    }
+  }
 
   if (input.notes !== undefined && Array.isArray(input.notes)) {
     await propagateExactNotesToAllOpportunities(

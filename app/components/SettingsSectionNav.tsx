@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-type Section = "fields" | "api";
+type Section = "fields" | "api" | "triggers";
 
 export default function SettingsSectionNav({ active }: { active: Section }) {
   const base = {
@@ -35,6 +35,9 @@ export default function SettingsSectionNav({ active }: { active: Section }) {
       </Link>
       <Link href="/settings/api" style={active === "api" ? activeStyle : idleStyle}>
         API
+      </Link>
+      <Link href="/settings/triggers" style={active === "triggers" ? activeStyle : idleStyle}>
+        טריגרים
       </Link>
     </nav>
   );

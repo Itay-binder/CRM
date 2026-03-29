@@ -5,6 +5,7 @@ import { allocateRunningCode } from "@/lib/counters/repo";
 import { getTenantByDatabaseId } from "@/lib/tenant/config";
 import { reconcileContactNotesAcrossEntities } from "@/lib/notes/contactNotesSync";
 import { mergeTaskArrays, type RawTaskIn } from "@/lib/tasks/merge";
+import { fireServerWebhooks } from "@/lib/webhooks/dispatchServerWebhooks";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 
 export type PipelineRecord = {
@@ -517,6 +518,18 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
 
   await reconcileContactNotesAcrossEntities(contactId);
 
+  fireServerWebhooks(db, "opportunity_created", {
+    opportunity: {
+      id: ref.id,
+      opportunityCode,
+      name: oppName,
+      stage,
+      pipelineId,
+      contactId,
+      value: typeof input.value === "number" ? input.value : null,
+    },
+  });
+
   const snap = await ref.get();
   const d = (snap.data() ?? {}) as Record<string, unknown>;
   return {
@@ -839,6 +852,30 @@ export async function updateOpportunity(
   }
 
   await ref.set(payload, { merge: true });
+
+  if (input.pipelineId !== undefined) {
+    const prevPipelineId = String(existing.pipelineId ?? "").trim();
+    if (prevPipelineId && prevPipelineId !== targetPipelineId) {
+      fireServerWebhooks(db, "opportunity_pipeline_changed", {
+        opportunity: {
+          id,
+          pipelineId: targetPipelineId,
+          previousPipelineId: prevPipelineId,
+          stage: nextStageStr,
+        },
+      });
+    }
+  }
+  if (prevStageStr !== nextStageStr) {
+    fireServerWebhooks(db, "opportunity_stage_changed", {
+      opportunity: {
+        id,
+        stage: nextStageStr,
+        previousStage: prevStageStr,
+        pipelineId: targetPipelineId,
+      },
+    });
+  }
 
   if (winNoteForContact && firstCustomerStageForNewOpp) {
     const afterSnap = await ref.get();

@@ -1,13 +1,7 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
 import type { RawTaskIn } from "@/lib/tasks/merge";
-
-const DEFAULT_WEBHOOK =
-  "https://hook.us1.make.com/y713jevs12gt2ge6uuh7j7180q3c6fey";
-
-function webhookUrl(): string {
-  return process.env.CRM_TASK_WEBHOOK_URL?.trim() || DEFAULT_WEBHOOK;
-}
+import { postWebhookForEvent } from "@/lib/webhooks/dispatchServerWebhooks";
 
 function parseWhen(raw: string | undefined): Date | null {
   const s = String(raw ?? "").trim();
@@ -26,18 +20,6 @@ type EntityCtx = {
   pipelineName?: string;
 };
 
-async function postWebhook(payload: Record<string, unknown>): Promise<boolean> {
-  try {
-    const res = await fetch(webhookUrl(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
 
 async function persistTaskPatch(
   collection: "leads" | "opportunities",
@@ -113,9 +95,7 @@ export async function sweepTaskWebhooks(): Promise<SweepResult> {
       };
 
       if (rem && !t.reminderWebhookFiredAt && now.getTime() >= rem.getTime()) {
-        const ok = await postWebhook({
-          event: "task_reminder_custom",
-          sentAt: now.toISOString(),
+        const ok = await postWebhookForEvent(db, "task_reminder_custom", {
           task: taskPayload,
           entity: { type: ctx.entityType, id: ctx.entityId, name: ctx.entityName },
           pipeline:
@@ -136,9 +116,7 @@ export async function sweepTaskWebhooks(): Promise<SweepResult> {
       if (due && !t.deadline15mWebhookFiredAt) {
         const triggerAt = new Date(due.getTime() - 15 * 60 * 1000);
         if (now.getTime() >= triggerAt.getTime() && now.getTime() < due.getTime()) {
-          const ok = await postWebhook({
-            event: "task_reminder_deadline_15m",
-            sentAt: now.toISOString(),
+          const ok = await postWebhookForEvent(db, "task_reminder_deadline_15m", {
             task: taskPayload,
             entity: { type: ctx.entityType, id: ctx.entityId, name: ctx.entityName },
             pipeline:

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getExternalRef, upsertExternalRef } from "@/lib/externalRefs/repo";
-import { upsertLead } from "@/lib/leads/repo";
+import { getLeadById, upsertLead } from "@/lib/leads/repo";
 import { validateCustomValues } from "@/lib/customFields/repo";
 import { isValidIngestApiKeyAsync } from "@/lib/ingest/apiKey";
 
@@ -102,7 +102,20 @@ export async function POST(req: NextRequest) {
       ...((c.customFields as Record<string, unknown> | undefined) ?? {}),
       ...directFieldIdValues,
     };
-    const customValues = await validateCustomValues("contact", customInput);
+    let prevCustom: Record<string, unknown> | undefined;
+    let prevPipeline: string | undefined;
+    if (existingEntityId) {
+      const ex = await getLeadById(existingEntityId);
+      if (ex) {
+        prevCustom = ex.customFields;
+        prevPipeline = ex.pipelineId;
+      }
+    }
+    const effectivePipe = (pipelineId ?? prevPipeline ?? "").trim();
+    const customValues = await validateCustomValues("contact", customInput, {
+      pipelineId: effectivePipe || null,
+      previousValues: prevCustom,
+    });
     const lead = await upsertLead({
       id: existingEntityId,
       uniqueKey,

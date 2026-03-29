@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getExternalRef, upsertExternalRef } from "@/lib/externalRefs/repo";
 import { validateCustomValues } from "@/lib/customFields/repo";
-import { createOpportunity, updateOpportunity } from "@/lib/opportunities/repo";
+import {
+  createOpportunity,
+  getOpportunityById,
+  updateOpportunity,
+} from "@/lib/opportunities/repo";
 import { isValidIngestApiKeyAsync } from "@/lib/ingest/apiKey";
 
 export const dynamic = "force-dynamic";
@@ -125,10 +129,10 @@ export async function POST(req: NextRequest) {
     const directFieldIdValues = Object.fromEntries(
       Object.entries(o).filter(([k]) => !systemKeys.has(k))
     );
-    const customValues = await validateCustomValues("opportunity", {
+    const customMerged = {
       ...((o.customValues as Record<string, unknown> | undefined) ?? {}),
       ...directFieldIdValues,
-    });
+    };
 
     const name = pickString(o, ["name", "opportunity_name"]);
     const pipelineId = pickString(o, ["pipelineId", "opportunity_pipeline_id"]);
@@ -156,6 +160,12 @@ export async function POST(req: NextRequest) {
     }
 
     if (oppId) {
+      const existing = await getOpportunityById(oppId);
+      const effectivePipe = (pipelineId ?? existing?.pipelineId ?? "").trim();
+      const customValues = await validateCustomValues("opportunity", customMerged, {
+        pipelineId: effectivePipe || null,
+        previousValues: existing?.customValues as Record<string, unknown> | undefined,
+      });
       const status =
         statusRaw === "זכיה" || statusRaw === "הפסד" || statusRaw === "פתוח"
           ? statusRaw
@@ -188,6 +198,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, opportunity: { id: oppId, updated: true } });
     }
 
+    const customValuesCreate = await validateCustomValues("opportunity", customMerged, {
+      pipelineId: (pipelineId ?? "").trim() || null,
+    });
+
     const created = await createOpportunity({
       name,
       contactId,
@@ -207,7 +221,7 @@ export async function POST(req: NextRequest) {
       landingpage,
       tags,
       assignedRep,
-      customValues,
+      customValues: customValuesCreate,
     });
 
     if (externalId) {

@@ -26,7 +26,14 @@ export async function GET(req: NextRequest) {
     const entity = req.nextUrl.searchParams.get("entityType") as
       | CustomFieldEntity
       | null;
-    const fields = await listCustomFields(entity ?? undefined);
+    const hasPipe = req.nextUrl.searchParams.has("pipelineId");
+    const pipeQ = req.nextUrl.searchParams.get("pipelineId");
+    const fields = await listCustomFields(
+      entity ?? undefined,
+      hasPipe
+        ? { filterByPipeline: true, pipelineId: pipeQ?.trim() || null }
+        : undefined
+    );
     return NextResponse.json({ ok: true, fields });
   } catch (e) {
     return NextResponse.json(
@@ -55,6 +62,7 @@ export async function POST(req: NextRequest) {
       label?: string;
       type?: CustomFieldType;
       options?: string[];
+      pipelineIds?: string[];
       isRequired?: boolean;
       isActive?: boolean;
     };
@@ -65,6 +73,7 @@ export async function POST(req: NextRequest) {
       label: body.label ?? "",
       type: body.type ?? "text",
       options: body.options ?? [],
+      pipelineIds: Array.isArray(body.pipelineIds) ? body.pipelineIds : [],
       isRequired: body.isRequired ?? false,
       isActive: body.isActive ?? true,
     });

@@ -29,6 +29,7 @@ export async function POST(req: NextRequest) {
         uniqueKey?: string;
         customFields?: Record<string, unknown>;
         customValues?: Record<string, unknown>;
+        pipelineId?: string;
       }>;
     };
 
@@ -47,9 +48,11 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       try {
+        const pipe = r.pipelineId?.trim() || null;
         const customValues = await validateCustomValues(
           "contact",
-          r.customValues ?? r.customFields
+          r.customValues ?? r.customFields,
+          { pipelineId: pipe }
         );
         await upsertLead({
           uniqueKey: r.uniqueKey,
@@ -59,6 +62,7 @@ export async function POST(req: NextRequest) {
           firstName: r.firstName,
           lastName: r.lastName,
           source: r.source ?? "import",
+          pipelineId: pipe ?? undefined,
           customFields: customValues,
         });
         success++;

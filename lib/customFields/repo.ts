@@ -18,6 +18,8 @@ export type CustomFieldRecord = {
   label: string;
   type: CustomFieldType;
   options?: string[];
+  /** ריק = חל על כל הפייפליינים; אחרת רק כשהישות (ליד/הזדמנות) שייכת לאחד מהמזהים */
+  pipelineIds?: string[];
   isRequired: boolean;
   isActive: boolean;
   createdAt: Date | null;
@@ -30,6 +32,7 @@ export type UpsertCustomFieldInput = {
   label: string;
   type: CustomFieldType;
   options?: string[];
+  pipelineIds?: string[];
   isRequired?: boolean;
   isActive?: boolean;
 };
@@ -63,14 +66,42 @@ function normalizeOptions(options?: string[]): string[] | undefined {
   return out.length ? Array.from(new Set(out)) : undefined;
 }
 
-export async function listCustomFields(entityType?: CustomFieldEntity): Promise<CustomFieldRecord[]> {
+function readPipelineIds(d: Record<string, unknown>): string[] {
+  if (!Array.isArray(d.pipelineIds)) return [];
+  return Array.from(
+    new Set((d.pipelineIds as unknown[]).map((x) => String(x).trim()).filter(Boolean))
+  );
+}
+
+/** רשימה ריקה = כל הפייפליינים */
+export function customFieldAppliesToPipeline(
+  f: CustomFieldRecord,
+  entityPipelineId: string | null | undefined
+): boolean {
+  const restrict = f.pipelineIds && f.pipelineIds.length > 0;
+  if (!restrict) return true;
+  const p = entityPipelineId?.trim();
+  if (!p) return false;
+  return (f.pipelineIds ?? []).includes(p);
+}
+
+export type ListCustomFieldsOptions = {
+  /** כש-true — מצמצם לשדות גלובליים + שדות שמוגדרים לפייפליין הזה */
+  filterByPipeline?: boolean;
+  pipelineId?: string | null;
+};
+
+export async function listCustomFields(
+  entityType?: CustomFieldEntity,
+  options?: ListCustomFieldsOptions
+): Promise<CustomFieldRecord[]> {
   const db = await getAdminDb();
   const col = db.collection("customFields");
   const snap = entityType
     ? await col.where("entityType", "==", entityType).get()
     : await col.get();
 
-  const rows = snap.docs.map((doc) => {
+  let rows = snap.docs.map((doc) => {
     const d = (doc.data() ?? {}) as Record<string, unknown>;
     return {
       id: doc.id,
@@ -79,12 +110,17 @@ export async function listCustomFields(entityType?: CustomFieldEntity): Promise<
       label: String(d.label ?? ""),
       type: (d.type as CustomFieldType) ?? "text",
       options: Array.isArray(d.options) ? (d.options as string[]) : undefined,
+      pipelineIds: readPipelineIds(d),
       isRequired: Boolean(d.isRequired),
       isActive: d.isActive !== false,
       createdAt: mapTs(d.createdAt),
       updatedAt: mapTs(d.updatedAt),
     } satisfies CustomFieldRecord;
   });
+
+  if (options?.filterByPipeline) {
+    rows = rows.filter((r) => customFieldAppliesToPipeline(r, options.pipelineId ?? null));
+  }
 
   return rows.sort((a, b) => a.label.localeCompare(b.label, "he"));
 }
@@ -103,6 +139,9 @@ export async function upsertCustomField(input: UpsertCustomFieldInput): Promise<
   const docRef = db.collection("customFields").doc(fieldId);
   const existing = await docRef.get();
   const options = normalizeOptions(input.options);
+  const pipelineIds = Array.from(
+    new Set((input.pipelineIds ?? []).map((x) => String(x).trim()).filter(Boolean))
+  );
 
   const payload = {
     fieldId,
@@ -110,6 +149,7 @@ export async function upsertCustomField(input: UpsertCustomFieldInput): Promise<
     label,
     type: input.type,
     options: options ?? null,
+    pipelineIds,
     isRequired: Boolean(input.isRequired),
     isActive: input.isActive !== false,
     updatedAt: now,
@@ -126,6 +166,7 @@ export async function upsertCustomField(input: UpsertCustomFieldInput): Promise<
     label: String(d.label ?? label),
     type: (d.type as CustomFieldType) ?? input.type,
     options: Array.isArray(d.options) ? (d.options as string[]) : undefined,
+    pipelineIds: readPipelineIds(d),
     isRequired: Boolean(d.isRequired),
     isActive: d.isActive !== false,
     createdAt: mapTs(d.createdAt),
@@ -140,20 +181,39 @@ export async function deleteCustomField(fieldId: string): Promise<void> {
   await db.collection("customFields").doc(id).delete();
 }
 
+export type ValidateCustomValuesOptions = {
+  pipelineId?: string | null;
+  previousValues?: Record<string, unknown>;
+};
+
 export async function validateCustomValues(
-  _entityType: CustomFieldEntity,
-  values: Record<string, unknown> | undefined
+  entityType: CustomFieldEntity,
+  values: Record<string, unknown> | undefined,
+  opts?: ValidateCustomValuesOptions
 ): Promise<Record<string, unknown>> {
-  if (!values || typeof values !== "object") return {};
-  // Custom fields are shared for integrations across contacts/opportunities.
-  // Accept any active configured fieldId regardless of specific entity type.
+  const incoming = values && typeof values === "object" ? values : {};
   const fields = await listCustomFields();
-  const activeMap = new Map(fields.filter((f) => f.isActive).map((f) => [f.fieldId, f]));
+  const activeMap = new Map(
+    fields.filter((f) => f.isActive && f.entityType === entityType).map((f) => [f.fieldId, f])
+  );
+  const pipelineId = opts?.pipelineId ?? null;
+  const previousValues = opts?.previousValues;
   const out: Record<string, unknown> = {};
 
-  for (const [k, v] of Object.entries(values)) {
+  for (const [k, prevVal] of Object.entries(previousValues ?? {})) {
     const meta = activeMap.get(k);
     if (!meta) continue;
+    if (!customFieldAppliesToPipeline(meta, pipelineId)) {
+      out[k] = prevVal;
+    }
+  }
+
+  for (const [k, v] of Object.entries(incoming)) {
+    const meta = activeMap.get(k);
+    if (!meta) continue;
+    if (!customFieldAppliesToPipeline(meta, pipelineId)) {
+      continue;
+    }
 
     if (meta.type === "number") {
       const n = typeof v === "number" ? v : Number.parseFloat(String(v));

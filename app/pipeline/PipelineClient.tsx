@@ -194,6 +194,7 @@ export default function PipelineClient() {
   const [newOppNoteFiles, setNewOppNoteFiles] = useState<File[]>([]);
   const [oppNoteUploading, setOppNoteUploading] = useState(false);
   const [oppCustomFieldIds, setOppCustomFieldIds] = useState<string[]>([]);
+  const [oppCustomFieldLabelById, setOppCustomFieldLabelById] = useState<Record<string, string>>({});
   const [pipelineMenuOpenId, setPipelineMenuOpenId] = useState<string | null>(null);
   const [editPipelineOpen, setEditPipelineOpen] = useState(false);
   const [editPipelineId, setEditPipelineId] = useState<string | null>(null);
@@ -256,10 +257,13 @@ export default function PipelineClient() {
           { credentials: "include", cache: "no-store" }
         ),
         fetch("/api/contacts", { credentials: "include", cache: "no-store" }),
-        fetch("/api/custom-fields", {
-          credentials: "include",
-          cache: "no-store",
-        }),
+        fetch(
+          `/api/custom-fields?entityType=opportunity&pipelineId=${encodeURIComponent(selectedPipelineId)}`,
+          {
+            credentials: "include",
+            cache: "no-store",
+          }
+        ),
       ]);
       const adminsRes = await fetch("/api/admin-users", {
         credentials: "include",
@@ -294,7 +298,7 @@ export default function PipelineClient() {
       };
       const cfJson = (await cfRes.json().catch(() => ({}))) as {
         ok?: boolean;
-        fields?: Array<{ fieldId: string }>;
+        fields?: Array<{ fieldId: string; label?: string }>;
       };
       const adminsJson = (await adminsRes.json().catch(() => ({}))) as {
         ok?: boolean;
@@ -316,6 +320,13 @@ export default function PipelineClient() {
         cfJson.ok && Array.isArray(cfJson.fields)
           ? cfJson.fields.map((f) => f.fieldId)
           : [];
+      const labelMap: Record<string, string> = {};
+      if (cfJson.ok && Array.isArray(cfJson.fields)) {
+        for (const f of cfJson.fields) {
+          if (f.fieldId) labelMap[f.fieldId] = (f.label?.trim() || f.fieldId).trim();
+        }
+      }
+      setOppCustomFieldLabelById(labelMap);
       setOppCustomFieldIds(
         Array.from(
           new Set(
@@ -628,7 +639,7 @@ export default function PipelineClient() {
       updatedAt: "עודכן",
       lastLeadAt: "ליד אחרון",
     };
-    return labels[col] ?? col;
+    return labels[col] ?? oppCustomFieldLabelById[col] ?? col;
   }
 
   const advFieldKinds = useMemo(() => {
@@ -1023,7 +1034,7 @@ export default function PipelineClient() {
                     {oppDisplayCols.map((h) => (
                       <th key={h} style={{ textAlign: "right", padding: "8px 10px", borderBottom: "2px solid #e5e7eb", background: "#f8fafc", fontSize: 12, fontWeight: 900, whiteSpace: "nowrap", minWidth: oppColWidths[h] ?? 180, width: oppColWidths[h] ?? 180, position: "relative", verticalAlign: "top" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <span>{h}</span>
+                          <span>{opportunityFieldLabel(h)}</span>
                           <button
                             type="button"
                             onClick={() => toggleSort(h)}
@@ -1917,7 +1928,7 @@ export default function PipelineClient() {
                 </label>
                 {oppCustomFieldIds.map((fid) => (
                   <label key={fid} style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>{fid}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>{opportunityFieldLabel(fid)}</span>
                     <input value={String((selectedOpp.customValues ?? {})[fid] ?? "")} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, customValues: { ...(x.customValues ?? {}), [fid]: e.target.value } } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
                   </label>
                 ))}

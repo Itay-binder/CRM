@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type EntityType = "contact" | "opportunity";
 type FieldType =
@@ -19,9 +19,13 @@ type CustomField = {
   label: string;
   type: FieldType;
   options?: string[];
+  /** ריק/חסר = חל על כל הפייפליינים */
+  pipelineIds?: string[];
   isRequired: boolean;
   isActive: boolean;
 };
+
+type PipelineOpt = { id: string; name: string };
 
 type FieldScope = "all" | EntityType;
 type SystemField = {
@@ -69,6 +73,7 @@ export default function FieldsClient() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [rows, setRows] = useState<CustomField[]>([]);
+  const [pipelines, setPipelines] = useState<PipelineOpt[]>([]);
 
   const [label, setLabel] = useState("");
   const [fieldId, setFieldId] = useState("");
@@ -79,29 +84,38 @@ export default function FieldsClient() {
   const [saving, setSaving] = useState(false);
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
   const [deletingFieldId, setDeletingFieldId] = useState<string | null>(null);
+  const [pipelinePick, setPipelinePick] = useState<string[]>([]);
+  /** false = כל הפייפליינים (שולחים pipelineIds ריק); true = רק הנבחרים ב-pipelinePick */
+  const [restrictPipelines, setRestrictPipelines] = useState(false);
+
+  const pipelineNameById = useMemo(() => new Map(pipelines.map((p) => [p.id, p.name])), [pipelines]);
 
   async function load() {
     setLoading(true);
     setErr(null);
     try {
-      const res = await fetch(
-        `/api/custom-fields`,
-        {
-          credentials: "include",
-          cache: "no-store",
-        }
-      );
-      if (res.status === 401) {
+      const [res, pRes] = await Promise.all([
+        fetch(`/api/custom-fields`, { credentials: "include", cache: "no-store" }),
+        fetch(`/api/opportunities/pipelines`, { credentials: "include", cache: "no-store" }),
+      ]);
+      if (res.status === 401 || pRes.status === 401) {
         window.location.href = `/login?returnTo=${encodeURIComponent(
           "/settings/fields"
         )}`;
         return;
       }
-      if (res.status === 403) {
+      if (res.status === 403 || pRes.status === 403) {
         window.location.href = `/pending?returnTo=${encodeURIComponent(
           "/settings/fields"
         )}`;
         return;
+      }
+      const pJson = (await pRes.json().catch(() => ({}))) as {
+        ok?: boolean;
+        pipelines?: Array<{ id: string; name: string }>;
+      };
+      if (pJson.ok && Array.isArray(pJson.pipelines)) {
+        setPipelines(pJson.pipelines.map((x) => ({ id: x.id, name: x.name })));
       }
       const j = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
@@ -133,12 +147,18 @@ export default function FieldsClient() {
     setOptionsText("");
     setIsRequired(false);
     setIsActive(true);
+    setPipelinePick([]);
+    setRestrictPipelines(false);
   }
 
   async function saveField() {
     setSaving(true);
     setErr(null);
     try {
+      if (restrictPipelines && pipelinePick.length === 0) {
+        setErr("בחר לפחות פייפליין או בטל את ההגבלה לפייפליינים");
+        return;
+      }
       const options =
         type === "select"
           ? optionsText
@@ -157,6 +177,7 @@ export default function FieldsClient() {
           label,
           type,
           options,
+          pipelineIds: restrictPipelines ? pipelinePick : [],
           isRequired,
           isActive,
         }),
@@ -213,7 +234,14 @@ export default function FieldsClient() {
     setOptionsText((f.options ?? []).join(", "));
     setIsRequired(f.isRequired);
     setIsActive(f.isActive);
+    const hasScope = Boolean(f.pipelineIds?.length);
+    setRestrictPipelines(hasScope);
+    setPipelinePick(hasScope && f.pipelineIds ? [...f.pipelineIds] : []);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function togglePipelinePick(id: string) {
+    setPipelinePick((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
   const systemRows: SystemField[] = [...CONTACT_SYSTEM_FIELDS, ...OPPORTUNITY_SYSTEM_FIELDS];
@@ -330,6 +358,87 @@ export default function FieldsClient() {
             />
             <span>Active</span>
           </label>
+        </div>
+
+        <div
+          style={{
+            marginTop: 14,
+            paddingTop: 12,
+            borderTop: "1px solid #f3f4f6",
+          }}
+        >
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>היקף פייפליין (אופציונלי)</div>
+          <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>
+            רלוונטי בעיקר לשדות על הזדמנות ולידים לפי פייפליין. ברירת מחדל: השדה חל על כל הפייפליינים.
+          </div>
+          {pipelines.length === 0 ? (
+            <div style={{ fontSize: 13, color: "#6b7280" }}>אין פייפליינים מוגדרים — השדה יחול על כולם.</div>
+          ) : (
+            <>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={!restrictPipelines}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setRestrictPipelines(false);
+                      setPipelinePick([]);
+                    } else {
+                      setRestrictPipelines(true);
+                    }
+                  }}
+                />
+                <span>חל על כל הפייפליינים</span>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={restrictPipelines}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setRestrictPipelines(true);
+                    } else {
+                      setRestrictPipelines(false);
+                      setPipelinePick([]);
+                    }
+                  }}
+                />
+                <span>רק בפייפליינים שנבחרו:</span>
+              </label>
+              {restrictPipelines && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 8,
+                    padding: "8px 0",
+                  }}
+                >
+                  {pipelines.map((p) => (
+                    <label
+                      key={p.id}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        border: "1px solid #e5e7eb",
+                        borderRadius: 10,
+                        padding: "6px 10px",
+                        fontSize: 13,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={pipelinePick.includes(p.id)}
+                        onChange={() => togglePipelinePick(p.id)}
+                      />
+                      <span>{p.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         <div style={{ marginTop: 12 }}>
@@ -452,6 +561,7 @@ export default function FieldsClient() {
                 <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{f.isRequired ? "yes" : "no"}</td>
                 <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{f.isActive ? "yes" : "no"}</td>
                 <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{(f.options ?? []).join(", ") || "—"}</td>
+                <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6", color: "#6b7280" }}>—</td>
                 <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6", color: "#6b7280" }}>מנוהל מערכת</td>
               </tr>
             ))}
@@ -476,6 +586,11 @@ export default function FieldsClient() {
                 </td>
                 <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>
                   {(f.options ?? []).join(", ")}
+                </td>
+                <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6", fontSize: 12 }}>
+                  {!f.pipelineIds?.length
+                    ? "כל הפייפליינים"
+                    : f.pipelineIds.map((id) => pipelineNameById.get(id) ?? id).join(", ")}
                 </td>
                 <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>
                   <button
@@ -513,7 +628,7 @@ export default function FieldsClient() {
             {!loading && filteredSystemRows.length + filteredCustomRows.length === 0 && (
               <tr>
                 <td
-                  colSpan={9}
+                  colSpan={10}
                   style={{
                     padding: 16,
                     color: "#6b7280",

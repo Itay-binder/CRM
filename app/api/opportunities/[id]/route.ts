@@ -81,10 +81,21 @@ export async function PATCH(
         createdAt: string;
       }>;
     };
+    const prev = await getOpportunityById(id);
+    if (!prev) {
+      return NextResponse.json(
+        { ok: false, error: "Opportunity not found" } satisfies ApiErr,
+        { status: 404 }
+      );
+    }
+    const effectivePipeline = (body.pipelineId ?? prev.pipelineId ?? "").trim();
     const customValues =
       body.customValues === undefined
         ? undefined
-        : await validateCustomValues("opportunity", body.customValues);
+        : await validateCustomValues("opportunity", body.customValues, {
+            pipelineId: effectivePipeline || null,
+            previousValues: prev.customValues as Record<string, unknown> | undefined,
+          });
 
     const opportunity = await updateOpportunity(id, {
       ...body,

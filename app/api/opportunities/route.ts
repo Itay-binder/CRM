@@ -69,10 +69,10 @@ export async function POST(req: NextRequest) {
       customValues?: Record<string, unknown>;
       assignedRep?: string;
     };
-    const customValues = await validateCustomValues(
-      "opportunity",
-      body.customValues
-    );
+    const pipe = (body.pipelineId ?? "").trim();
+    const customValues = await validateCustomValues("opportunity", body.customValues, {
+      pipelineId: pipe || null,
+    });
     const created = await createOpportunity({
       name: body.name,
       contactId: body.contactId ?? "",

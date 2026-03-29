@@ -66,6 +66,7 @@ export async function PATCH(
       name?: string;
       email?: string;
       phone?: string;
+      pipelineId?: string;
       status?: "פתוח" | "זכיה" | "הפסד";
       assignedRep?: string;
       customFields?: Record<string, unknown>;
@@ -87,10 +88,21 @@ export async function PATCH(
         createdAt: string;
       }>;
     };
+    const prev = await getLeadById(id);
+    if (!prev) {
+      return NextResponse.json(
+        { ok: false, error: "Contact not found" } satisfies ApiErr,
+        { status: 404 }
+      );
+    }
+    const effectivePipe = (body.pipelineId ?? prev.pipelineId ?? "").trim();
     const customFields =
       body.customFields === undefined
         ? undefined
-        : await validateCustomValues("contact", body.customFields);
+        : await validateCustomValues("contact", body.customFields, {
+            pipelineId: effectivePipe || null,
+            previousValues: prev.customFields,
+          });
     const lead = await updateLead(id, {
       ...body,
       customFields,

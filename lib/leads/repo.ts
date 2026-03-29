@@ -357,6 +357,7 @@ export async function updateLead(
     email?: string;
     phone?: string;
     stage?: string;
+    pipelineId?: string;
     status?: "פתוח" | "זכיה" | "הפסד";
     assignedRep?: string;
     customFields?: Record<string, unknown>;
@@ -390,6 +391,10 @@ export async function updateLead(
   if (input.email !== undefined) payload.email = input.email.trim().toLowerCase();
   if (input.phone !== undefined) payload.phone = normalizePhone(input.phone) ?? "";
   if (input.stage !== undefined) payload.stage = input.stage.trim() || "Pending";
+  if (input.pipelineId !== undefined) {
+    const pid = input.pipelineId.trim();
+    payload.pipelineId = pid || FieldValue.delete();
+  }
   if (input.status !== undefined) payload.status = input.status;
   if (input.assignedRep !== undefined) payload.assignedRep = input.assignedRep.trim();
   if (input.customFields !== undefined) payload.customFields = input.customFields;

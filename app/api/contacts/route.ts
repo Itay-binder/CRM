@@ -101,11 +101,14 @@ export async function POST(req: NextRequest) {
       customValues?: Record<string, unknown>;
       uniqueKey?: string;
       assignedRep?: string;
+      pipelineId?: string;
     };
 
+    const pipe = body.pipelineId?.trim() || null;
     const customValues = await validateCustomValues(
       "contact",
-      body.customValues ?? body.customFields
+      body.customValues ?? body.customFields,
+      { pipelineId: pipe }
     );
 
     const lead = await upsertLead({
@@ -117,6 +120,7 @@ export async function POST(req: NextRequest) {
       lastName: body.lastName,
       status: body.status ?? "פתוח",
       source: body.source ?? "manual",
+      pipelineId: pipe ?? undefined,
       customFields: customValues,
       assignedRep: body.assignedRep,
     });

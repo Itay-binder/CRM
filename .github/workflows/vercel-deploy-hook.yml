@@ -1,0 +1,23 @@
+# After creating a Deploy Hook in Vercel (Project → Settings → Git → Deploy Hooks, branch: main),
+# add repo secret VERCEL_DEPLOY_HOOK_URL with the full hook URL. Each push to main will POST it.
+name: Trigger Vercel deploy hook
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  hook:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST Vercel Deploy Hook
+        env:
+          HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$HOOK_URL" ]; then
+            echo "Skip: set GitHub secret VERCEL_DEPLOY_HOOK_URL to your Vercel Deploy Hook URL."
+            exit 0
+          fi
+          curl -fsS -X POST "$HOOK_URL"
+          echo "Deploy hook called OK"

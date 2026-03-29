@@ -24,6 +24,8 @@ jobs:
     steps:
       - name: Context (debug)
         run: |
+          echo "event=${{ github.event_name }}"
+          echo "run_id=${{ github.run_id }}"
           echo "repository=${{ github.repository }}"
           echo "ref=${{ github.ref }}"
           echo "sha=${{ github.sha }}"

@@ -1,7 +1,7 @@
 # Push to main → POST ל-Vercel Deploy Hook (branch main).
 #
-# Secret אחד ב-GitHub → Settings → Secrets and variables → Actions:
-#   VERCEL_DEPLOY_HOOK_URL — מ-Vercel → Project → Settings → Git → Deploy Hooks
+# Secret אחד: VERCEL_DEPLOY_HOOK_URL (Vercel → Project → Settings → Git → Deploy Hooks).
+# דורש פרויקט מחובר ל-Git — Deploy Hook לא מביא קוד מ-GitHub Actions; Vercel מושך מהרפו המחובר.
 
 name: Deploy to Vercel
 
@@ -41,9 +41,33 @@ jobs:
           echo ">>> POST Deploy Hook (${#HOOK_TRIM} chars)"
           HTTP=$(curl -sS -o /tmp/hook_body.out -w "%{http_code}" -X POST "$HOOK_TRIM")
           echo ">>> HTTP: $HTTP"
-          if [ -f /tmp/hook_body.out ]; then cat /tmp/hook_body.out; fi
+          echo ">>> Body:"
+          cat /tmp/hook_body.out
+          echo
           if [ "$HTTP" != "200" ] && [ "$HTTP" != "201" ] && [ "$HTTP" != "204" ]; then
             echo "::error::Deploy hook returned HTTP $HTTP"
             exit 1
           fi
+          # Vercel אמור להחזיר JSON עם job.id; בלי זה — אין באמת תור בנייה (או תגובה לא צפויה)
+          python3 <<'PY'
+          import json, sys
+          try:
+              with open("/tmp/hook_body.out", "r", encoding="utf-8") as f:
+                  data = json.load(f)
+          except json.JSONDecodeError as e:
+              print(f"::error::התגובה לא JSON תקין ({e}) — בדוק שה-URL ב-secret הוא Deploy Hook מלא מ-Vercel")
+              sys.exit(1)
+          err = data.get("error") or data.get("message")
+          if err:
+              print(f"::error::Vercel: {err}")
+              sys.exit(1)
+          job = data.get("job")
+          jid = job.get("id") if isinstance(job, dict) else None
+          if not jid:
+              print(f"::error::אין job.id בתגובה — לא נוצר job ב-Vercel. תוכן: {data!r}")
+              sys.exit(1)
+          state = job.get("state") if isinstance(job, dict) else None
+          print(f">>> Vercel job: id={jid} state={state}")
+          print(">>> חפש ב-Vercel → Deployments לפי זמן או לפי ה-job; אם אין שורה — בדוק חיבור Git לפרויקט (Settings → Git)")
+          PY
           echo ">>> OK"

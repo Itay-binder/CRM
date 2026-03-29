@@ -1,23 +1,60 @@
-# After creating a Deploy Hook in Vercel (Project → Settings → Git → Deploy Hooks, branch: main),
-# add repo secret VERCEL_DEPLOY_HOOK_URL with the full hook URL. Each push to main will POST it.
-name: Trigger Vercel deploy hook
+# Deploy on every push to main — does NOT rely on Vercel’s GitHub App.
+#
+# Option A (easiest): GitHub → Settings → Secrets → Actions → add:
+#   VERCEL_DEPLOY_HOOK_URL = full URL from Vercel → Project → Settings → Git → Deploy Hooks (branch main)
+#
+# Option B (if hook fails): add these three secrets:
+#   VERCEL_TOKEN      = https://vercel.com/account/tokens
+#   VERCEL_ORG_ID     = Vercel → Team Settings → Team ID (starts with team_)
+#   VERCEL_PROJECT_ID = Vercel → Project → Settings → General → Project ID (starts with prj_)
+#
+# If VERCEL_DEPLOY_HOOK_URL is set, it is used first. Otherwise Option B runs.
+
+name: Deploy to Vercel
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+
+concurrency:
+  group: deploy-vercel-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  hook:
+  deploy:
+    if: github.repository == 'Itay-binder/CRM'
     runs-on: ubuntu-latest
     steps:
-      - name: POST Vercel Deploy Hook
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Deploy (hook or CLI)
         env:
           HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
-          if [ -z "$HOOK_URL" ]; then
-            echo "Skip: set GitHub secret VERCEL_DEPLOY_HOOK_URL to your Vercel Deploy Hook URL."
+          set -e
+          if [ -n "$HOOK_URL" ]; then
+            echo ">>> Using Deploy Hook"
+            curl -fsS -X POST "$HOOK_URL"
+            echo ">>> Hook accepted by Vercel"
             exit 0
           fi
-          curl -fsS -X POST "$HOOK_URL"
-          echo "Deploy hook called OK"
+          if [ -n "$VERCEL_TOKEN" ] && [ -n "$VERCEL_ORG_ID" ] && [ -n "$VERCEL_PROJECT_ID" ]; then
+            echo ">>> Using Vercel CLI (bypasses broken Git integration)"
+            mkdir -p .vercel
+            node -e "require('fs').writeFileSync('.vercel/project.json', JSON.stringify({orgId:process.env.VERCEL_ORG_ID, projectId:process.env.VERCEL_PROJECT_ID}))"
+            npx --yes vercel@latest deploy --prod --token "$VERCEL_TOKEN"
+            echo ">>> CLI deploy finished"
+            exit 0
+          fi
+          echo "::error::Add GitHub secret VERCEL_DEPLOY_HOOK_URL, OR all of: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID. See comments at top of this workflow file."
+          exit 1

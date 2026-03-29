@@ -1,10 +1,7 @@
-# Push to main → Deploy ל-Vercel.
+# Push to main → POST ל-Vercel Deploy Hook (branch main).
 #
-# עדיפות (מומלץ): VERCEL_TOKEN + VERCEL_ORG_ID + VERCEL_PROJECT_ID → vercel deploy --prod
-#   על הארטיפקט ש-checkout@actions כבר הוריד — **אותו commit כמו ב-GitHub**, בלי תלות בחיבור Git של Vercel.
-# גיבוי: VERCEL_DEPLOY_HOOK_URL — אם רק hook מוגדר, נשתמש בו (מושך קוד מהרפו המחובר ב-Vercel; אם החיבור שבור — עלול לא לעדכן).
-#
-# Secrets: GitHub → Settings → Secrets and variables → Actions
+# Secret אחד ב-GitHub → Settings → Secrets and variables → Actions:
+#   VERCEL_DEPLOY_HOOK_URL — מ-Vercel → Project → Settings → Git → Deploy Hooks
 
 name: Deploy to Vercel
 
@@ -31,43 +28,22 @@ jobs:
           echo "ref=${{ github.ref }}"
           echo "sha=${{ github.sha }}"
 
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Deploy (hook or CLI)
+      - name: Deploy (hook)
         env:
           HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
           set -e
-          # ניקוי רווחים/שורה מהדבקה ב-GitHub Secrets
           HOOK_TRIM=$(printf '%s' "${HOOK_URL:-}" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-
-          if [ -n "${VERCEL_TOKEN:-}" ] && [ -n "${VERCEL_ORG_ID:-}" ] && [ -n "${VERCEL_PROJECT_ID:-}" ]; then
-            echo ">>> Using Vercel CLI (source = this checkout, SHA ${{ github.sha }})"
-            mkdir -p .vercel
-            node -e "require('fs').writeFileSync('.vercel/project.json', JSON.stringify({orgId:process.env.VERCEL_ORG_ID, projectId:process.env.VERCEL_PROJECT_ID}))"
-            npx --yes vercel@latest deploy --prod --token "$VERCEL_TOKEN"
-            exit 0
+          if [ -z "$HOOK_TRIM" ]; then
+            echo "::error::חסר secret VERCEL_DEPLOY_HOOK_URL"
+            exit 1
           fi
-
-          if [ -n "$HOOK_TRIM" ]; then
-            echo ">>> Using Deploy Hook (length ${#HOOK_TRIM} chars)"
-            HTTP=$(curl -sS -o /tmp/hook_body.out -w "%{http_code}" -X POST "$HOOK_TRIM")
-            echo ">>> HTTP status: $HTTP"
-            if [ -f /tmp/hook_body.out ]; then cat /tmp/hook_body.out; fi
-            if [ "$HTTP" != "200" ] && [ "$HTTP" != "201" ] && [ "$HTTP" != "204" ]; then
-              echo "::error::Deploy hook returned HTTP $HTTP — בדוק ב-Vercel שה-hook עדיין קיים ושה-URL ב-secret תואם בדיוק."
-              exit 1
-            fi
-            echo ">>> Hook accepted"
-            exit 0
+          echo ">>> POST Deploy Hook (${#HOOK_TRIM} chars)"
+          HTTP=$(curl -sS -o /tmp/hook_body.out -w "%{http_code}" -X POST "$HOOK_TRIM")
+          echo ">>> HTTP: $HTTP"
+          if [ -f /tmp/hook_body.out ]; then cat /tmp/hook_body.out; fi
+          if [ "$HTTP" != "200" ] && [ "$HTTP" != "201" ] && [ "$HTTP" != "204" ]; then
+            echo "::error::Deploy hook returned HTTP $HTTP"
+            exit 1
           fi
-
-          echo "::error::חסר: או VERCEL_TOKEN + VERCEL_ORG_ID + VERCEL_PROJECT_ID (מומלץ), או VERCEL_DEPLOY_HOOK_URL"
-          exit 1
+          echo ">>> OK"

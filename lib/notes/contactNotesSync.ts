@@ -1,7 +1,45 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
 
-export type SyncedNote = { id: string; text: string; createdAt: string; createdBy?: string };
+export type NoteAttachmentMeta = { id: string; fileName: string; url: string };
+
+export type SyncedNote = {
+  id: string;
+  text: string;
+  createdAt: string;
+  createdBy?: string;
+  attachments?: NoteAttachmentMeta[];
+};
+
+function parseAttachments(v: unknown): NoteAttachmentMeta[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: NoteAttachmentMeta[] = [];
+  for (const raw of v) {
+    if (!raw || typeof raw !== "object") continue;
+    const o = raw as Record<string, unknown>;
+    const id = typeof o.id === "string" ? o.id : "";
+    const fileName = typeof o.fileName === "string" ? o.fileName : "";
+    const url = typeof o.url === "string" ? o.url : "";
+    if (id && fileName && url) out.push({ id, fileName, url });
+  }
+  return out.length ? out : undefined;
+}
+
+function mergeAttachments(
+  a?: NoteAttachmentMeta[],
+  b?: NoteAttachmentMeta[]
+): NoteAttachmentMeta[] | undefined {
+  const merged = [...(a ?? []), ...(b ?? [])];
+  const seen = new Set<string>();
+  const out: NoteAttachmentMeta[] = [];
+  for (const x of merged) {
+    const k = `${x.id}|${x.url}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(x);
+  }
+  return out.length ? out : undefined;
+}
 
 function collectNotes(into: Map<string, SyncedNote>, arr: unknown) {
   if (!Array.isArray(arr)) return;
@@ -13,7 +51,26 @@ function collectNotes(into: Map<string, SyncedNote>, arr: unknown) {
     const createdAt = typeof o.createdAt === "string" ? o.createdAt : "";
     if (!id || !createdAt) continue;
     const createdBy = typeof o.createdBy === "string" ? o.createdBy : undefined;
-    into.set(id, { id, text, createdAt, ...(createdBy ? { createdBy } : {}) });
+    const attachments = parseAttachments(o.attachments);
+    const next: SyncedNote = {
+      id,
+      text,
+      createdAt,
+      ...(createdBy ? { createdBy } : {}),
+      ...(attachments ? { attachments } : {}),
+    };
+    const prev = into.get(id);
+    if (!prev) {
+      into.set(id, next);
+      continue;
+    }
+    const mergedAtt = mergeAttachments(prev.attachments, next.attachments);
+    into.set(id, {
+      ...prev,
+      ...next,
+      text: next.text || prev.text,
+      ...(mergedAtt ? { attachments: mergedAtt } : {}),
+    });
   }
 }
 

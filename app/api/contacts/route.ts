@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
     const rows: Record<string, string>[] = [];
 
     for (const l of leads) {
-      const createdAt = l.createdAt ? l.createdAt.toISOString().slice(0, 10) : "";
+      const createdAt = l.createdAt ? l.createdAt.toISOString() : "";
       const customFields = l.customFields ?? {};
       for (const k of Object.keys(customFields)) customKeys.add(k);
 

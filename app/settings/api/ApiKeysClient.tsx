@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import SettingsSectionNav from "@/app/components/SettingsSectionNav";
+import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 
 type KeyRow = {
   id: string;
@@ -283,7 +284,7 @@ export default function ApiKeysClient({
                   <div style={{ fontWeight: 700 }}>{k.label}</div>
                   <div dir="ltr" style={{ fontSize: 12, color: "#6b7280" }}>
                     csk_live_…{k.hint ? `…${k.hint}` : ""} ·{" "}
-                    {k.createdAt ? new Date(k.createdAt).toLocaleString("he-IL") : "—"}
+                    {k.createdAt ? formatIsraelDateTime(k.createdAt) : "—"}
                     {k.revoked ? " · מבוטל" : ""}
                   </div>
                 </div>

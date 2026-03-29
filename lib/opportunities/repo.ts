@@ -5,6 +5,7 @@ import { allocateRunningCode } from "@/lib/counters/repo";
 import { getTenantByDatabaseId } from "@/lib/tenant/config";
 import { reconcileContactNotesAcrossEntities } from "@/lib/notes/contactNotesSync";
 import { mergeTaskArrays, type RawTaskIn } from "@/lib/tasks/merge";
+import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 
 export type PipelineRecord = {
   id: string;
@@ -37,7 +38,13 @@ export type OpportunityRecord = {
   lastLeadAt?: Date | null;
   customValues?: Record<string, unknown>;
   assignedRep?: string;
-  notes?: Array<{ id: string; text: string; createdAt: string; createdBy?: string }>;
+  notes?: Array<{
+    id: string;
+    text: string;
+    createdAt: string;
+    createdBy?: string;
+    attachments?: Array<{ id: string; fileName: string; url: string }>;
+  }>;
   tasks?: Array<{
     id: string;
     title: string;
@@ -82,20 +89,6 @@ function mapTs(ts: unknown): Date | null {
     return (ts as any).toDate?.() ?? null;
   }
   return null;
-}
-
-function formatJerusalemDateTime(date: Date): string {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Jerusalem",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(date);
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
-  return `${get("day")}/${get("month")}/${get("year")} ${get("hour")}:${get("minute")}`;
 }
 
 async function shouldSeedDefaultPipeline(): Promise<boolean> {
@@ -474,7 +467,7 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
   const utmMe = input.utmMedium?.trim() || "";
   const utmCo = input.utmContent?.trim() || "";
   const noteInstant = new Date();
-  const createdAtLabel = formatJerusalemDateTime(noteInstant);
+  const createdAtLabel = formatIsraelDateTime(noteInstant);
   const initialNote = {
     id: randomUUID(),
     text: buildNewOpportunityLeadNoteText({
@@ -701,7 +694,13 @@ export async function updateOpportunity(
     tags?: string[];
     assignedRep?: string;
     customValues?: Record<string, unknown>;
-    notes?: Array<{ id: string; text: string; createdAt: string; createdBy?: string }>;
+    notes?: Array<{
+      id: string;
+      text: string;
+      createdAt: string;
+      createdBy?: string;
+      attachments?: Array<{ id: string; fileName: string; url: string }>;
+    }>;
     tasks?: Array<{
       id: string;
       title: string;

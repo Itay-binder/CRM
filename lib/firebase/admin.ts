@@ -60,3 +60,11 @@ export async function getAdminDb(): Promise<admin.firestore.Firestore> {
   const id = await getRequestTenantDatabaseId();
   return getFirestoreForDatabaseId(id);
 }
+
+/** Default bucket resolves from project when FIREBASE_STORAGE_BUCKET is unset. */
+export function getAdminStorageBucket(): ReturnType<admin.storage.Storage["bucket"]> {
+  ensureAdmin();
+  const name = process.env.FIREBASE_STORAGE_BUCKET?.trim();
+  if (name) return admin.storage().bucket(name);
+  return admin.storage().bucket();
+}

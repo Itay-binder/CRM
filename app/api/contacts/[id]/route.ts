@@ -69,7 +69,13 @@ export async function PATCH(
       status?: "פתוח" | "זכיה" | "הפסד";
       assignedRep?: string;
       customFields?: Record<string, unknown>;
-      notes?: Array<{ id: string; text: string; createdAt: string }>;
+      notes?: Array<{
+        id: string;
+        text: string;
+        createdAt: string;
+        createdBy?: string;
+        attachments?: Array<{ id: string; fileName: string; url: string }>;
+      }>;
       tasks?: Array<{
         id: string;
         title: string;

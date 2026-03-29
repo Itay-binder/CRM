@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type DragEvent } from "react";
+import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 
 type TaskStatus = "todo" | "in_progress" | "done";
 type TaskComment = { id: string; text: string; createdAt: string };
@@ -23,7 +24,7 @@ type Task = {
 
 type PipelineRow = { id: string; name: string; stages: string[] };
 
-type ViewMode = "status" | "pipeline" | "table";
+type ViewMode = "pipeline" | "table";
 
 const COLUMNS: Array<{ id: TaskStatus; label: string }> = [
   { id: "todo", label: "To Do" },
@@ -54,14 +55,6 @@ function fromLocalInput(v: string): string {
   return Number.isNaN(d.getTime()) ? s : d.toISOString();
 }
 
-function fmtWhen(iso: string): string {
-  const s = String(iso ?? "").trim();
-  if (!s) return "—";
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return s;
-  return d.toLocaleString("he-IL", { dateStyle: "short", timeStyle: "short" });
-}
-
 function entityHref(t: Task): string {
   return t.entityType === "contact"
     ? `/contacts?openContactId=${encodeURIComponent(t.entityId)}`
@@ -73,7 +66,7 @@ export default function TasksClient() {
   const [err, setErr] = useState<string | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [pipelines, setPipelines] = useState<PipelineRow[]>([]);
-  const [viewMode, setViewMode] = useState<ViewMode>("status");
+  const [viewMode, setViewMode] = useState<ViewMode>("pipeline");
   const [active, setActive] = useState<Task | null>(null);
   const [dueLocal, setDueLocal] = useState("");
   const [reminderLocal, setReminderLocal] = useState("");
@@ -251,11 +244,11 @@ export default function TasksClient() {
             </span>
           </div>
           <div style={{ marginTop: 2, fontSize: 12, color: "#6b7280" }}>
-            דדליין: {fmtWhen(t.dueAt)}
+            דדליין: {formatIsraelDateTime(t.dueAt)}
           </div>
           {t.reminderAt ? (
             <div style={{ marginTop: 2, fontSize: 11, color: "#7c3aed" }}>
-              תזכורת: {fmtWhen(t.reminderAt)}
+              תזכורת: {formatIsraelDateTime(t.reminderAt)}
             </div>
           ) : null}
           <div style={{ marginTop: 2, fontSize: 11, color: "#9ca3af" }}>{t.pipelineName}</div>
@@ -286,8 +279,7 @@ export default function TasksClient() {
     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
       {(
         [
-          ["status", "לפי סטטוס"],
-          ["pipeline", "לפי פייפליין"],
+          ["pipeline", "לפי פייפליין (דראג אנד דרופ)"],
           ["table", "טבלה"],
         ] as const
       ).map(([id, label]) => (
@@ -346,54 +338,6 @@ export default function TasksClient() {
         </div>
       )}
       {loading && <div style={{ color: "#6b7280", fontWeight: 700 }}>טוען...</div>}
-
-      {viewMode === "status" && (
-        <div style={{ overflowX: "auto", maxWidth: "100%" }}>
-          <div style={{ display: "flex", gap: 12, minWidth: 980 }}>
-            {COLUMNS.map((col) => (
-              <div
-                key={col.id}
-                style={{
-                  width: 320,
-                  background: "#fff",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 16,
-                  padding: 12,
-                }}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={onColumnDrop(col.id)}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    marginBottom: 10,
-                  }}
-                >
-                  <div style={{ fontWeight: 900 }}>{col.label}</div>
-                  <div
-                    style={{
-                      border: "1px solid #e9d5ff",
-                      background: "#f5f3ff",
-                      color: "#6d28d9",
-                      borderRadius: 999,
-                      padding: "2px 8px",
-                      fontWeight: 800,
-                      fontSize: 12,
-                    }}
-                  >
-                    {grouped[col.id].length}
-                  </div>
-                </div>
-                <div style={{ display: "grid", gap: 8, minHeight: 120 }}>
-                  {grouped[col.id].map((t) => renderTaskCard(t))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {viewMode === "pipeline" && (
         <div style={{ display: "grid", gap: 20 }}>
@@ -474,8 +418,8 @@ export default function TasksClient() {
                     </button>
                   </td>
                   <td style={{ padding: 10 }}>{t.status}</td>
-                  <td style={{ padding: 10 }}>{fmtWhen(t.dueAt)}</td>
-                  <td style={{ padding: 10 }}>{fmtWhen(t.reminderAt ?? "")}</td>
+                  <td style={{ padding: 10 }}>{formatIsraelDateTime(t.dueAt)}</td>
+                  <td style={{ padding: 10 }}>{formatIsraelDateTime(t.reminderAt ?? "")}</td>
                   <td style={{ padding: 10 }}>{t.pipelineName}</td>
                   <td style={{ padding: 10 }}>
                     <a href={entityHref(t)} style={{ color: "#4c1d95", fontWeight: 700 }}>
@@ -605,7 +549,9 @@ export default function TasksClient() {
                     }}
                   >
                     <div style={{ fontSize: 12 }}>{c.text}</div>
-                    <div style={{ marginTop: 4, fontSize: 11, color: "#6b7280" }}>{c.createdAt}</div>
+                    <div style={{ marginTop: 4, fontSize: 11, color: "#6b7280" }}>
+                      {formatIsraelDateTime(c.createdAt)}
+                    </div>
                   </div>
                 ))}
                 <textarea

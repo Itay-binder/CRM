@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 
 type LeadsOk = {
   ok: true;
@@ -31,7 +32,13 @@ type AdvOp =
 type AdvLogic = "and" | "or";
 type FieldKind = "text" | "number" | "date" | "select";
 type AdvFilter = { id: string; field: string; op: AdvOp; value: string };
-type NoteItem = { id: string; text: string; createdAt: string; createdBy?: string };
+type NoteItem = {
+  id: string;
+  text: string;
+  createdAt: string;
+  createdBy?: string;
+  attachments?: Array<{ id: string; fileName: string; url: string }>;
+};
 type TaskItem = {
   id: string;
   title: string;
@@ -77,6 +84,12 @@ type ContactDetail = {
 };
 
 const BASE_COLS = ["contactCode", "name", "phone", "email", "status", "assignedRep", "createdAt"];
+
+function formatContactTableCell(header: string, value: string): string {
+  const k = header.trim().toLowerCase();
+  if ((k === "createdat" || k === "updatedat") && value.trim()) return formatIsraelDateTime(value);
+  return value;
+}
 
 function normalize(v: unknown) {
   return String(v ?? "").trim().toLowerCase();
@@ -188,6 +201,8 @@ export default function ContactsClient() {
   const [detailAggNotes, setDetailAggNotes] = useState<NoteItem[]>([]);
   const [detailAggTasks, setDetailAggTasks] = useState<TaskItem[]>([]);
   const [newContactNoteText, setNewContactNoteText] = useState("");
+  const [newContactNoteFiles, setNewContactNoteFiles] = useState<File[]>([]);
+  const [noteUploading, setNoteUploading] = useState(false);
   const [contactTaskModal, setContactTaskModal] = useState<
     null | { mode: "new" } | { mode: "edit"; task: TaskItem }
   >(null);
@@ -916,7 +931,7 @@ export default function ContactsClient() {
                         ) : CONTACT_INLINE_READONLY.has(h) || !row.id ? (
                           h === "assignedRep"
                             ? adminLabelByEmail.get(String(row[h] ?? "").trim()) ?? (row[h] ?? "")
-                            : row[h] ?? ""
+                            : formatContactTableCell(h, String(row[h] ?? ""))
                         ) : (
                           editingCell?.id === String(row.id) && editingCell.col === h ? (
                             h === "status" ? (
@@ -1465,32 +1480,114 @@ export default function ContactsClient() {
                 {(detail.notes ?? []).map((n) => (
                   <div key={n.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, background: "#fff" }}>
                     <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{n.text}</div>
+                    {(n.attachments ?? []).length > 0 ? (
+                      <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        {(n.attachments ?? []).map((a) => (
+                          <a
+                            key={a.id}
+                            href={a.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ fontSize: 12, fontWeight: 800, color: "#4c1d95" }}
+                          >
+                            📎 {a.fileName}
+                          </a>
+                        ))}
+                      </div>
+                    ) : null}
                     <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
-                      נוצר על ידי: {n.createdBy ?? "CRM User"} · {n.createdAt}
+                      נוצר על ידי: {n.createdBy ?? "CRM User"} · {formatIsraelDateTime(n.createdAt)}
                     </div>
                   </div>
                 ))}
                 {(detailAggNotes ?? []).map((n) => (
                   <div key={`agg-${n.id}`} style={{ border: "1px dashed #cbd5e1", borderRadius: 10, padding: 10, background: "#f8fafc" }}>
                     <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{n.text}</div>
+                    {(n.attachments ?? []).length > 0 ? (
+                      <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        {(n.attachments ?? []).map((a) => (
+                          <a
+                            key={a.id}
+                            href={a.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ fontSize: 12, fontWeight: 800, color: "#4c1d95" }}
+                          >
+                            📎 {a.fileName}
+                          </a>
+                        ))}
+                      </div>
+                    ) : null}
                     <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
-                      נוצר על ידי: {n.createdBy ?? "CRM User"} · {n.createdAt}
+                      נוצר על ידי: {n.createdBy ?? "CRM User"} · {formatIsraelDateTime(n.createdAt)}
                     </div>
                   </div>
                 ))}
+                <input
+                  type="file"
+                  multiple
+                  onChange={(e) => setNewContactNoteFiles(Array.from(e.target.files ?? []))}
+                  style={{ fontSize: 12 }}
+                />
+                {newContactNoteFiles.length > 0 ? (
+                  <div style={{ fontSize: 11, color: "#6b7280" }}>
+                    {newContactNoteFiles.map((f) => f.name).join(", ")}
+                  </div>
+                ) : null}
                 <button
                   type="button"
+                  disabled={noteUploading}
                   onClick={() => {
-                    const text = newContactNoteText.trim();
-                    if (!text) return;
-                    const notes = [...(detail.notes ?? []), { id: crypto.randomUUID(), text, createdAt: new Date().toISOString(), createdBy: "CRM User" }];
-                    setDetail((d) => (d ? { ...d, notes } : d));
-                    setNewContactNoteText("");
-                    void saveDetail({ notes });
+                    void (async () => {
+                      const text = newContactNoteText.trim();
+                      if (!text && newContactNoteFiles.length === 0) return;
+                      setNoteUploading(true);
+                      setErr(null);
+                      try {
+                        const attachments: Array<{ id: string; fileName: string; url: string }> = [];
+                        for (const f of newContactNoteFiles) {
+                          const fd = new FormData();
+                          fd.set("file", f);
+                          const res = await fetch("/api/uploads/note-attachment", {
+                            method: "POST",
+                            body: fd,
+                            credentials: "include",
+                          });
+                          const j = (await res.json().catch(() => ({}))) as {
+                            ok?: boolean;
+                            error?: string;
+                            attachment?: { id: string; fileName: string; url: string };
+                          };
+                          if (!res.ok || !j.ok || !j.attachment) {
+                            throw new Error(j.error ?? "העלאת קובץ נכשלה");
+                          }
+                          attachments.push(j.attachment);
+                        }
+                        const noteText = text || (attachments.length ? "מסמך מצורף" : "");
+                        const notes = [
+                          ...(detail.notes ?? []),
+                          {
+                            id: crypto.randomUUID(),
+                            text: noteText,
+                            createdAt: new Date().toISOString(),
+                            createdBy: "CRM User",
+                            ...(attachments.length ? { attachments } : {}),
+                          },
+                        ];
+                        setDetail((d) => (d ? { ...d, notes } : d));
+                        setNewContactNoteText("");
+                        setNewContactNoteFiles([]);
+                        void saveDetail({ notes });
+                      } catch (e) {
+                        setErr(e instanceof Error ? e.message : "הוספת פתק נכשלה");
+                      } finally {
+                        setNoteUploading(false);
+                      }
+                    })();
                   }}
                   style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
                 >
-                  + הוסף פתק
+                  {noteUploading ? "מעלה..." : "+ הוסף פתק"}
                 </button>
                 <textarea
                   value={newContactNoteText}
@@ -1534,9 +1631,9 @@ export default function ContactsClient() {
                       }}
                     />
                     <span style={{ fontWeight: 700, flex: 1, minWidth: 120 }}>{t.title}</span>
-                    <span style={{ color: "#6b7280", fontSize: 12 }}>{t.dueAt ? new Date(t.dueAt).toLocaleString("he-IL") : "—"}</span>
+                    <span style={{ color: "#6b7280", fontSize: 12 }}>{t.dueAt ? formatIsraelDateTime(t.dueAt) : "—"}</span>
                     {t.reminderAt ? (
-                      <span style={{ color: "#7c3aed", fontSize: 11 }}>תזכורת: {new Date(t.reminderAt).toLocaleString("he-IL")}</span>
+                      <span style={{ color: "#7c3aed", fontSize: 11 }}>תזכורת: {formatIsraelDateTime(t.reminderAt)}</span>
                     ) : null}
                     <button
                       type="button"
@@ -1563,9 +1660,9 @@ export default function ContactsClient() {
                   >
                     <input type="checkbox" checked={Boolean((t.status ?? (t.done ? "done" : "todo")) === "done")} readOnly />
                     <span style={{ fontWeight: 700 }}>{t.title}</span>
-                    <span style={{ color: "#6b7280", fontSize: 12 }}>{t.dueAt ? new Date(t.dueAt).toLocaleString("he-IL") : "—"}</span>
+                    <span style={{ color: "#6b7280", fontSize: 12 }}>{t.dueAt ? formatIsraelDateTime(t.dueAt) : "—"}</span>
                     {t.reminderAt ? (
-                      <span style={{ color: "#7c3aed", fontSize: 11 }}>תזכורת: {new Date(t.reminderAt).toLocaleString("he-IL")}</span>
+                      <span style={{ color: "#7c3aed", fontSize: 11 }}>תזכורת: {formatIsraelDateTime(t.reminderAt)}</span>
                     ) : null}
                     <span style={{ fontSize: 11, color: "#94a3b8" }}>מהזדמנות (קריאה בלבד)</span>
                   </div>

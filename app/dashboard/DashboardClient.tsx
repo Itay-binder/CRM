@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import CheckoutPagesManager from "@/app/components/CheckoutPagesManager";
+import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 
 type MetricsOk = {
   ok: true;
@@ -206,7 +207,9 @@ export default function DashboardClient() {
                     <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{t.status}</td>
                     <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{t.entityType === "contact" ? "איש קשר" : "הזדמנות"} · {t.entityName}</td>
                     <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{t.assignedRep ?? "-"}</td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{t.dueAt || "-"}</td>
+                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>
+                      {t.dueAt ? formatIsraelDateTime(t.dueAt) : "-"}
+                    </td>
                   </tr>
                 ))}
                 {!loading && sortedTasks.length === 0 && (

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 
 type Pipeline = {
   id: string;
@@ -39,7 +40,13 @@ type Opportunity = {
 type ContactRow = Record<string, string>;
 type TabId = "opportunities" | "pipelines";
 type ViewMode = "board" | "list";
-type NoteItem = { id: string; text: string; createdAt: string; createdBy?: string };
+type NoteItem = {
+  id: string;
+  text: string;
+  createdAt: string;
+  createdBy?: string;
+  attachments?: Array<{ id: string; fileName: string; url: string }>;
+};
 type TaskItem = {
   id: string;
   title: string;
@@ -184,6 +191,8 @@ export default function PipelineClient() {
   const [oppTfRem, setOppTfRem] = useState("");
   const [oppTfStatus, setOppTfStatus] = useState<"todo" | "in_progress" | "done">("todo");
   const [newOppNoteText, setNewOppNoteText] = useState("");
+  const [newOppNoteFiles, setNewOppNoteFiles] = useState<File[]>([]);
+  const [oppNoteUploading, setOppNoteUploading] = useState(false);
   const [oppCustomFieldIds, setOppCustomFieldIds] = useState<string[]>([]);
   const [pipelineMenuOpenId, setPipelineMenuOpenId] = useState<string | null>(null);
   const [editPipelineOpen, setEditPipelineOpen] = useState(false);
@@ -570,19 +579,7 @@ export default function PipelineClient() {
 
   function formatJerusalemDate(raw: string | null | undefined): string {
     if (!raw) return "";
-    const dt = new Date(raw);
-    if (Number.isNaN(dt.getTime())) return String(raw);
-    const parts = new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Asia/Jerusalem",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).formatToParts(dt);
-    const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
-    return `${get("day")}/${get("month")}/${get("year")} ${get("hour")}:${get("minute")}`;
+    return formatIsraelDateTime(raw);
   }
 
   function asDateKey(raw: string): string | null {
@@ -1990,25 +1987,98 @@ export default function PipelineClient() {
                 {oppNotes.map((n) => (
                   <div key={n.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, background: "#fff" }}>
                     <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{n.text}</div>
+                    {(n.attachments ?? []).length > 0 ? (
+                      <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        {(n.attachments ?? []).map((a) => (
+                          <a
+                            key={a.id}
+                            href={a.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ fontSize: 12, fontWeight: 800, color: "#4c1d95" }}
+                          >
+                            📎 {a.fileName}
+                          </a>
+                        ))}
+                      </div>
+                    ) : null}
                     <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
-                      נוצר על ידי: {n.createdBy ?? "CRM User"} · {n.createdAt}
+                      נוצר על ידי: {n.createdBy ?? "CRM User"} · {formatIsraelDateTime(n.createdAt)}
                     </div>
                   </div>
                 ))}
+                <input
+                  type="file"
+                  multiple
+                  onChange={(e) => setNewOppNoteFiles(Array.from(e.target.files ?? []))}
+                  style={{ fontSize: 12 }}
+                />
+                {newOppNoteFiles.length > 0 ? (
+                  <div style={{ fontSize: 11, color: "#6b7280" }}>
+                    {newOppNoteFiles.map((f) => f.name).join(", ")}
+                  </div>
+                ) : null}
                 <textarea
                   value={newOppNoteText}
                   onChange={(e) => setNewOppNoteText(e.target.value)}
                   placeholder="כתוב פתק חדש..."
                   style={{ minHeight: 140, padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb", lineHeight: 1.55 }}
                 />
-                <button type="button" onClick={() => {
-                  const text = newOppNoteText.trim();
-                  if (!text) return;
-                  const notes = [...oppNotes, { id: crypto.randomUUID(), text, createdAt: new Date().toISOString(), createdBy: "CRM User" }];
-                  setOppNotes(notes);
-                  setNewOppNoteText("");
-                  void saveOpportunityPatch(selectedOpp.id, { notes }, { fromDetail: true });
-                }} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}>+ הוסף פתק</button>
+                <button
+                  type="button"
+                  disabled={oppNoteUploading}
+                  onClick={() => {
+                    void (async () => {
+                      const text = newOppNoteText.trim();
+                      if (!text && newOppNoteFiles.length === 0) return;
+                      setOppNoteUploading(true);
+                      setErr(null);
+                      try {
+                        const attachments: Array<{ id: string; fileName: string; url: string }> = [];
+                        for (const f of newOppNoteFiles) {
+                          const fd = new FormData();
+                          fd.set("file", f);
+                          const res = await fetch("/api/uploads/note-attachment", {
+                            method: "POST",
+                            body: fd,
+                            credentials: "include",
+                          });
+                          const j = (await res.json().catch(() => ({}))) as {
+                            ok?: boolean;
+                            error?: string;
+                            attachment?: { id: string; fileName: string; url: string };
+                          };
+                          if (!res.ok || !j.ok || !j.attachment) {
+                            throw new Error(j.error ?? "העלאת קובץ נכשלה");
+                          }
+                          attachments.push(j.attachment);
+                        }
+                        const noteText = text || (attachments.length ? "מסמך מצורף" : "");
+                        const notes = [
+                          ...oppNotes,
+                          {
+                            id: crypto.randomUUID(),
+                            text: noteText,
+                            createdAt: new Date().toISOString(),
+                            createdBy: "CRM User",
+                            ...(attachments.length ? { attachments } : {}),
+                          },
+                        ];
+                        setOppNotes(notes);
+                        setNewOppNoteText("");
+                        setNewOppNoteFiles([]);
+                        void saveOpportunityPatch(selectedOpp.id, { notes }, { fromDetail: true });
+                      } catch (e) {
+                        setErr(e instanceof Error ? e.message : "הוספת פתק נכשלה");
+                      } finally {
+                        setOppNoteUploading(false);
+                      }
+                    })();
+                  }}
+                  style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
+                >
+                  {oppNoteUploading ? "מעלה..." : "+ הוסף פתק"}
+                </button>
               </div>
             )}
             {oppDetailTab === "tasks" && (
@@ -2045,11 +2115,11 @@ export default function PipelineClient() {
                     />
                     <span style={{ fontWeight: 700, flex: 1, minWidth: 120 }}>{t.title}</span>
                     <span style={{ color: "#6b7280", fontSize: 12 }}>
-                      {t.dueAt ? new Date(t.dueAt).toLocaleString("he-IL") : "—"}
+                      {t.dueAt ? formatIsraelDateTime(t.dueAt) : "—"}
                     </span>
                     {t.reminderAt ? (
                       <span style={{ color: "#7c3aed", fontSize: 11 }}>
-                        תזכורת: {new Date(t.reminderAt).toLocaleString("he-IL")}
+                        תזכורת: {formatIsraelDateTime(t.reminderAt)}
                       </span>
                     ) : null}
                     <button

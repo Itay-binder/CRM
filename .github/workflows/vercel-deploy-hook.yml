@@ -1,8 +1,10 @@
-# Push to main → קורא ל-Vercel Deploy Hook אומריץ vercel deploy (בלי תלות ב-Git App של Vercel).
+# Push to main → Deploy ל-Vercel.
 #
-# Secrets ב-GitHub → Settings → Secrets and variables → Actions:
-#   VERCEL_DEPLOY_HOOK_URL  (מומלץ) — URL מלא מ-Vercel → Project → Settings → Git → Deploy Hooks, branch main
-#   או: VERCEL_TOKEN + VERCEL_ORG_ID + VERCEL_PROJECT_ID
+# עדיפות (מומלץ): VERCEL_TOKEN + VERCEL_ORG_ID + VERCEL_PROJECT_ID → vercel deploy --prod
+#   על הארטיפקט ש-checkout@actions כבר הוריד — **אותו commit כמו ב-GitHub**, בלי תלות בחיבור Git של Vercel.
+# גיבוי: VERCEL_DEPLOY_HOOK_URL — אם רק hook מוגדר, נשתמש בו (מושך קוד מהרפו המחובר ב-Vercel; אם החיבור שבור — עלול לא לעדכן).
+#
+# Secrets: GitHub → Settings → Secrets and variables → Actions
 
 name: Deploy to Vercel
 
@@ -46,6 +48,14 @@ jobs:
           # ניקוי רווחים/שורה מהדבקה ב-GitHub Secrets
           HOOK_TRIM=$(printf '%s' "${HOOK_URL:-}" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
+          if [ -n "${VERCEL_TOKEN:-}" ] && [ -n "${VERCEL_ORG_ID:-}" ] && [ -n "${VERCEL_PROJECT_ID:-}" ]; then
+            echo ">>> Using Vercel CLI (source = this checkout, SHA ${{ github.sha }})"
+            mkdir -p .vercel
+            node -e "require('fs').writeFileSync('.vercel/project.json', JSON.stringify({orgId:process.env.VERCEL_ORG_ID, projectId:process.env.VERCEL_PROJECT_ID}))"
+            npx --yes vercel@latest deploy --prod --token "$VERCEL_TOKEN"
+            exit 0
+          fi
+
           if [ -n "$HOOK_TRIM" ]; then
             echo ">>> Using Deploy Hook (length ${#HOOK_TRIM} chars)"
             HTTP=$(curl -sS -o /tmp/hook_body.out -w "%{http_code}" -X POST "$HOOK_TRIM")
@@ -59,13 +69,5 @@ jobs:
             exit 0
           fi
 
-          if [ -n "${VERCEL_TOKEN:-}" ] && [ -n "${VERCEL_ORG_ID:-}" ] && [ -n "${VERCEL_PROJECT_ID:-}" ]; then
-            echo ">>> Using Vercel CLI"
-            mkdir -p .vercel
-            node -e "require('fs').writeFileSync('.vercel/project.json', JSON.stringify({orgId:process.env.VERCEL_ORG_ID, projectId:process.env.VERCEL_PROJECT_ID}))"
-            npx --yes vercel@latest deploy --prod --token "$VERCEL_TOKEN"
-            exit 0
-          fi
-
-          echo "::error::חסר VERCEL_DEPLOY_HOOK_URL ב-secrets, או שלושת VERCEL_TOKEN / VERCEL_ORG_ID / VERCEL_PROJECT_ID"
+          echo "::error::חסר: או VERCEL_TOKEN + VERCEL_ORG_ID + VERCEL_PROJECT_ID (מומלץ), או VERCEL_DEPLOY_HOOK_URL"
           exit 1

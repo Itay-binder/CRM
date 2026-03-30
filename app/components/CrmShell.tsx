@@ -1,5 +1,6 @@
 import Link from "next/link";
 import UserMenu from "@/app/components/UserMenu";
+import { isMovingOrdersTenant } from "@/lib/tenant/movingOrders";
 
 export type CrmTenantOption = { id: string; label: string };
 
@@ -77,6 +78,9 @@ export default function CrmShell({
           <NavItem href="/contacts" label="אנשי קשר" />
           <NavItem href="/pipeline" label="ניהול הזדמנויות" />
           <NavItem href="/tasks" label="משימות" />
+          {isMovingOrdersTenant(currentTenantId) ? (
+            <NavItem href="/orders" label="ניהול הזמנות" />
+          ) : null}
           <NavItem href="/billing" label="סליקה" />
           <NavItem href="/settings" label="הגדרות" />
         </nav>

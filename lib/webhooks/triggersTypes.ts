@@ -7,7 +7,8 @@ export type WebhookEventId =
   | "lead_stage_changed"
   | "opportunity_created"
   | "opportunity_stage_changed"
-  | "opportunity_pipeline_changed";
+  | "opportunity_pipeline_changed"
+  | "moving_order_dispatch";
 
 export type WebhookTriggerRow = {
   id: string;
@@ -25,6 +26,7 @@ export const WEBHOOK_EVENT_LABELS: Record<WebhookEventId, string> = {
   opportunity_created: "הזדמנות חדשה נוצרה",
   opportunity_stage_changed: "שינוי שלב בהזדמנות",
   opportunity_pipeline_changed: "הזדמנות הועברה לפייפליין אחר",
+  moving_order_dispatch: "שליחת הזמנת הובלה למובילים (ניהול הזמנות)",
 };
 
 export const ALL_WEBHOOK_EVENTS: WebhookEventId[] = [
@@ -35,4 +37,5 @@ export const ALL_WEBHOOK_EVENTS: WebhookEventId[] = [
   "opportunity_created",
   "opportunity_stage_changed",
   "opportunity_pipeline_changed",
+  "moving_order_dispatch",
 ];

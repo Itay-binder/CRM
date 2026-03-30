@@ -73,6 +73,13 @@ export function buildDefaultTriggers(): WebhookTriggerRow[] {
       enabled: false,
       url: "",
     },
+    {
+      id: "def-moving-order-dispatch",
+      label: "שליחת הזמנת הובלה למובילים",
+      event: "moving_order_dispatch",
+      enabled: false,
+      url: "",
+    },
   ];
 }
 

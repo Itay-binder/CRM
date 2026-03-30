@@ -2,19 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import {
-  addMonths,
-  addWeeks,
-  eachDayOfInterval,
-  endOfMonth,
-  endOfWeek,
-  format,
-  startOfMonth,
-  startOfWeek,
-} from "date-fns";
+import { addWeeks, endOfWeek, format, startOfWeek } from "date-fns";
 import { TZDate } from "@date-fns/tz";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
-import { formatIsraelYmdUtc, parseTaskInstant } from "@/lib/datetime/taskTimestamps";
+import { parseTaskInstant } from "@/lib/datetime/taskTimestamps";
 
 const CRM_TZ = "Asia/Jerusalem";
 
@@ -49,48 +40,29 @@ function weekRangeIsrael(weekOffset: number): { timeMin: string; timeMax: string
   return { timeMin, timeMax, label };
 }
 
-function monthRangeIsrael(monthOffset: number): { timeMin: string; timeMax: string; label: string } {
-  const base = startOfMonth(addMonths(israelNow(), monthOffset));
-  const end = endOfMonth(base);
-  const timeMin = new Date(base.getTime()).toISOString();
-  const timeMax = new Date(end.getTime()).toISOString();
-  const label = format(base, "MMMM yyyy", { locale: undefined });
-  return { timeMin, timeMax, label };
-}
-
-function eventInstant(isoOrDate: string): Date | null {
-  return parseTaskInstant(isoOrDate) ?? (() => {
-    const d = new Date(isoOrDate);
-    return Number.isNaN(d.getTime()) ? null : d;
-  })();
-}
-
-const WEEKDAY_HE = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ש׳"];
-
-function buildMonthGrid(monthStart: Date): (Date | null)[][] {
-  const start = startOfMonth(monthStart);
-  const end = endOfMonth(monthStart);
-  const days = eachDayOfInterval({ start, end });
-  const pad = start.getDay();
-  const flat: (Date | null)[] = [...Array(pad).fill(null), ...days];
-  while (flat.length % 7 !== 0) flat.push(null);
-  while (flat.length < 42) flat.push(null);
-  const rows: (Date | null)[][] = [];
-  for (let i = 0; i < flat.length; i += 7) {
-    rows.push(flat.slice(i, i + 7));
+/** הטמעת iframe רשמית של Google Calendar — דורשת שמשתמש יהיה מחובר ל-Google בדפדפן */
+function buildGoogleCalendarEmbedSrc(calId: string, accountEmail: string | null): string | null {
+  let raw = calId.trim();
+  if (raw === "primary") {
+    const em = accountEmail?.trim();
+    if (!em) return null;
+    raw = em;
   }
-  return rows;
+  const q = new URLSearchParams();
+  q.set("src", raw);
+  q.set("ctz", CRM_TZ);
+  q.set("mode", "MONTH");
+  return `https://calendar.google.com/calendar/embed?${q.toString()}`;
 }
 
 export default function CalendarClient() {
   const searchParams = useSearchParams();
-  const [viewTab, setViewTab] = useState<ViewTab>("month");
+  const [viewTab, setViewTab] = useState<ViewTab>("list");
   const [connected, setConnected] = useState(false);
   const [accountEmail, setAccountEmail] = useState<string | null>(null);
   const [calendars, setCalendars] = useState<GCal[]>([]);
   const [calId, setCalId] = useState("primary");
   const [weekOffset, setWeekOffset] = useState(0);
-  const [monthOffset, setMonthOffset] = useState(0);
   const [events, setEvents] = useState<GEvent[]>([]);
   const [crmTasks, setCrmTasks] = useState<CrmTask[]>([]);
   const [loading, setLoading] = useState(true);
@@ -100,54 +72,12 @@ export default function CalendarClient() {
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   const weekRange = useMemo(() => weekRangeIsrael(weekOffset), [weekOffset]);
-  const monthRange = useMemo(() => monthRangeIsrael(monthOffset), [monthOffset]);
+  const { timeMin, timeMax, label: rangeLabel } = weekRange;
 
-  const { timeMin, timeMax, rangeLabel } = useMemo(() => {
-    if (viewTab === "month") {
-      return {
-        timeMin: monthRange.timeMin,
-        timeMax: monthRange.timeMax,
-        rangeLabel: monthRange.label,
-      };
-    }
-    return {
-      timeMin: weekRange.timeMin,
-      timeMax: weekRange.timeMax,
-      rangeLabel: weekRange.label,
-    };
-  }, [viewTab, monthRange, weekRange]);
-
-  const monthStartForGrid = useMemo(
-    () => startOfMonth(addMonths(israelNow(), monthOffset)),
-    [monthOffset]
+  const embedSrc = useMemo(
+    () => (connected ? buildGoogleCalendarEmbedSrc(calId, accountEmail) : null),
+    [connected, calId, accountEmail]
   );
-  const monthGrid = useMemo(() => buildMonthGrid(monthStartForGrid), [monthStartForGrid]);
-
-  const eventsByDay = useMemo(() => {
-    const map = new Map<string, GEvent[]>();
-    for (const ev of events) {
-      const inst = eventInstant(ev.start);
-      if (!inst) continue;
-      const key = formatIsraelYmdUtc(inst);
-      const arr = map.get(key) ?? [];
-      arr.push(ev);
-      map.set(key, arr);
-    }
-    return map;
-  }, [events]);
-
-  const tasksByDay = useMemo(() => {
-    const map = new Map<string, CrmTask[]>();
-    for (const t of crmTasks) {
-      const inst = parseTaskInstant(t.dueAt);
-      if (!inst) continue;
-      const key = formatIsraelYmdUtc(inst);
-      const arr = map.get(key) ?? [];
-      arr.push(t);
-      map.set(key, arr);
-    }
-    return map;
-  }, [crmTasks]);
 
   const loadStatus = useCallback(async () => {
     const res = await fetch("/api/google-calendar/status", { credentials: "include", cache: "no-store" });
@@ -176,7 +106,7 @@ export default function CalendarClient() {
   }, []);
 
   const loadEvents = useCallback(async () => {
-    if (!connected || !calId) return;
+    if (!connected || !calId || viewTab !== "list") return;
     setEventsLoading(true);
     setErr(null);
     try {
@@ -194,7 +124,7 @@ export default function CalendarClient() {
     } finally {
       setEventsLoading(false);
     }
-  }, [connected, calId, timeMin, timeMax]);
+  }, [connected, calId, timeMin, timeMax, viewTab]);
 
   const loadCrmTasks = useCallback(async () => {
     const res = await fetch("/api/tasks", { credentials: "include", cache: "no-store" });
@@ -415,8 +345,8 @@ export default function CalendarClient() {
       {connected && (
         <>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
-            {tabBtn("month", "תצוגת לוח (חודש)")}
-            {tabBtn("list", "רשימה לפי שבוע")}
+            {tabBtn("list", "תצוגה שבועית")}
+            {tabBtn("month", "לוח Google (הטמעה)")}
           </div>
 
           <div
@@ -445,53 +375,7 @@ export default function CalendarClient() {
               )}
             </select>
 
-            {viewTab === "month" ? (
-              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                <button
-                  type="button"
-                  onClick={() => setMonthOffset((m) => m - 1)}
-                  style={{
-                    padding: "8px 12px",
-                    borderRadius: 10,
-                    border: "1px solid #e5e7eb",
-                    background: "#fff",
-                    cursor: "pointer",
-                    fontWeight: 700,
-                  }}
-                >
-                  ← חודש קודם
-                </button>
-                <span style={{ fontWeight: 800, minWidth: 120, textAlign: "center" }}>{rangeLabel}</span>
-                <button
-                  type="button"
-                  onClick={() => setMonthOffset((m) => m + 1)}
-                  style={{
-                    padding: "8px 12px",
-                    borderRadius: 10,
-                    border: "1px solid #e5e7eb",
-                    background: "#fff",
-                    cursor: "pointer",
-                    fontWeight: 700,
-                  }}
-                >
-                  חודש הבא →
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMonthOffset(0)}
-                  style={{
-                    padding: "8px 12px",
-                    borderRadius: 10,
-                    border: "1px solid #c4b5fd",
-                    background: "#f5f3ff",
-                    cursor: "pointer",
-                    fontWeight: 700,
-                  }}
-                >
-                  החודש
-                </button>
-              </div>
-            ) : (
+            {viewTab === "list" ? (
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <button
                   type="button"
@@ -537,7 +421,7 @@ export default function CalendarClient() {
                   היום
                 </button>
               </div>
-            )}
+            ) : null}
           </div>
 
           {viewTab === "month" && (
@@ -546,140 +430,33 @@ export default function CalendarClient() {
                 border: "1px solid #e5e7eb",
                 borderRadius: 16,
                 background: "#fff",
-                padding: 12,
+                overflow: "hidden",
                 marginBottom: 20,
-                overflowX: "auto",
               }}
             >
-              <div style={{ fontWeight: 900, marginBottom: 10, fontSize: 16 }}>לוח חודשי</div>
-              {eventsLoading ? (
-                <div style={{ color: "#6b7280" }}>טוען...</div>
+              <div style={{ fontWeight: 900, padding: "12px 14px 0", fontSize: 16 }}>
+                לוח Google Calendar (חודש)
+              </div>
+              <p style={{ margin: "6px 14px 10px", fontSize: 12, color: "#6b7280", lineHeight: 1.45 }}>
+                התצוגה היא של Google. כדי לראות אירועים צריך להיות מחוברים ל-Google בדפדפן (בדרך כלל אותו משתמש שחיברתם
+                ב-CRM). אפשר לעבור חודשים מתוך הממשק המוטמע.
+              </p>
+              {embedSrc ? (
+                <iframe
+                  title="Google Calendar"
+                  src={embedSrc}
+                  style={{
+                    width: "100%",
+                    height: "min(78vh, 820px)",
+                    minHeight: 560,
+                    border: "none",
+                    display: "block",
+                  }}
+                />
               ) : (
-                <div style={{ minWidth: 720 }}>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(7, 1fr)",
-                      gap: 4,
-                      marginBottom: 6,
-                      textAlign: "center",
-                      fontWeight: 800,
-                      fontSize: 12,
-                      color: "#6b7280",
-                    }}
-                  >
-                    {WEEKDAY_HE.map((d) => (
-                      <div key={d}>{d}</div>
-                    ))}
-                  </div>
-                  {monthGrid.map((row, ri) => (
-                    <div
-                      key={ri}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(7, 1fr)",
-                        gap: 4,
-                        minHeight: 100,
-                        marginBottom: 4,
-                      }}
-                    >
-                      {row.map((cell, ci) => {
-                        if (!cell) {
-                          return (
-                            <div
-                              key={`e-${ri}-${ci}`}
-                              style={{ background: "#fafafa", borderRadius: 8, minHeight: 96 }}
-                            />
-                          );
-                        }
-                        const key = formatIsraelYmdUtc(cell);
-                        const dayEvents = eventsByDay.get(key) ?? [];
-                        const dayTasks = tasksByDay.get(key) ?? [];
-                        return (
-                          <div
-                            key={key}
-                            style={{
-                              border: "1px solid #e5e7eb",
-                              borderRadius: 8,
-                              padding: 6,
-                              minHeight: 96,
-                              background: "#fff",
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 4,
-                              overflow: "hidden",
-                            }}
-                          >
-                            <div style={{ fontWeight: 800, fontSize: 13, color: "#111827" }}>
-                              {cell.getDate()}
-                            </div>
-                            <div style={{ display: "flex", flexDirection: "column", gap: 3, overflow: "auto", flex: 1 }}>
-                              {dayEvents.slice(0, 4).map((ev) => (
-                                <div
-                                  key={ev.id}
-                                  title={ev.summary}
-                                  style={{
-                                    fontSize: 10,
-                                    lineHeight: 1.25,
-                                    padding: "3px 5px",
-                                    borderRadius: 4,
-                                    background: "#dbeafe",
-                                    color: "#1e3a8a",
-                                    fontWeight: 700,
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                    whiteSpace: "nowrap",
-                                  }}
-                                >
-                                  {ev.summary}
-                                </div>
-                              ))}
-                              {dayTasks.slice(0, 3).map((t) => (
-                                <div
-                                  key={`${t.entityType}-${t.entityId}-${t.id}`}
-                                  title={t.title}
-                                  style={{
-                                    fontSize: 10,
-                                    lineHeight: 1.25,
-                                    padding: "3px 5px",
-                                    borderRadius: 4,
-                                    background: t.syncToGoogleCalendar ? "#d1fae5" : "#ede9fe",
-                                    color: "#4c1d95",
-                                    fontWeight: 700,
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                    whiteSpace: "nowrap",
-                                  }}
-                                >
-                                  {t.title}
-                                </div>
-                              ))}
-                              {dayEvents.length > 4 || dayTasks.length > 3 ? (
-                                <div style={{ fontSize: 9, color: "#9ca3af" }}>
-                                  +
-                                  {Math.max(0, dayEvents.length - 4) + Math.max(0, dayTasks.length - 3)} נוספים
-                                </div>
-                              ) : null}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ))}
-                  <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 12, fontSize: 11, color: "#6b7280" }}>
-                    <span>
-                      <span style={{ display: "inline-block", width: 12, height: 8, background: "#dbeafe", borderRadius: 2, marginLeft: 4 }} />{" "}
-                      Google
-                    </span>
-                    <span>
-                      <span style={{ display: "inline-block", width: 12, height: 8, background: "#ede9fe", borderRadius: 2, marginLeft: 4 }} />{" "}
-                      משימת CRM
-                    </span>
-                    <span>
-                      <span style={{ display: "inline-block", width: 12, height: 8, background: "#d1fae5", borderRadius: 2, marginLeft: 4 }} />{" "}
-                      משימה מסונכרנת
-                    </span>
-                  </div>
+                <div style={{ padding: 20, color: "#92400e", background: "#fffbeb", fontSize: 14 }}>
+                  לא ניתן להטמיע את לוח &quot;ראשי&quot; בלי כתובת המייל של החשבון. בחרו לוח אחר מהרשימה, או ודאו שהחיבור
+                  ב-CRM החזיר מייל חשבון.
                 </div>
               )}
             </div>

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import CrmShell from "@/app/components/CrmShell";
 import SettingsSectionNav from "@/app/components/SettingsSectionNav";
 import FieldsClient from "@/app/settings/fields/FieldsClient";
+import { isMovingOrdersTenant } from "@/lib/tenant/movingOrders";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,7 @@ export default async function CustomFieldsPage() {
       tenants={ctx.accessibleTenants.map((t) => ({ id: t.id, label: t.label }))}
       currentTenantId={ctx.tenant.id}
     >
-      <SettingsSectionNav active="fields" />
+      <SettingsSectionNav active="fields" showMovingOrders={isMovingOrdersTenant(ctx.tenant.id)} />
       <FieldsClient />
     </CrmShell>
   );

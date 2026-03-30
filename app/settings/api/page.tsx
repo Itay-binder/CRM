@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import CrmShell from "@/app/components/CrmShell";
 import ApiKeysClient from "@/app/settings/api/ApiKeysClient";
+import { isMovingOrdersTenant } from "@/lib/tenant/movingOrders";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,7 @@ export default async function SettingsApiPage() {
         tenantLabel={ctx.tenant.label}
         tenantDatabaseId={ctx.tenant.databaseId}
         multiTenant={ctx.accessibleTenants.length > 1}
+        showMovingOrders={isMovingOrdersTenant(ctx.tenant.id)}
       />
     </CrmShell>
   );

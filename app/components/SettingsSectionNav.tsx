@@ -1,8 +1,15 @@
 import Link from "next/link";
 
-type Section = "fields" | "api" | "triggers";
+type Section = "fields" | "api" | "triggers" | "cityRegions";
 
-export default function SettingsSectionNav({ active }: { active: Section }) {
+export default function SettingsSectionNav({
+  active,
+  showMovingOrders,
+}: {
+  active: Section;
+  /** לשונית מיפוי ערים — רק לטננט עם ניהול הזמנות */
+  showMovingOrders?: boolean;
+}) {
   const base = {
     padding: "10px 14px",
     borderRadius: 10,
@@ -39,6 +46,14 @@ export default function SettingsSectionNav({ active }: { active: Section }) {
       <Link href="/settings/triggers" style={active === "triggers" ? activeStyle : idleStyle}>
         טריגרים
       </Link>
+      {showMovingOrders ? (
+        <Link
+          href="/settings/city-regions"
+          style={active === "cityRegions" ? activeStyle : idleStyle}
+        >
+          אזורי פעילות — ערים
+        </Link>
+      ) : null}
     </nav>
   );
 }

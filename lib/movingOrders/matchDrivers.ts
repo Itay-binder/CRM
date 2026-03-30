@@ -87,14 +87,45 @@ function driverWorksOnDay(daysStr: string, markers: string[]): boolean {
   return false;
 }
 
-function regionMatch(lead: LeadRecord, cityHints: string[]): boolean {
+/** מפתח לטבלת יישוב→אזור (זהה לנרמול טקסט באזורי מוביל) */
+function normSettlementLookupKey(s: string): string {
+  return s
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[\u0591-\u05C7]/g, "")
+    .toLowerCase();
+}
+
+function expandRegionCandidates(
+  cityHints: string[],
+  settlementRegionMap: Map<string, string> | undefined
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (raw: string) => {
+    const t = raw.trim();
+    if (!t) return;
+    const k = normHe(t);
+    if (k.length < 2 || seen.has(k)) return;
+    seen.add(k);
+    out.push(t);
+  };
+  for (const hint of cityHints) {
+    add(hint);
+    const reg = settlementRegionMap?.get(normSettlementLookupKey(hint));
+    if (reg) add(reg);
+  }
+  return out;
+}
+
+function regionMatch(lead: LeadRecord, regionCandidates: string[]): boolean {
   if (readBool(lead.customFields, MOVER_FIELD_IDS.nationwide)) return true;
   const regions = readStr(lead.customFields, MOVER_FIELD_IDS.regions);
   if (!regions) return false;
   const nr = normHe(regions);
-  for (const hint of cityHints) {
-    const h = normHe(hint);
-    if (h.length >= 2 && nr.includes(h)) return true;
+  for (const cand of regionCandidates) {
+    const c = normHe(cand);
+    if (c.length >= 2 && nr.includes(c)) return true;
   }
   return false;
 }
@@ -136,9 +167,11 @@ export type MatchDriversResult = {
  */
 export function matchDriversForOrder(
   leads: LeadRecord[],
-  order: MovingOrderPayload
+  order: MovingOrderPayload,
+  settlementRegionMap?: Map<string, string>
 ): MatchDriversResult {
   const cityHints = extractCityHints(order.pickup ?? "", order.dropoff ?? "");
+  const regionCandidates = expandRegionCandidates(cityHints, settlementRegionMap);
   const caps = deriveOrderCapabilities(order);
   const orderDate = order.date?.trim();
 
@@ -152,7 +185,7 @@ export function matchDriversForOrder(
   const optional: LeadRecord[] = [];
 
   for (const lead of movers) {
-    const areaOk = regionMatch(lead, cityHints);
+    const areaOk = regionMatch(lead, regionCandidates);
     if (!areaOk) continue;
 
     const dayOk = dayMatch(lead, orderDate);

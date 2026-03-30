@@ -5,6 +5,7 @@ import { validateCustomValues } from "@/lib/customFields/repo";
 import { listLeadsFiltered } from "@/lib/leads/repo";
 import { rawCustomValuesFromPayload } from "@/lib/movingOrders/customValuesFromPayload";
 import { ensureMovingOrdersIntakePipeline } from "@/lib/movingOrders/ensureIntakePipeline";
+import { getCityRegionMap } from "@/lib/movingOrders/cityRegionSettingsRepo";
 import { matchDriversForOrder } from "@/lib/movingOrders/matchDrivers";
 import { MOVING_ORDERS_INTAKE_PIPELINE_ID, MOVING_ORDER_STAGES } from "@/lib/movingOrders/pipelineConstants";
 import { defaultStageForStatus, statusFromStage } from "@/lib/movingOrders/stageSync";
@@ -118,7 +119,8 @@ export async function upsertMovingOrderFromIngest(
 
   const docId = sanitizeDocId(orderId);
   const leads = await listLeadsFiltered();
-  const { matched, optional } = matchDriversForOrder(leads, payload);
+  const settlementRegionMap = await getCityRegionMap();
+  const { matched, optional } = matchDriversForOrder(leads, payload, settlementRegionMap);
 
   const matchedIds = matched.map((l) => l.id);
   const optionalIds = optional.map((l) => l.id);
@@ -221,7 +223,8 @@ export async function createMovingOrderManual(
   };
 
   const leads = await listLeadsFiltered();
-  const { matched, optional } = matchDriversForOrder(leads, payload);
+  const settlementRegionMap = await getCityRegionMap();
+  const { matched, optional } = matchDriversForOrder(leads, payload, settlementRegionMap);
   const matchedIds = matched.map((l) => l.id);
   const optionalIds = optional.map((l) => l.id);
 
@@ -299,7 +302,8 @@ export async function updateMovingOrder(
     };
     if (!String(next.order_id ?? "").trim()) throw new Error("חסר order_id בפיילואד");
     const leads = await listLeadsFiltered();
-    const { matched, optional } = matchDriversForOrder(leads, next);
+    const settlementRegionMap = await getCityRegionMap();
+    const { matched, optional } = matchDriversForOrder(leads, next, settlementRegionMap);
     payload.payload = next;
     payload.matchedDriverIds = matched.map((l) => l.id);
     payload.optionalDriverIds = optional.map((l) => l.id);

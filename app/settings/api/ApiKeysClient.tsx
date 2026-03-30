@@ -18,6 +18,7 @@ type Props = {
   tenantLabel: string;
   tenantDatabaseId: string;
   multiTenant: boolean;
+  showMovingOrders?: boolean;
 };
 
 function CodeBlock({ text }: { text: string }) {
@@ -47,6 +48,7 @@ export default function ApiKeysClient({
   tenantLabel,
   tenantDatabaseId,
   multiTenant,
+  showMovingOrders,
 }: Props) {
   const [keys, setKeys] = useState<KeyRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -135,7 +137,7 @@ export default function ApiKeysClient({
 
   return (
     <div>
-      <SettingsSectionNav active="api" />
+      <SettingsSectionNav active="api" showMovingOrders={showMovingOrders} />
       <div
         style={{
           maxWidth: 720,

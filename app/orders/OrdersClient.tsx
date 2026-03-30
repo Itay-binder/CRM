@@ -7,8 +7,7 @@ import OrdersPipelinesTab from "@/app/orders/OrdersPipelinesTab";
 import type { DriverSummary } from "@/lib/movingOrders/types";
 import type { MovingOrderRecord, MovingOrderStatus } from "@/lib/movingOrders/types";
 
-type TabId = "match" | "board" | "pipelines";
-
+type TabId = "orders" | "pipelines" | "match";
 type ApiListOk = {
   ok: true;
   orders: MovingOrderRecord[];
@@ -33,13 +32,11 @@ function statusLabel(s: MovingOrderStatus): string {
 }
 
 export default function OrdersClient() {
-  const [tab, setTab] = useState<TabId>("match");
+  const [tab, setTab] = useState<TabId>("orders");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [orders, setOrders] = useState<MovingOrderRecord[]>([]);
   const [drivers, setDrivers] = useState<Record<string, DriverSummary>>({});
-  const [seedMsg, setSeedMsg] = useState<string | null>(null);
-  const [orderSeedMsg, setOrderSeedMsg] = useState<string | null>(null);
   const [dispatching, setDispatching] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -64,58 +61,6 @@ export default function OrdersClient() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  async function seedMoverFields() {
-    setSeedMsg(null);
-    try {
-      const res = await fetch("/api/moving-orders/seed-fields", {
-        method: "POST",
-        credentials: "include",
-      });
-      const j = (await res.json()) as {
-        ok?: boolean;
-        error?: string;
-        fieldIds?: string[];
-        contactFieldIds?: string[];
-        opportunityWelcomeFieldIds?: string[];
-      };
-      if (!res.ok || !j.ok) {
-        setSeedMsg(j.error ?? "נכשל");
-        return;
-      }
-      const c = j.contactFieldIds?.length ?? j.fieldIds?.length ?? 0;
-      const o = j.opportunityWelcomeFieldIds?.length ?? 0;
-      setSeedMsg(
-        o > 0
-          ? `נוצרו/עודכנו ${c} שדות איש קשר (מוביל) ו-${o} שדות הזדמנות (שאלון הצטרפות).`
-          : `נוצרו/עודכנו ${j.fieldIds?.length ?? 0} שדות מוביל.`
-      );
-    } catch {
-      setSeedMsg("שגיאה");
-    }
-  }
-
-  async function seedOrderFields() {
-    setOrderSeedMsg(null);
-    try {
-      const res = await fetch("/api/moving-orders/seed-order-fields", {
-        method: "POST",
-        credentials: "include",
-      });
-      const j = (await res.json()) as { ok?: boolean; error?: string; fieldIds?: string[] };
-      if (!res.ok || !j.ok) {
-        setOrderSeedMsg(j.error ?? "נכשל");
-        return;
-      }
-      setOrderSeedMsg(`נוצרו/עודכנו ${j.fieldIds?.length ?? 0} שדות הזמנה.`);
-    } catch {
-      setOrderSeedMsg("שגיאה");
-    }
-  }
-
-  function isChecked(order: MovingOrderRecord, leadId: string): boolean {
-    return !order.excludedDriverIds.includes(leadId);
-  }
 
   async function setExcluded(order: MovingOrderRecord, leadId: string, checked: boolean) {
     const ex = new Set(order.excludedDriverIds);
@@ -227,85 +172,74 @@ export default function OrdersClient() {
     [orders]
   );
 
-  const tabBtn = (id: TabId, label: string) => (
-    <button
-      key={id}
-      type="button"
-      onClick={() => setTab(id)}
-      style={{
-        padding: "10px 16px",
-        borderRadius: 999,
-        border: tab === id ? "2px solid #6d28d9" : "1px solid #e5e7eb",
-        background: tab === id ? "#f5f3ff" : "#fff",
-        fontWeight: 800,
-        cursor: "pointer",
-        fontSize: 14,
-      }}
-    >
-      {label}
-    </button>
-  );
+  function isChecked(order: MovingOrderRecord, leadId: string): boolean {
+    return !order.excludedDriverIds.includes(leadId);
+  }
 
   return (
-    <div style={{ maxWidth: 1200 }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-        <div>
-          <h1 style={{ margin: "0 0 6px", fontSize: 26 }}>ניהול הזמנות</h1>
-          <p style={{ margin: 0, color: "#4b5563", fontSize: 14, lineHeight: 1.5 }}>
-            קליטה דרך{" "}
-            <code style={{ background: "#f3f4f6", padding: "2px 6px", borderRadius: 6 }}>/api/ingest/moving-order</code>
-            או{" "}
-            <code style={{ background: "#f3f4f6", padding: "2px 6px", borderRadius: 6 }}>/api/ingest/order</code>
-            {" "}— מפתח API + כותרת{" "}
-            <code style={{ background: "#f3f4f6", padding: "2px 6px", borderRadius: 6 }}>x-crm-tenant</code>.
-          </p>
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+    <div style={{ width: "100%", maxWidth: "100%", minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+        <h1 style={{ margin: 0, fontSize: 24, fontWeight: 900 }}>ניהול הזמנות</h1>
+        <div style={{ display: "inline-flex", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 4 }}>
           <button
             type="button"
-            onClick={() => void seedOrderFields()}
+            onClick={() => setTab("orders")}
             style={{
-              padding: "10px 14px",
-              borderRadius: 10,
-              border: "1px solid #c4b5fd",
-              background: "#f5f3ff",
-              fontWeight: 600,
+              padding: "8px 12px",
+              border: "none",
+              borderRadius: 8,
+              background: tab === "orders" ? "#e9d5ff" : "transparent",
+              fontWeight: 800,
               cursor: "pointer",
             }}
           >
-            שדות הזמנה (קליטת הזמנות)
+            הזמנות
           </button>
           <button
             type="button"
-            onClick={() => void seedMoverFields()}
+            onClick={() => setTab("pipelines")}
             style={{
-              padding: "10px 14px",
-              borderRadius: 10,
-              border: "1px solid #d1d5db",
-              background: "#fff",
-              fontWeight: 600,
+              padding: "8px 12px",
+              border: "none",
+              borderRadius: 8,
+              background: tab === "pipelines" ? "#e9d5ff" : "transparent",
+              fontWeight: 800,
               cursor: "pointer",
             }}
           >
-            שדות מובילים (לקוחות משלמים)
+            פייפליינים
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("match")}
+            style={{
+              padding: "8px 12px",
+              border: "none",
+              borderRadius: 8,
+              background: tab === "match" ? "#e9d5ff" : "transparent",
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+          >
+            התאמת הזמנה
           </button>
         </div>
       </div>
-
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 18, marginBottom: 16 }}>
-        {tabBtn("match", "התאמת הזמנה")}
-        {tabBtn("board", "הזמנות")}
-        {tabBtn("pipelines", "פייפליינים")}
-      </div>
+      <p style={{ margin: "0 0 16px", color: "#4b5563", fontSize: 14, lineHeight: 1.5 }}>
+        קליטה חיצונית דרך{" "}
+        <code style={{ background: "#f3f4f6", padding: "2px 6px", borderRadius: 6 }}>/api/ingest/moving-order</code>
+        {" או "}
+        <code style={{ background: "#f3f4f6", padding: "2px 6px", borderRadius: 6 }}>/api/ingest/order</code>
+        {" — מפתח API וכותרת "}
+        <code style={{ background: "#f3f4f6", padding: "2px 6px", borderRadius: 6 }}>x-crm-tenant</code>.
+      </p>
 
       {err ? (
         <div style={{ marginTop: 16, padding: 12, borderRadius: 10, background: "#fef2f2", color: "#991b1b" }}>{err}</div>
       ) : null}
-      {seedMsg ? <div style={{ marginTop: 8, fontSize: 14, color: "#374151" }}>{seedMsg}</div> : null}
-      {orderSeedMsg ? <div style={{ marginTop: 8, fontSize: 14, color: "#374151" }}>{orderSeedMsg}</div> : null}
 
       {tab === "pipelines" ? <OrdersPipelinesTab /> : null}
-      {tab === "board" ? <OrdersBoardTab /> : null}
+      {tab === "orders" ? <OrdersBoardTab /> : null}
 
       {tab === "match" ? (
         loading ? (

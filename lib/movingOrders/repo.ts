@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { validateCustomValues } from "@/lib/customFields/repo";
@@ -187,6 +188,70 @@ export async function upsertMovingOrderFromIngest(
   return mapDoc(again.id, (again.data() ?? {}) as Record<string, unknown>);
 }
 
+export async function createMovingOrderManual(
+  input: {
+    pipelineId: string;
+    stage: string;
+    name?: string;
+    phone?: string;
+    pickup?: string;
+    dropoff?: string;
+    date?: string;
+    order_id?: string;
+  },
+  db?: Firestore
+): Promise<MovingOrderRecord> {
+  await ensureMovingOrdersIntakePipeline();
+  const d = db ?? (await getAdminDb());
+  const orderId =
+    input.order_id?.trim() ||
+    `manual-${Date.now()}-${randomUUID().replace(/-/g, "").slice(0, 10)}`;
+  const docId = sanitizeDocId(orderId);
+  const ref = d.collection(COLLECTION).doc(docId);
+  const prev = await ref.get();
+  if (prev.exists) throw new Error("מזהה הזמנה כבר קיים");
+
+  const payload: MovingOrderPayload = {
+    order_id: orderId,
+    name: input.name?.trim() || undefined,
+    phone: input.phone?.trim() || undefined,
+    pickup: input.pickup?.trim() || undefined,
+    dropoff: input.dropoff?.trim() || undefined,
+    date: input.date?.trim() || undefined,
+  };
+
+  const leads = await listLeadsFiltered();
+  const { matched, optional } = matchDriversForOrder(leads, payload);
+  const matchedIds = matched.map((l) => l.id);
+  const optionalIds = optional.map((l) => l.id);
+
+  const rawCustom = rawCustomValuesFromPayload(payload);
+  const pid = input.pipelineId.trim() || MOVING_ORDERS_INTAKE_PIPELINE_ID;
+  const st = input.stage.trim() || MOVING_ORDER_STAGES[0];
+  const customValues = await validateCustomValues("moving_order", rawCustom, {
+    pipelineId: pid,
+  });
+
+  const now = FieldValue.serverTimestamp();
+  await ref.set({
+    orderId,
+    payload,
+    customValues,
+    pipelineId: pid,
+    stage: st,
+    matchedDriverIds: matchedIds,
+    optionalDriverIds: optionalIds,
+    manualDriverIds: [],
+    excludedDriverIds: [],
+    createdAt: now,
+    updatedAt: now,
+    status: "pending" as MovingOrderStatus,
+    dispatchedAt: null,
+  });
+  const again = await ref.get();
+  return mapDoc(again.id, (again.data() ?? {}) as Record<string, unknown>);
+}
+
 export async function updateMovingOrder(
   id: string,
   input: {
@@ -194,6 +259,7 @@ export async function updateMovingOrder(
     stage?: string;
     pipelineId?: string;
     customValues?: Record<string, unknown>;
+    payload?: Partial<MovingOrderPayload>;
     excludedDriverIds?: string[];
     manualDriverIds?: string[];
     dispatchedAt?: string | null;
@@ -210,7 +276,11 @@ export async function updateMovingOrder(
     typeof existing.customValues === "object" && existing.customValues !== null
       ? (existing.customValues as Record<string, unknown>)
       : {};
-  const effPipe = String(input.pipelineId ?? existing.pipelineId ?? MOVING_ORDERS_INTAKE_PIPELINE_ID).trim();
+  const effPipe = String(
+    input.pipelineId !== undefined
+      ? input.pipelineId.trim() || MOVING_ORDERS_INTAKE_PIPELINE_ID
+      : existing.pipelineId ?? MOVING_ORDERS_INTAKE_PIPELINE_ID
+  ).trim();
 
   const payload: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
 
@@ -218,11 +288,36 @@ export async function updateMovingOrder(
     payload.pipelineId = input.pipelineId.trim() || MOVING_ORDERS_INTAKE_PIPELINE_ID;
   }
 
-  if (input.customValues !== undefined) {
-    payload.customValues = await validateCustomValues("moving_order", input.customValues, {
+  if (input.payload !== undefined && typeof input.payload === "object") {
+    const cur = (existing.payload as MovingOrderPayload) ?? { order_id: String(existing.orderId ?? id) };
+    const next: MovingOrderPayload = {
+      ...cur,
+      ...input.payload,
+      order_id:
+        String(cur.order_id ?? input.payload.order_id ?? existing.orderId ?? id ?? "").trim() ||
+        String(existing.orderId ?? id),
+    };
+    if (!String(next.order_id ?? "").trim()) throw new Error("חסר order_id בפיילואד");
+    const leads = await listLeadsFiltered();
+    const { matched, optional } = matchDriversForOrder(leads, next);
+    payload.payload = next;
+    payload.matchedDriverIds = matched.map((l) => l.id);
+    payload.optionalDriverIds = optional.map((l) => l.id);
+    const rawCustom = rawCustomValuesFromPayload(next);
+    payload.customValues = await validateCustomValues("moving_order", { ...prevCustom, ...rawCustom }, {
       pipelineId: effPipe,
       previousValues: prevCustom,
     });
+  }
+
+  if (input.customValues !== undefined) {
+    const baseline =
+      (payload.customValues as Record<string, unknown> | undefined) ?? prevCustom;
+    payload.customValues = await validateCustomValues(
+      "moving_order",
+      { ...baseline, ...input.customValues },
+      { pipelineId: effPipe, previousValues: baseline }
+    );
   }
 
   if (input.stage !== undefined) {

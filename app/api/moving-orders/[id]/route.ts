@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
 import { getMovingOrder, updateMovingOrder } from "@/lib/movingOrders/repo";
-import type { MovingOrderStatus } from "@/lib/movingOrders/types";
+import type { MovingOrderPayload, MovingOrderStatus } from "@/lib/movingOrders/types";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -57,6 +57,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   if (body.customValues && typeof body.customValues === "object" && !Array.isArray(body.customValues)) {
     patch.customValues = body.customValues as Record<string, unknown>;
+  }
+
+  if (body.payload && typeof body.payload === "object" && !Array.isArray(body.payload)) {
+    patch.payload = body.payload as Partial<MovingOrderPayload>;
   }
 
   if (typeof body.dispatchedAt === "string" || body.dispatchedAt === null) {

@@ -5,8 +5,7 @@ import { getRequestTenantDatabaseId } from "@/lib/firebase/admin";
 import { isMovingOrdersTenant } from "@/lib/tenant/movingOrders";
 import { isValidIngestApiKeyAsync } from "@/lib/ingest/apiKey";
 import { MOVER_CONTACT_FIELD_IDS, PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
-import { seedMoverCustomFields } from "@/lib/movingOrders/seedMoverFields";
-import { seedMoverWelcomeOpportunityFields } from "@/lib/movingOrders/seedMoverWelcomeOpportunityFields";
+import { seedPayingCustomersMoverQuestionnaireFields } from "@/lib/movingOrders/seedPayingCustomersMoverQuestionnaire";
 import {
   buildMoverContactCustomPatchFromWelcome,
   buildWelcomeOpportunityCustomValues,
@@ -72,7 +71,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    await Promise.all([seedMoverCustomFields(), seedMoverWelcomeOpportunityFields()]);
+    await seedPayingCustomersMoverQuestionnaireFields();
   } catch (e) {
     return NextResponse.json(
       {

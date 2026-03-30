@@ -12,18 +12,18 @@ export async function seedMoverCustomFields(): Promise<{ fieldIds: string[] }> {
     label: string;
     type: "boolean" | "text";
   }> = [
-    { fieldId: "mover_is_mover", label: "מוביל (השתתף בהתאמת הזמנות)", type: "boolean" },
-    { fieldId: "mover_regions", label: "אזורי פעילות (מופרידים בפסיק)", type: "text" },
-    { fieldId: "mover_nationwide", label: "עובד בכל הארץ", type: "boolean" },
-    { fieldId: "mover_days", label: "ימי פעילות (למשל: א', ב', ג', ד', ה', ו', שבת)", type: "text" },
-    { fieldId: "mover_hour_start", label: "שעת פעילות התחלה", type: "text" },
-    { fieldId: "mover_hour_end", label: "שעת פעילות סיום", type: "text" },
-    { fieldId: "mover_flexible_hours", label: "שעות גמישות (בכל שעה ביום)", type: "boolean" },
-    { fieldId: "mover_same_day", label: "זמינות להובלה מיידית מהיום להיום", type: "boolean" },
-    { fieldId: "mover_crane", label: "עובד עם מנוף", type: "boolean" },
-    { fieldId: "mover_large", label: "הובלה גדולה", type: "boolean" },
-    { fieldId: "mover_small", label: "הובלה קטנה", type: "boolean" },
-    { fieldId: "mover_apartment", label: "הובלת דירה", type: "boolean" },
+    { fieldId: "mover_is_mover", label: "מוביל — משתתף בהתאמת הזמנות ללקוחות משלמים", type: "boolean" },
+    { fieldId: "mover_regions", label: "מוביל — אזורי פעילות (מופרדים בפסיקים, כמו בשאלון)", type: "text" },
+    { fieldId: "mover_nationwide", label: "מוביל — עובד בכל הארץ (מחושב מאזורים)", type: "boolean" },
+    { fieldId: "mover_days", label: "מוביל — ימי פעילות (כמו activity_days בשאלון)", type: "text" },
+    { fieldId: "mover_hour_start", label: "מוביל — שעת פעילות התחלה (activity_start)", type: "text" },
+    { fieldId: "mover_hour_end", label: "מוביל — שעת פעילות סיום (activity_end)", type: "text" },
+    { fieldId: "mover_flexible_hours", label: "מוביל — שעות גמישות (activity_flexible)", type: "boolean" },
+    { fieldId: "mover_same_day", label: "מוביל — זמינות מיידית (מתוך immediate_availability)", type: "boolean" },
+    { fieldId: "mover_crane", label: "מוביל — עובד עם מנוף (מ־mover_services)", type: "boolean" },
+    { fieldId: "mover_large", label: "מוביל — הובלה גדולה (מ־mover_services)", type: "boolean" },
+    { fieldId: "mover_small", label: "מוביל — הובלה קטנה (מ־mover_services)", type: "boolean" },
+    { fieldId: "mover_apartment", label: "מוביל — הובלת דירה (מ־mover_services)", type: "boolean" },
   ];
 
   const fieldIds: string[] = [];

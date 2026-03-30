@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { isAdminEmail } from "@/lib/auth/profile";
 import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
-import { seedMoverCustomFields } from "@/lib/movingOrders/seedMoverFields";
-import { seedMoverWelcomeOpportunityFields } from "@/lib/movingOrders/seedMoverWelcomeOpportunityFields";
+import { seedPayingCustomersMoverQuestionnaireFields } from "@/lib/movingOrders/seedPayingCustomersMoverQuestionnaire";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -27,14 +26,12 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const contactFields = await seedMoverCustomFields();
-    const opportunityWelcomeFields = await seedMoverWelcomeOpportunityFields();
-    const fieldIds = [...contactFields.fieldIds, ...opportunityWelcomeFields.fieldIds];
+    const seeded = await seedPayingCustomersMoverQuestionnaireFields();
     return NextResponse.json({
       ok: true,
-      fieldIds,
-      contactFieldIds: contactFields.fieldIds,
-      opportunityWelcomeFieldIds: opportunityWelcomeFields.fieldIds,
+      fieldIds: seeded.fieldIds,
+      contactFieldIds: seeded.contactFieldIds,
+      opportunityWelcomeFieldIds: seeded.opportunityFieldIds,
     });
   } catch (e) {
     return NextResponse.json(

@@ -12,32 +12,44 @@ export async function seedMoverWelcomeOpportunityFields(): Promise<{ fieldIds: s
     label: string;
     type: "boolean" | "text" | "phone" | "email";
   }> = [
-    { fieldId: "mover_welcome_full_name", label: "שאלון מוביל — שם מלא", type: "text" },
-    { fieldId: "mover_welcome_phone", label: "שאלון מוביל — טלפון", type: "phone" },
-    { fieldId: "mover_welcome_email", label: "שאלון מוביל — דוא״ל", type: "email" },
-    { fieldId: "mover_welcome_activity_regions", label: "שאלון מוביל — אזורי פעילות (טקסט)", type: "text" },
+    { fieldId: "mover_welcome_full_name", label: "הצטרפות מוביל — שם מלא (name)", type: "text" },
+    { fieldId: "mover_welcome_phone", label: "הצטרפות מוביל — טלפון (phone)", type: "phone" },
+    { fieldId: "mover_welcome_email", label: "הצטרפות מוביל — אימייל (email)", type: "email" },
+    {
+      fieldId: "mover_welcome_activity_regions",
+      label: "הצטרפות מוביל — אזורי פעילות (activity_regions)",
+      type: "text",
+    },
     {
       fieldId: "mover_welcome_activity_regions_json",
-      label: "שאלון מוביל — אזורי פעילות (JSON)",
+      label: "הצטרפות מוביל — אזורי פעילות מערך (activity_regions_array)",
       type: "text",
     },
-    { fieldId: "mover_welcome_activity_days_text", label: "שאלון מוביל — ימי פעילות (טקסט)", type: "text" },
+    {
+      fieldId: "mover_welcome_activity_days_text",
+      label: "הצטרפות מוביל — ימי פעילות טקסט (activity_days_text)",
+      type: "text",
+    },
     {
       fieldId: "mover_welcome_activity_days_json",
-      label: "שאלון מוביל — ימי פעילות (JSON)",
+      label: "הצטרפות מוביל — ימי פעילות מערך (activity_days_array)",
       type: "text",
     },
-    { fieldId: "mover_welcome_activity_start", label: "שאלון מוביל — תחילת חלון שעות", type: "text" },
-    { fieldId: "mover_welcome_activity_end", label: "שאלון מוביל — סוף חלון שעות", type: "text" },
-    { fieldId: "mover_welcome_activity_flexible", label: "שאלון מוביל — שעות גמישות", type: "boolean" },
-    { fieldId: "mover_welcome_activity_hours", label: "שאלון מוביל — שעות פעילות (טקסט חופשי)", type: "text" },
+    { fieldId: "mover_welcome_activity_start", label: "הצטרפות מוביל — שעת התחלה (activity_start)", type: "text" },
+    { fieldId: "mover_welcome_activity_end", label: "הצטרפות מוביל — שעת סיום (activity_end)", type: "text" },
+    {
+      fieldId: "mover_welcome_activity_flexible",
+      label: "הצטרפות מוביל — שעות גמישות (activity_flexible)",
+      type: "boolean",
+    },
+    { fieldId: "mover_welcome_activity_hours", label: "הצטרפות מוביל — שעות פעילות (activity_hours)", type: "text" },
     {
       fieldId: "mover_welcome_immediate_availability",
-      label: "שאלון מוביל — זמינות מיידית",
+      label: "הצטרפות מוביל — זמינות מיידית (immediate_availability)",
       type: "text",
     },
-    { fieldId: "mover_welcome_mover_services", label: "שאלון מוביל — שירותי הובלה", type: "text" },
-    { fieldId: "mover_welcome_notes", label: "שאלון מוביל — הערות", type: "text" },
+    { fieldId: "mover_welcome_mover_services", label: "הצטרפות מוביל — שירותים (mover_services)", type: "text" },
+    { fieldId: "mover_welcome_notes", label: "הצטרפות מוביל — הערות (notes)", type: "text" },
   ];
 
   const fieldIds: string[] = [];

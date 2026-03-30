@@ -273,6 +273,7 @@ export async function ensureDefaultPipeline(): Promise<PipelineRecord> {
 export async function listPipelines(scope: PipelineScope = "opportunity"): Promise<PipelineRecord[]> {
   if (scope === "opportunity" && (await shouldSeedDefaultPipeline())) {
     await ensureDefaultPipeline();
+    await ensureCustomersPipeline();
   }
   if (scope === "moving_order") {
     await ensureMovingOrdersIntakePipeline();

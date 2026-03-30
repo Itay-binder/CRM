@@ -78,6 +78,7 @@ export default function CrmShell({
           <NavItem href="/contacts" label="אנשי קשר" />
           <NavItem href="/pipeline" label="ניהול הזדמנויות" />
           <NavItem href="/tasks" label="משימות" />
+          <NavItem href="/calendar" label="לוח שנה" />
           {isMovingOrdersTenant(currentTenantId) ? (
             <NavItem href="/orders" label="ניהול הזמנות" />
           ) : null}

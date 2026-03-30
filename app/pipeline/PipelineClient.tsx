@@ -64,7 +64,11 @@ type TaskItem = {
   status?: "todo" | "in_progress" | "done";
   comments?: Array<{ id: string; text: string; createdAt: string }>;
   createdAt: string;
+  syncToGoogleCalendar?: boolean;
+  googleCalendarId?: string;
 };
+
+type GCalOptOpp = { id: string; summary?: string; primary?: boolean };
 
 function toLocalInputOppTask(iso: string): string {
   return utcIsoToJerusalemDatetimeLocal(String(iso ?? ""));
@@ -184,6 +188,11 @@ export default function PipelineClient() {
   const [oppTfDue, setOppTfDue] = useState("");
   const [oppTfRem, setOppTfRem] = useState("");
   const [oppTfStatus, setOppTfStatus] = useState<"todo" | "in_progress" | "done">("todo");
+  const [oppGcalLoading, setOppGcalLoading] = useState(false);
+  const [oppGcalConnected, setOppGcalConnected] = useState(false);
+  const [oppGcalList, setOppGcalList] = useState<GCalOptOpp[]>([]);
+  const [oppSyncGcal, setOppSyncGcal] = useState(false);
+  const [oppGcalCalId, setOppGcalCalId] = useState("primary");
   const [newOppNoteText, setNewOppNoteText] = useState("");
   const [newOppNoteFiles, setNewOppNoteFiles] = useState<File[]>([]);
   const [oppNoteUploading, setOppNoteUploading] = useState(false);
@@ -401,6 +410,61 @@ export default function PipelineClient() {
     setOppTfDue(toLocalInputOppTask(t.dueAt));
     setOppTfRem(toLocalInputOppTask(t.reminderAt ?? ""));
     setOppTfStatus((t.status ?? (t.done ? "done" : "todo")) as "todo" | "in_progress" | "done");
+  }, [oppTaskModal]);
+
+  useEffect(() => {
+    if (!oppTaskModal) return;
+    let cancelled = false;
+    void (async () => {
+      setOppGcalLoading(true);
+      try {
+        const stRes = await fetch("/api/google-calendar/status", {
+          credentials: "include",
+          cache: "no-store",
+        });
+        const st = (await stRes.json().catch(() => ({}))) as {
+          ok?: boolean;
+          connected?: boolean;
+        };
+        const connected = Boolean(stRes.ok && st.ok && st.connected);
+        let cals: GCalOptOpp[] = [];
+        if (connected) {
+          const cRes = await fetch("/api/google-calendar/calendars", {
+            credentials: "include",
+            cache: "no-store",
+          });
+          const cj = (await cRes.json().catch(() => ({}))) as {
+            ok?: boolean;
+            calendars?: GCalOptOpp[];
+          };
+          if (cRes.ok && cj.ok) cals = cj.calendars ?? [];
+        }
+        if (cancelled) return;
+        setOppGcalConnected(connected);
+        setOppGcalList(cals);
+        const defaultCal =
+          cals.find((c) => c.primary)?.id ?? cals[0]?.id ?? "primary";
+        if (oppTaskModal.mode === "new") {
+          setOppSyncGcal(connected);
+          setOppGcalCalId(defaultCal);
+        } else {
+          const t = oppTaskModal.task;
+          setOppSyncGcal(Boolean(t.syncToGoogleCalendar));
+          setOppGcalCalId(String(t.googleCalendarId ?? "").trim() || defaultCal);
+        }
+      } catch {
+        if (!cancelled) {
+          setOppGcalConnected(false);
+          setOppGcalList([]);
+          setOppSyncGcal(false);
+        }
+      } finally {
+        if (!cancelled) setOppGcalLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [oppTaskModal]);
 
   const adminLabelByEmail = useMemo(() => {
@@ -2364,6 +2428,59 @@ export default function PipelineClient() {
                 onChange={(e) => setOppTfRem(e.target.value)}
                 style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
               />
+              {oppGcalLoading ? (
+                <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>בודק חיבור ל-Google Calendar...</p>
+              ) : oppGcalConnected ? (
+                <div
+                  style={{
+                    border: "1px solid #e9d5ff",
+                    borderRadius: 12,
+                    padding: 10,
+                    background: "#faf5ff",
+                  }}
+                >
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, fontSize: 13 }}>
+                    <input
+                      type="checkbox"
+                      checked={oppSyncGcal}
+                      onChange={(e) => setOppSyncGcal(e.target.checked)}
+                    />
+                    סנכרן ל-Google Calendar
+                  </label>
+                  <p style={{ margin: "6px 0 8px", fontSize: 11, color: "#6b7280" }}>
+                    נדרש דדליין. האירוע לפי הדדליין; תזכורת — התראה ב-Google לפני הדדליין.
+                  </p>
+                  <label style={{ fontWeight: 700, fontSize: 12 }}>לוח יעד</label>
+                  <select
+                    value={oppGcalCalId}
+                    onChange={(e) => setOppGcalCalId(e.target.value)}
+                    style={{
+                      width: "100%",
+                      marginTop: 4,
+                      padding: "8px 10px",
+                      borderRadius: 10,
+                      border: "1px solid #e5e7eb",
+                    }}
+                  >
+                    {oppGcalList.length === 0 ? (
+                      <option value="primary">ראשי (primary)</option>
+                    ) : (
+                      oppGcalList.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {(c.summary ?? c.id) + (c.primary ? " ★" : "")}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+              ) : (
+                <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>
+                  <a href="/calendar" style={{ color: "#5b21b6", fontWeight: 700 }}>
+                    חברו Google Calendar
+                  </a>{" "}
+                  כדי לסנכרן משימות.
+                </p>
+              )}
               <select
                 value={oppTfStatus}
                 onChange={(e) =>
@@ -2388,6 +2505,11 @@ export default function PipelineClient() {
                     const title = oppTfTitle.trim();
                     if (!title) return;
                     const id = selectedOpp.id;
+                    const syncOk =
+                      oppGcalConnected && oppSyncGcal && Boolean(dueIso.trim());
+                    const gcalFields = syncOk
+                      ? { syncToGoogleCalendar: true as const, googleCalendarId: oppGcalCalId }
+                      : {};
                     if (oppTaskModal.mode === "new") {
                       const tasks = [
                         ...oppTasks,
@@ -2400,6 +2522,7 @@ export default function PipelineClient() {
                           status: oppTfStatus,
                           comments: [] as Array<{ id: string; text: string; createdAt: string }>,
                           createdAt: new Date().toISOString(),
+                          ...gcalFields,
                         },
                       ];
                       setOppTasks(tasks);
@@ -2415,6 +2538,14 @@ export default function PipelineClient() {
                               reminderAt: remIso,
                               done: oppTfStatus === "done",
                               status: oppTfStatus,
+                              ...gcalFields,
+                              ...(!syncOk
+                                ? {
+                                    syncToGoogleCalendar: false,
+                                    googleCalendarId: undefined,
+                                    googleEventId: undefined,
+                                  }
+                                : {}),
                             }
                           : x
                       );

@@ -27,7 +27,11 @@ type Task = {
   createdAt: string;
   pipelineId: string;
   pipelineName: string;
+  syncToGoogleCalendar?: boolean;
+  googleCalendarId?: string;
 };
+
+type GCalOptTask = { id: string; summary?: string; primary?: boolean };
 
 type PipelineRow = { id: string; name: string; stages: string[] };
 
@@ -109,6 +113,11 @@ export default function TasksClient() {
     field: "title" | "status" | "dueAt" | "reminderAt";
     draft: string;
   } | null>(null);
+  const [gcalLoading, setGcalLoading] = useState(false);
+  const [gcalConnected, setGcalConnected] = useState(false);
+  const [gcalList, setGcalList] = useState<GCalOptTask[]>([]);
+  const [calSync, setCalSync] = useState(false);
+  const [calIdPick, setCalIdPick] = useState("primary");
 
   useEffect(() => {
     if (!active) {
@@ -118,6 +127,55 @@ export default function TasksClient() {
     }
     setDueLocal(toLocalInput(active.dueAt));
     setReminderLocal(toLocalInput(active.reminderAt ?? ""));
+  }, [active]);
+
+  useEffect(() => {
+    if (!active) return;
+    let cancelled = false;
+    void (async () => {
+      setGcalLoading(true);
+      try {
+        const stRes = await fetch("/api/google-calendar/status", {
+          credentials: "include",
+          cache: "no-store",
+        });
+        const st = (await stRes.json().catch(() => ({}))) as {
+          ok?: boolean;
+          connected?: boolean;
+        };
+        const connected = Boolean(stRes.ok && st.ok && st.connected);
+        let cals: GCalOptTask[] = [];
+        if (connected) {
+          const cRes = await fetch("/api/google-calendar/calendars", {
+            credentials: "include",
+            cache: "no-store",
+          });
+          const cj = (await cRes.json().catch(() => ({}))) as {
+            ok?: boolean;
+            calendars?: GCalOptTask[];
+          };
+          if (cRes.ok && cj.ok) cals = cj.calendars ?? [];
+        }
+        if (cancelled) return;
+        setGcalConnected(connected);
+        setGcalList(cals);
+        const defaultCal =
+          cals.find((c) => c.primary)?.id ?? cals[0]?.id ?? "primary";
+        setCalSync(Boolean(active.syncToGoogleCalendar));
+        setCalIdPick(String(active.googleCalendarId ?? "").trim() || defaultCal);
+      } catch {
+        if (!cancelled) {
+          setGcalConnected(false);
+          setGcalList([]);
+          setCalSync(false);
+        }
+      } finally {
+        if (!cancelled) setGcalLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [active]);
 
   async function load() {
@@ -243,6 +301,8 @@ export default function TasksClient() {
       dueAt?: string;
       reminderAt?: string;
       commentText?: string;
+      syncToGoogleCalendar?: boolean;
+      googleCalendarId?: string;
     }
   ): Promise<boolean> {
     const res = await fetch("/api/tasks", {
@@ -741,6 +801,59 @@ export default function TasksClient() {
               <p style={{ margin: 0, fontSize: 11, color: "#6b7280", lineHeight: 1.4 }}>
                 15 דקות לפני הדדליין נשלחת תזכורת אוטומטית (בנוסף לתזכורת שתקבעו כאן).
               </p>
+              {gcalLoading ? (
+                <p style={{ margin: 0, fontSize: 11, color: "#6b7280" }}>בודק חיבור ל-Google Calendar...</p>
+              ) : gcalConnected ? (
+                <div
+                  style={{
+                    border: "1px solid #e9d5ff",
+                    borderRadius: 12,
+                    padding: 10,
+                    background: "#faf5ff",
+                  }}
+                >
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, fontSize: 12 }}>
+                    <input
+                      type="checkbox"
+                      checked={calSync}
+                      onChange={(e) => setCalSync(e.target.checked)}
+                    />
+                    סנכרן ל-Google Calendar
+                  </label>
+                  <p style={{ margin: "6px 0 8px", fontSize: 11, color: "#6b7280" }}>
+                    דדליין חובה לסנכרון. תזכורת — התראה ב-Google לפני הדדליין.
+                  </p>
+                  <label style={{ fontWeight: 700, fontSize: 12 }}>לוח יעד</label>
+                  <select
+                    value={calIdPick}
+                    onChange={(e) => setCalIdPick(e.target.value)}
+                    style={{
+                      width: "100%",
+                      marginTop: 4,
+                      padding: "8px 10px",
+                      borderRadius: 10,
+                      border: "1px solid #e5e7eb",
+                    }}
+                  >
+                    {gcalList.length === 0 ? (
+                      <option value="primary">ראשי (primary)</option>
+                    ) : (
+                      gcalList.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {(c.summary ?? c.id) + (c.primary ? " ★" : "")}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+              ) : (
+                <p style={{ margin: 0, fontSize: 11, color: "#6b7280" }}>
+                  <a href="/calendar" style={{ color: "#5b21b6", fontWeight: 700 }}>
+                    חברו Google Calendar
+                  </a>{" "}
+                  לסנכרון.
+                </p>
+              )}
               <label style={{ fontWeight: 700, fontSize: 12 }}>סטטוס</label>
               <select
                 value={active.status}
@@ -755,14 +868,20 @@ export default function TasksClient() {
               </select>
               <button
                 type="button"
-                onClick={() =>
+                onClick={() => {
+                  const dueIso = fromLocalInput(dueLocal);
+                  const syncOk =
+                    gcalConnected && calSync && Boolean(String(dueIso ?? "").trim());
                   void patchTask(active, {
                     title: active.title,
-                    dueAt: fromLocalInput(dueLocal),
+                    dueAt: dueIso,
                     reminderAt: reminderLocal.trim() ? fromLocalInput(reminderLocal) : "",
                     status: active.status,
-                  })
-                }
+                    ...(syncOk
+                      ? { syncToGoogleCalendar: true, googleCalendarId: calIdPick }
+                      : { syncToGoogleCalendar: false, googleCalendarId: "" }),
+                  });
+                }}
                 style={{
                   padding: "9px 12px",
                   borderRadius: 10,

@@ -33,7 +33,7 @@ type SystemField = {
   entityType: EntityType;
   label: string;
   fieldId: string;
-  type: FieldType | "readonly";
+  type: FieldType | "readonly" | "label";
   isRequired: boolean;
   isActive: boolean;
   options?: string[];
@@ -61,11 +61,240 @@ const OPPORTUNITY_SYSTEM_FIELDS: SystemField[] = [
   { kind: "system", entityType: "opportunity", label: "utm_medium", fieldId: "opportunity_utm_medium", type: "text", isRequired: false, isActive: true },
   { kind: "system", entityType: "opportunity", label: "utm_content", fieldId: "opportunity_utm_content", type: "text", isRequired: false, isActive: true },
   { kind: "system", entityType: "opportunity", label: "landingpage", fieldId: "opportunity_landingpage", type: "text", isRequired: false, isActive: true },
-  { kind: "system", entityType: "opportunity", label: "תגיות", fieldId: "opportunity_tags", type: "select", isRequired: false, isActive: true },
+  {
+    kind: "system",
+    entityType: "opportunity",
+    label: "תגיות (labelIds)",
+    fieldId: "opportunity_labelIds",
+    type: "label",
+    isRequired: false,
+    isActive: true,
+  },
   { kind: "system", entityType: "opportunity", label: "תאריך יצירה", fieldId: "opportunity_created_at", type: "readonly", isRequired: false, isActive: true },
   { kind: "system", entityType: "opportunity", label: "תאריך עדכון", fieldId: "opportunity_updated_at", type: "readonly", isRequired: false, isActive: true },
   { kind: "system", entityType: "opportunity", label: "תאריך ליד אחרון", fieldId: "opportunity_last_lead_at", type: "readonly", isRequired: false, isActive: true },
 ];
+
+const LABEL_SWATCHES = [
+  "#2563eb",
+  "#0d9488",
+  "#eab308",
+  "#dc2626",
+  "#7c3aed",
+  "#9ca3af",
+  "#92400e",
+  "#ea580c",
+  "#4b5563",
+  "#ec4899",
+];
+
+function LabelsCatalogBlock() {
+  const [items, setItems] = useState<Array<{ id: string; name: string; color: string }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [newName, setNewName] = useState("");
+  const [newColor, setNewColor] = useState(LABEL_SWATCHES[1]);
+  const [saving, setSaving] = useState(false);
+
+  async function refresh() {
+    setErr(null);
+    const r = await fetch("/api/labels", { credentials: "include", cache: "no-store" });
+    const j = (await r.json().catch(() => ({}))) as {
+      ok?: boolean;
+      labels?: Array<{ id: string; name: string; color: string }>;
+      error?: string;
+    };
+    if (!r.ok || !j.ok) {
+      setErr(j.error ?? "טעינת תגיות נכשלה");
+      return;
+    }
+    setItems(j.labels ?? []);
+  }
+
+  useEffect(() => {
+    void refresh().finally(() => setLoading(false));
+  }, []);
+
+  async function createLabel() {
+    const n = newName.trim();
+    if (!n) return;
+    setSaving(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/labels", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: n, color: newColor }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) {
+        setErr(j.error ?? "יצירה נכשלה");
+        return;
+      }
+      setNewName("");
+      await refresh();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeLabel(id: string) {
+    if (!window.confirm("למחוק תגית זו מכל ההזדמנויות והאנשי קשר?")) return;
+    const res = await fetch(`/api/labels/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (!res.ok || !j.ok) {
+      setErr(j.error ?? "מחיקה נכשלה");
+      return;
+    }
+    await refresh();
+  }
+
+  return (
+    <div
+      style={{
+        background: "#fff",
+        border: "1px solid #e5e7eb",
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 14,
+      }}
+    >
+      <h2 style={{ margin: "0 0 8px", fontSize: 17 }}>קטלוג תגיות (Labels)</h2>
+      <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>
+        סוג שדה <strong>label</strong> ב-API: מערך <code>labelIds</code> על הזדמנות או איש קשר. ניהול המזהים:
+        <code style={{ marginInlineStart: 6 }}>GET/POST /api/labels</code>,{" "}
+        <code>PATCH/DELETE /api/labels/[id]</code>. שמות ישנים ב-<code>tags</code> עדיין מתקבלים בזמן מעבר
+        ומתורגמים לפי שם תגית.
+      </p>
+      {err && (
+        <div style={{ padding: 10, background: "#fef2f2", color: "#b91c1c", borderRadius: 10, marginBottom: 10 }}>
+          {err}
+        </div>
+      )}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-end", marginBottom: 14 }}>
+        <input
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          placeholder="שם תגית חדשה"
+          style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", minWidth: 200 }}
+        />
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {LABEL_SWATCHES.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setNewColor(c)}
+              title={c}
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: "50%",
+                background: c,
+                border: newColor === c ? "3px solid #111" : "2px solid #fff",
+                boxShadow: "0 0 0 1px #e5e7eb",
+                cursor: "pointer",
+                padding: 0,
+              }}
+            />
+          ))}
+        </div>
+        <button
+          type="button"
+          disabled={saving || !newName.trim()}
+          onClick={() => void createLabel()}
+          style={{
+            padding: "8px 14px",
+            borderRadius: 10,
+            border: "none",
+            background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)",
+            color: "#fff",
+            fontWeight: 800,
+            cursor: saving ? "wait" : "pointer",
+          }}
+        >
+          {saving ? "שומר…" : "הוסף תגית"}
+        </button>
+      </div>
+      {loading ? (
+        <div style={{ color: "#6b7280" }}>טוען…</div>
+      ) : (
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              {["צבע", "שם", "id", "פעולות"].map((h) => (
+                <th
+                  key={h}
+                  style={{
+                    textAlign: "right",
+                    padding: "8px 10px",
+                    borderBottom: "2px solid #e5e7eb",
+                    fontSize: 12,
+                    fontWeight: 900,
+                  }}
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((l) => (
+              <tr key={l.id}>
+                <td style={{ padding: "8px 10px", borderBottom: "1px solid #f3f4f6" }}>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      width: 28,
+                      height: 28,
+                      borderRadius: 8,
+                      background: l.color,
+                      verticalAlign: "middle",
+                      boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.08)",
+                    }}
+                  />
+                </td>
+                <td style={{ padding: "8px 10px", borderBottom: "1px solid #f3f4f6", fontWeight: 700 }}>
+                  {l.name}
+                </td>
+                <td style={{ padding: "8px 10px", borderBottom: "1px solid #f3f4f6" }}>
+                  <code style={{ fontSize: 11 }}>{l.id}</code>
+                </td>
+                <td style={{ padding: "8px 10px", borderBottom: "1px solid #f3f4f6" }}>
+                  <button
+                    type="button"
+                    onClick={() => void removeLabel(l.id)}
+                    style={{
+                      padding: "4px 8px",
+                      borderRadius: 8,
+                      border: "1px solid #fecaca",
+                      background: "#fff",
+                      color: "#b91c1c",
+                      cursor: "pointer",
+                      fontSize: 12,
+                    }}
+                  >
+                    מחק
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {items.length === 0 && (
+              <tr>
+                <td colSpan={4} style={{ padding: 14, color: "#6b7280" }}>
+                  אין תגיות — צור את הראשונה למעלה.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
 
 export default function FieldsClient() {
   const [scope, setScope] = useState<FieldScope>("all");
@@ -251,6 +480,7 @@ export default function FieldsClient() {
   return (
     <div style={{ maxWidth: 1100 }}>
       <h1 style={{ margin: "4px 0 10px", fontSize: 20 }}>שדות מותאמים</h1>
+      <LabelsCatalogBlock />
       <div
         style={{
           background: "#fff",

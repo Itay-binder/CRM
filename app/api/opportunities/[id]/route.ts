@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser, requireApprovedUserOrIngestApiKey } from "@/lib/auth/guard";
+import { enrichOpportunitiesForApi, listLabels } from "@/lib/labels/repo";
 import { deleteOpportunity, getOpportunityById, updateOpportunity } from "@/lib/opportunities/repo";
 import { validateCustomValues } from "@/lib/customFields/repo";
 
@@ -26,7 +27,9 @@ export async function GET(
       { status: 404 }
     );
   }
-  return NextResponse.json({ ok: true, opportunity });
+  const catalog = await listLabels();
+  const [enriched] = enrichOpportunitiesForApi([opportunity], catalog);
+  return NextResponse.json({ ok: true, opportunity: enriched });
 }
 
 export async function PATCH(
@@ -105,7 +108,9 @@ export async function PATCH(
       utmContent: body.utmContent ?? body.utm_content,
       customValues,
     });
-    return NextResponse.json({ ok: true, opportunity });
+    const catalog = await listLabels();
+    const [enriched] = enrichOpportunitiesForApi([opportunity], catalog);
+    return NextResponse.json({ ok: true, opportunity: enriched });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "Unknown error" } satisfies ApiErr,

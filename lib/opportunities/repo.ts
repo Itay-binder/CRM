@@ -7,6 +7,7 @@ import { reconcileContactNotesAcrossEntities } from "@/lib/notes/contactNotesSyn
 import { mergeTaskArrays, type RawTaskIn } from "@/lib/tasks/merge";
 import { fireServerWebhooks } from "@/lib/webhooks/dispatchServerWebhooks";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
+import { normalizeIncomingLabelIds } from "@/lib/labels/repo";
 
 export type PipelineRecord = {
   id: string;
@@ -35,6 +36,9 @@ export type OpportunityRecord = {
   utmMedium?: string;
   utmContent?: string;
   landingpage?: string;
+  /** מזהי תגיות מקטלוג labels (מומלץ) */
+  labelIds?: string[];
+  /** @deprecated טקסט חופשי ישן; יוחלף ב-labelIds */
   tags?: string[];
   lastLeadAt?: Date | null;
   customValues?: Record<string, unknown>;
@@ -79,10 +83,16 @@ export type CreateOpportunityInput = {
   utmMedium?: string;
   utmContent?: string;
   landingpage?: string;
+  labelIds?: string[];
   tags?: string[];
   customValues?: Record<string, unknown>;
   assignedRep?: string;
 };
+
+function readStringIdArray(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return Array.from(new Set(raw.map((x) => String(x).trim()).filter(Boolean)));
+}
 
 function mapTs(ts: unknown): Date | null {
   if (ts && typeof ts === "object" && "toDate" in ts) {
@@ -308,7 +318,8 @@ export async function listOpportunities(pipelineId?: string | null): Promise<Opp
       utmMedium: typeof d.utmMedium === "string" ? d.utmMedium : undefined,
       utmContent: typeof d.utmContent === "string" ? d.utmContent : undefined,
       landingpage: typeof d.landingpage === "string" ? d.landingpage : undefined,
-      tags: Array.isArray(d.tags) ? (d.tags as string[]) : undefined,
+      labelIds: readStringIdArray(d.labelIds),
+      tags: Array.isArray(d.tags) ? (d.tags as string[]).map(String) : undefined,
       lastLeadAt: mapTs(d.lastLeadAt),
       customValues:
         typeof d.customValues === "object"
@@ -368,6 +379,10 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
   const contactSnap = await db.collection("leads").doc(contactId).get();
   if (!contactSnap.exists) throw new Error("Contact not found");
   const cd = (contactSnap.data() ?? {}) as Record<string, unknown>;
+  const resolvedLabelIds = await normalizeIncomingLabelIds({
+    labelIds: input.labelIds,
+    tags: input.tags,
+  });
 
   const now = FieldValue.serverTimestamp();
   const existingSame = await db
@@ -398,7 +413,8 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
         utmMedium: input.utmMedium?.trim() || "",
         utmContent: input.utmContent?.trim() || "",
         landingpage: input.landingpage?.trim() || "",
-        tags: input.tags ?? [],
+        labelIds: resolvedLabelIds,
+        tags: FieldValue.delete(),
         customValues: input.customValues ?? {},
         assignedRep:
           input.assignedRep?.trim() ||
@@ -432,7 +448,8 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
       utmMedium: typeof d.utmMedium === "string" ? d.utmMedium : undefined,
       utmContent: typeof d.utmContent === "string" ? d.utmContent : undefined,
       landingpage: typeof d.landingpage === "string" ? d.landingpage : undefined,
-      tags: Array.isArray(d.tags) ? (d.tags as string[]) : undefined,
+      labelIds: readStringIdArray(d.labelIds),
+      tags: Array.isArray(d.tags) ? (d.tags as string[]).map(String) : undefined,
       lastLeadAt: mapTs(d.lastLeadAt),
       customValues:
         typeof d.customValues === "object"
@@ -504,7 +521,8 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
     utmMedium: utmMe,
     utmContent: utmCo,
     landingpage: input.landingpage?.trim() || "",
-    tags: input.tags ?? [],
+    labelIds: resolvedLabelIds,
+    tags: FieldValue.delete(),
     lastLeadAt: now,
     customValues: input.customValues ?? {},
     assignedRep:
@@ -554,7 +572,8 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
     utmMedium: typeof d.utmMedium === "string" ? d.utmMedium : undefined,
     utmContent: typeof d.utmContent === "string" ? d.utmContent : undefined,
     landingpage: typeof d.landingpage === "string" ? d.landingpage : undefined,
-    tags: Array.isArray(d.tags) ? (d.tags as string[]) : undefined,
+    labelIds: readStringIdArray(d.labelIds),
+    tags: Array.isArray(d.tags) ? (d.tags as string[]).map(String) : undefined,
     lastLeadAt: mapTs(d.lastLeadAt),
     customValues:
       typeof d.customValues === "object"
@@ -670,7 +689,8 @@ export async function getOpportunityById(id: string): Promise<OpportunityRecord 
     utmMedium: typeof d.utmMedium === "string" ? d.utmMedium : undefined,
     utmContent: typeof d.utmContent === "string" ? d.utmContent : undefined,
     landingpage: typeof d.landingpage === "string" ? d.landingpage : undefined,
-    tags: Array.isArray(d.tags) ? (d.tags as string[]) : undefined,
+    labelIds: readStringIdArray(d.labelIds),
+    tags: Array.isArray(d.tags) ? (d.tags as string[]).map(String) : undefined,
     lastLeadAt: mapTs(d.lastLeadAt),
     customValues:
       typeof d.customValues === "object"
@@ -704,6 +724,7 @@ export async function updateOpportunity(
     utmMedium?: string;
     utmContent?: string;
     landingpage?: string;
+    labelIds?: string[];
     tags?: string[];
     assignedRep?: string;
     customValues?: Record<string, unknown>;
@@ -771,7 +792,13 @@ export async function updateOpportunity(
   if (input.utmMedium !== undefined) payload.utmMedium = input.utmMedium.trim();
   if (input.utmContent !== undefined) payload.utmContent = input.utmContent.trim();
   if (input.landingpage !== undefined) payload.landingpage = input.landingpage.trim();
-  if (input.tags !== undefined) payload.tags = Array.from(new Set(input.tags.map((x) => x.trim()).filter(Boolean)));
+  if (input.labelIds !== undefined) {
+    payload.labelIds = Array.from(new Set(input.labelIds.map((x) => String(x).trim()).filter(Boolean)));
+    payload.tags = FieldValue.delete();
+  } else if (input.tags !== undefined) {
+    payload.labelIds = await normalizeIncomingLabelIds({ tags: input.tags });
+    payload.tags = FieldValue.delete();
+  }
   if (input.assignedRep !== undefined) payload.assignedRep = input.assignedRep.trim();
   if (input.customValues !== undefined) payload.customValues = input.customValues;
   if (input.notes !== undefined) payload.notes = input.notes;
@@ -903,7 +930,8 @@ export async function updateOpportunity(
         utmMedium: typeof after.utmMedium === "string" ? after.utmMedium : "",
         utmContent: typeof after.utmContent === "string" ? after.utmContent : "",
         landingpage: typeof after.landingpage === "string" ? after.landingpage : "",
-        tags: Array.isArray(after.tags) ? after.tags : [],
+        labelIds: readStringIdArray(after.labelIds),
+        tags: FieldValue.delete(),
         customValues:
           typeof after.customValues === "object" && after.customValues !== null
             ? after.customValues

@@ -121,6 +121,9 @@ export async function POST(req: NextRequest) {
       "opportunity_landingpage",
       "tags",
       "opportunity_tags",
+      "labelIds",
+      "opportunity_labelIds",
+      "opportunity_label_ids",
       "assignedRep",
       "opportunity_assigned_rep",
       "opportunity_assignedRep",
@@ -147,6 +150,7 @@ export async function POST(req: NextRequest) {
     const utmContent = pickString(o, ["utmContent", "utm_content", "opportunity_utm_content"]);
     const landingpage = pickString(o, ["landingpage", "opportunity_landingpage"]);
     const tags = pickStringArray(o, ["tags", "opportunity_tags"]);
+    const labelIds = pickStringArray(o, ["labelIds", "opportunity_labelIds", "opportunity_label_ids"]);
     const assignedRep = pickString(o, [
       "assignedRep",
       "opportunity_assigned_rep",
@@ -183,7 +187,7 @@ export async function POST(req: NextRequest) {
         utmMedium: utmMedium ?? undefined,
         utmContent: utmContent ?? undefined,
         landingpage: landingpage ?? undefined,
-        tags: tags ?? undefined,
+        ...(labelIds?.length ? { labelIds } : tags !== undefined ? { tags } : {}),
         assignedRep: assignedRep ?? undefined,
         customValues,
       });
@@ -219,7 +223,7 @@ export async function POST(req: NextRequest) {
       utmMedium,
       utmContent,
       landingpage,
-      tags,
+      ...(labelIds?.length ? { labelIds } : { tags }),
       assignedRep,
       customValues: customValuesCreate,
     });

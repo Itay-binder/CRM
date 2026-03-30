@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUserOrIngestApiKey } from "@/lib/auth/guard";
+import { enrichOpportunitiesForApi, listLabels } from "@/lib/labels/repo";
 import { createOpportunity, listOpportunities } from "@/lib/opportunities/repo";
 import { phoneSearchMatches } from "@/lib/phoneSearch";
 import { validateCustomValues } from "@/lib/customFields/repo";
@@ -28,7 +29,9 @@ export async function GET(req: NextRequest) {
         (o) => phoneSearchMatches(o.phone, phoneQ) || phoneSearchMatches(o.contactPhone, phoneQ)
       );
     }
-    return NextResponse.json({ ok: true, opportunities });
+    const catalog = await listLabels();
+    const enriched = enrichOpportunitiesForApi(opportunities, catalog);
+    return NextResponse.json({ ok: true, opportunities: enriched });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "Unknown error" } satisfies ApiErr,
@@ -65,6 +68,7 @@ export async function POST(req: NextRequest) {
       utmContent?: string;
       utm_content?: string;
       landingpage?: string;
+      labelIds?: string[];
       tags?: string[];
       customValues?: Record<string, unknown>;
       assignedRep?: string;
@@ -87,11 +91,14 @@ export async function POST(req: NextRequest) {
       utmMedium: body.utmMedium ?? body.utm_medium,
       utmContent: body.utmContent ?? body.utm_content,
       landingpage: body.landingpage,
+      labelIds: body.labelIds,
       tags: body.tags,
       customValues,
       assignedRep: body.assignedRep,
     });
-    return NextResponse.json({ ok: true, opportunity: created });
+    const catalog = await listLabels();
+    const [enriched] = enrichOpportunitiesForApi([created], catalog);
+    return NextResponse.json({ ok: true, opportunity: enriched });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "Unknown error" } satisfies ApiErr,

@@ -37,7 +37,17 @@ export async function GET(req: NextRequest) {
     }
 
     // Build dynamic headers based on customFields keys too.
-    const fixedHeaders = ["contactCode", "name", "email", "phone", "status", "assignedRep", "createdAt", "id"];
+    const fixedHeaders = [
+      "contactCode",
+      "name",
+      "email",
+      "phone",
+      "status",
+      "assignedRep",
+      "labelIds",
+      "createdAt",
+      "id",
+    ];
     const customKeys = new Set<string>();
     const rows: Record<string, string>[] = [];
 
@@ -54,6 +64,7 @@ export async function GET(req: NextRequest) {
         phone: l.phone ?? "",
         status: l.status ?? "פתוח",
         assignedRep: l.assignedRep ?? "",
+        labelIds: (l.labelIds ?? []).join(","),
         createdAt,
         ...Object.fromEntries(
           Object.entries(customFields).map(([k, v]) => [k, v == null ? "" : String(v)])

@@ -69,6 +69,8 @@ export async function PATCH(
       pipelineId?: string;
       status?: "פתוח" | "זכיה" | "הפסד";
       assignedRep?: string;
+      labelIds?: string[];
+      tags?: string[];
       customFields?: Record<string, unknown>;
       notes?: Array<{
         id: string;

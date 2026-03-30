@@ -8,6 +8,7 @@ import {
 } from "@/lib/notes/contactNotesSync";
 import { mergeTaskArrays, type RawTaskIn } from "@/lib/tasks/merge";
 import { fireServerWebhooks } from "@/lib/webhooks/dispatchServerWebhooks";
+import { normalizeIncomingLabelIds } from "@/lib/labels/repo";
 
 export type LeadRecord = {
   id: string; // doc id = normalized unique key
@@ -22,6 +23,9 @@ export type LeadRecord = {
   utm?: Record<string, string>;
   customFields?: Record<string, unknown>;
   assignedRep?: string;
+  labelIds?: string[];
+  /** @deprecated */
+  tags?: string[];
   notes?: Array<{
     id: string;
     text: string;
@@ -112,6 +116,11 @@ function toName(input: LeadUpsertInput): string | undefined {
   return undefined;
 }
 
+function readStringIdArray(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return Array.from(new Set(raw.map((x) => String(x).trim()).filter(Boolean)));
+}
+
 function maybeParseDate(input?: string): Date | null {
   if (!input?.trim()) return null;
   const d = new Date(input);
@@ -152,6 +161,8 @@ function mapDocToLead(docId: string, data: Record<string, unknown>): LeadRecord 
     customFields:
       typeof data.customFields === "object" ? (data.customFields as Record<string, unknown>) : undefined,
     assignedRep: typeof data.assignedRep === "string" ? data.assignedRep : undefined,
+    labelIds: readStringIdArray(data.labelIds),
+    tags: Array.isArray(data.tags) ? (data.tags as string[]).map(String) : undefined,
     notes: Array.isArray(data.notes)
       ? (data.notes as Array<{ id: string; text: string; createdAt: string }>)
       : undefined,
@@ -360,6 +371,8 @@ export async function updateLead(
     pipelineId?: string;
     status?: "פתוח" | "זכיה" | "הפסד";
     assignedRep?: string;
+    labelIds?: string[];
+    tags?: string[];
     customFields?: Record<string, unknown>;
     notes?: Array<{
       id: string;
@@ -397,6 +410,13 @@ export async function updateLead(
   }
   if (input.status !== undefined) payload.status = input.status;
   if (input.assignedRep !== undefined) payload.assignedRep = input.assignedRep.trim();
+  if (input.labelIds !== undefined) {
+    payload.labelIds = Array.from(new Set(input.labelIds.map((x) => String(x).trim()).filter(Boolean)));
+    payload.tags = FieldValue.delete();
+  } else if (input.tags !== undefined) {
+    payload.labelIds = await normalizeIncomingLabelIds({ tags: input.tags });
+    payload.tags = FieldValue.delete();
+  }
   if (input.customFields !== undefined) payload.customFields = input.customFields;
   if (input.notes !== undefined) payload.notes = input.notes;
   if (input.tasks !== undefined) {

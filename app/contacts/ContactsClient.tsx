@@ -7,7 +7,11 @@ import {
   naiveLocalInputToStoredIso,
   utcIsoToJerusalemDatetimeLocal,
 } from "@/lib/datetime/taskTimestamps";
-import { columnIntegrationKind, InlineFieldShell } from "@/app/components/InlineFieldShell";
+import {
+  columnIntegrationKind,
+  InlineFieldShell,
+  WhatsAppIconLink,
+} from "@/app/components/InlineFieldShell";
 
 type LeadsOk = {
   ok: true;
@@ -1462,7 +1466,21 @@ export default function ContactsClient() {
             {detailTab === "details" && (
               <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
                 <input value={detail.name ?? ""} onChange={(e) => setDetail((d) => (d ? { ...d, name: e.target.value } : d))} placeholder="שם" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
-                <input value={detail.phone ?? ""} onChange={(e) => setDetail((d) => (d ? { ...d, phone: e.target.value } : d))} placeholder="טלפון" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input
+                    value={detail.phone ?? ""}
+                    onChange={(e) => setDetail((d) => (d ? { ...d, phone: e.target.value } : d))}
+                    placeholder="טלפון"
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      padding: "8px 10px",
+                      borderRadius: 10,
+                      border: "1px solid #e5e7eb",
+                    }}
+                  />
+                  {detail.phone?.trim() ? <WhatsAppIconLink phone={detail.phone} size={18} /> : null}
+                </div>
                 <input value={detail.email ?? ""} onChange={(e) => setDetail((d) => (d ? { ...d, email: e.target.value } : d))} placeholder="אימייל" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
                 <select value={detail.status ?? "פתוח"} onChange={(e) => setDetail((d) => (d ? { ...d, status: e.target.value as "פתוח" | "זכיה" | "הפסד" } : d))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
                   {["פתוח", "זכיה", "הפסד"].map((s) => (

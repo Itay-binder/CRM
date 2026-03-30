@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { WhatsAppIconLink } from "@/app/components/InlineFieldShell";
 import type { DriverSummary } from "@/lib/movingOrders/types";
 import type { MovingOrderRecord, MovingOrderStatus } from "@/lib/movingOrders/types";
 
@@ -349,25 +350,32 @@ function OrderCard({
           </div>
         ) : null}
         {p.name ? (
-          <div>
-            <strong>לקוח:</strong> {p.name} {p.phone ? `· ${p.phone}` : ""}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span>
+              <strong>לקוח:</strong> {p.name} {p.phone ? `· ${p.phone}` : ""}
+            </span>
+            {p.phone ? <WhatsAppIconLink phone={p.phone} size={18} /> : null}
           </div>
         ) : null}
       </div>
 
       <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>מובילים מתאימים</div>
       <ul style={{ listStyle: "none", padding: 0, margin: "0 0 12px", display: "grid", gap: 6 }}>
-        {order.matchedDriverIds.map((id) => (
-          <li key={id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <input
-              type="checkbox"
-              checked={isChecked(id)}
-              disabled={!canDispatch}
-              onChange={(e) => onToggleCheck(id, e.target.checked)}
-            />
-            <span>{rowLabel(id)}</span>
-          </li>
-        ))}
+        {order.matchedDriverIds.map((id) => {
+          const driverPhone = drivers[id]?.phone?.trim();
+          return (
+            <li key={id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={isChecked(id)}
+                disabled={!canDispatch}
+                onChange={(e) => onToggleCheck(id, e.target.checked)}
+              />
+              <span style={{ flex: 1 }}>{rowLabel(id)}</span>
+              {driverPhone ? <WhatsAppIconLink phone={driverPhone} size={18} /> : null}
+            </li>
+          );
+        })}
         {order.matchedDriverIds.length === 0 ? (
           <li style={{ color: "#6b7280" }}>אין מוביל שעומד בכל התנאים (בדוק שדות מוביל ופייפליין).</li>
         ) : null}
@@ -377,17 +385,21 @@ function OrderCard({
         <>
           <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8, color: "#92400e" }}>אופציונלי (אזור מתאים בלבד)</div>
           <ul style={{ listStyle: "none", padding: 0, margin: "0 0 12px", display: "grid", gap: 6 }}>
-            {order.optionalDriverIds.map((id) => (
-              <li key={id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="checkbox"
-                  checked={isChecked(id)}
-                  disabled={!canDispatch}
-                  onChange={(e) => onToggleCheck(id, e.target.checked)}
-                />
-                <span>{rowLabel(id)}</span>
-              </li>
-            ))}
+            {order.optionalDriverIds.map((id) => {
+              const driverPhone = drivers[id]?.phone?.trim();
+              return (
+                <li key={id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={isChecked(id)}
+                    disabled={!canDispatch}
+                    onChange={(e) => onToggleCheck(id, e.target.checked)}
+                  />
+                  <span style={{ flex: 1 }}>{rowLabel(id)}</span>
+                  {driverPhone ? <WhatsAppIconLink phone={driverPhone} size={18} /> : null}
+                </li>
+              );
+            })}
           </ul>
         </>
       ) : null}
@@ -396,17 +408,21 @@ function OrderCard({
         <>
           <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>נוספו ידנית</div>
           <ul style={{ listStyle: "none", padding: 0, margin: "0 0 12px", display: "grid", gap: 6 }}>
-            {order.manualDriverIds.map((id) => (
-              <li key={id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="checkbox"
-                  checked={isChecked(id)}
-                  disabled={!canDispatch}
-                  onChange={(e) => onToggleCheck(id, e.target.checked)}
-                />
-                <span>{rowLabel(id)}</span>
-              </li>
-            ))}
+            {order.manualDriverIds.map((id) => {
+              const driverPhone = drivers[id]?.phone?.trim();
+              return (
+                <li key={id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={isChecked(id)}
+                    disabled={!canDispatch}
+                    onChange={(e) => onToggleCheck(id, e.target.checked)}
+                  />
+                  <span style={{ flex: 1 }}>{rowLabel(id)}</span>
+                  {driverPhone ? <WhatsAppIconLink phone={driverPhone} size={18} /> : null}
+                </li>
+              );
+            })}
           </ul>
         </>
       ) : null}
@@ -438,26 +454,28 @@ function OrderCard({
             <ul style={{ listStyle: "none", padding: 0, margin: "10px 0 0", maxHeight: 200, overflow: "auto" }}>
               {pickerRows.map((c) => (
                 <li key={c.id}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onAddManual(c);
-                      setPickerOpen(false);
-                      setPickerQ("");
-                    }}
-                    style={{
-                      display: "block",
-                      width: "100%",
-                      textAlign: "right",
-                      padding: "8px 6px",
-                      border: "none",
-                      background: "transparent",
-                      cursor: "pointer",
-                      fontSize: 14,
-                    }}
-                  >
-                    {c.name || c.id} {c.phone ? `· ${c.phone}` : ""}
-                  </button>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onAddManual(c);
+                        setPickerOpen(false);
+                        setPickerQ("");
+                      }}
+                      style={{
+                        flex: 1,
+                        textAlign: "right",
+                        padding: "8px 6px",
+                        border: "none",
+                        background: "transparent",
+                        cursor: "pointer",
+                        fontSize: 14,
+                      }}
+                    >
+                      {c.name || c.id} {c.phone ? `· ${c.phone}` : ""}
+                    </button>
+                    {c.phone?.trim() ? <WhatsAppIconLink phone={c.phone} size={18} /> : null}
+                  </div>
                 </li>
               ))}
             </ul>

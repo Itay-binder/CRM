@@ -8,7 +8,11 @@ import {
   utcIsoToJerusalemDatetimeLocal,
 } from "@/lib/datetime/taskTimestamps";
 import { LabelPicker, LabelPills } from "@/app/components/LabelPicker";
-import { columnIntegrationKind, InlineFieldShell } from "@/app/components/InlineFieldShell";
+import {
+  columnIntegrationKind,
+  InlineFieldShell,
+  WhatsAppIconLink,
+} from "@/app/components/InlineFieldShell";
 
 type Pipeline = {
   id: string;
@@ -694,6 +698,20 @@ export default function PipelineClient() {
     return new Date(t).toISOString().slice(0, 10);
   }
 
+  function boardPreviewCell(o: Opportunity, f: string) {
+    const text = opportunityCell(o, f) || "—";
+    const raw = opportunityCell(o, f);
+    if (columnIntegrationKind(f) === "phone" && raw.trim()) {
+      return (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          <span style={{ color: "#6b7280", wordBreak: "break-word" }}>{text}</span>
+          <WhatsAppIconLink phone={raw} size={16} />
+        </span>
+      );
+    }
+    return <span style={{ color: "#6b7280", wordBreak: "break-word" }}>{text}</span>;
+  }
+
   function opportunityCell(o: Opportunity, col: string): string {
     if (col === "pipelineName") {
       return pipelines.find((p) => p.id === o.pipelineId)?.name || o.pipelineId;
@@ -1319,16 +1337,22 @@ export default function PipelineClient() {
                               <button type="button" onClick={() => void openOpportunityDetail(o.id)} style={{ border: "none", background: "transparent", padding: 0, textAlign: "right", cursor: "pointer", fontWeight: 900, fontSize: 12, wordBreak: "break-word", color: "#111827" }}>{o.name}</button>
                               <div style={{ marginTop: 6, display: "grid", gap: 4 }}>
                                 {boardPreviewFields.slice(0, 5).map((f) => (
-                                  <div key={`${o.id}-${f}`} style={{ fontSize: 12, color: "#4b5563", display: "flex", gap: 6 }}>
+                                  <div key={`${o.id}-${f}`} style={{ fontSize: 12, color: "#4b5563", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                                     <span style={{ fontWeight: 800 }}>{opportunityFieldLabel(f)}:</span>
-                                    <span style={{ color: "#6b7280", wordBreak: "break-word" }}>
-                                      {opportunityCell(o, f) || "—"}
-                                    </span>
+                                    {boardPreviewCell(o, f)}
                                   </div>
                                 ))}
                                 {boardPreviewFields.length === 0 && (
-                                  <div style={{ fontSize: 12, color: "#6b7280" }}>
-                                    {o.contactName || o.contactEmail || o.contactPhone || o.contactId}
+                                  <div style={{ fontSize: 12, color: "#6b7280", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                    <span>
+                                      {o.contactName || o.contactEmail || o.contactPhone || o.contactId}
+                                    </span>
+                                    {(o.contactPhone?.trim() || o.phone?.trim()) ? (
+                                      <WhatsAppIconLink
+                                        phone={(o.contactPhone?.trim() ? o.contactPhone : o.phone) as string}
+                                        size={16}
+                                      />
+                                    ) : null}
                                   </div>
                                 )}
                               </div>
@@ -2007,7 +2031,23 @@ export default function PipelineClient() {
                     </label>
                     <label style={{ display: "grid", gap: 4 }}>
                       <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>פלאפון איש קשר</span>
-                      <input value={selectedOpp.contactPhone ?? ""} readOnly style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#f9fafb" }} />
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <input
+                          value={selectedOpp.contactPhone ?? ""}
+                          readOnly
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            padding: "8px 10px",
+                            borderRadius: 10,
+                            border: "1px solid #e5e7eb",
+                            background: "#f9fafb",
+                          }}
+                        />
+                        {selectedOpp.contactPhone?.trim() ? (
+                          <WhatsAppIconLink phone={selectedOpp.contactPhone} size={18} />
+                        ) : null}
+                      </div>
                     </label>
                     <label style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
                       <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>מייל איש קשר</span>
@@ -2068,7 +2108,20 @@ export default function PipelineClient() {
                 </label>
                 <label style={{ display: "grid", gap: 4 }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>פלאפון</span>
-                  <input value={selectedOpp.phone ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, phone: e.target.value } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input
+                      value={selectedOpp.phone ?? ""}
+                      onChange={(e) => setSelectedOpp((x) => (x ? { ...x, phone: e.target.value } : x))}
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        padding: "8px 10px",
+                        borderRadius: 10,
+                        border: "1px solid #e5e7eb",
+                      }}
+                    />
+                    {selectedOpp.phone?.trim() ? <WhatsAppIconLink phone={selectedOpp.phone} size={18} /> : null}
+                  </div>
                 </label>
                 <label style={{ display: "grid", gap: 4 }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>שלב בפייפליין</span>

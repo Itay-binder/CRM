@@ -1,16 +1,8 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
+import { parseTaskInstant } from "@/lib/datetime/taskTimestamps";
 import type { RawTaskIn } from "@/lib/tasks/merge";
 import { postWebhookForEvent } from "@/lib/webhooks/dispatchServerWebhooks";
-
-function parseWhen(raw: string | undefined): Date | null {
-  const s = String(raw ?? "").trim();
-  if (!s) return null;
-  const d = new Date(s);
-  if (!Number.isNaN(d.getTime())) return d;
-  const alt = new Date(s.replace(" ", "T"));
-  return Number.isNaN(alt.getTime()) ? null : alt;
-}
 
 type EntityCtx = {
   entityType: "contact" | "opportunity";
@@ -83,8 +75,8 @@ export async function sweepTaskWebhooks(): Promise<SweepResult> {
       const title = String(t.title ?? "").trim();
       if (!taskId || !title) continue;
 
-      const due = parseWhen(t.dueAt);
-      const rem = parseWhen(t.reminderAt);
+      const due = parseTaskInstant(t.dueAt);
+      const rem = parseTaskInstant(t.reminderAt);
 
       const taskPayload = {
         id: taskId,

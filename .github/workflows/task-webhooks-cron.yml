@@ -1,5 +1,6 @@
 # Hobby ב-Vercel לא מאפשר Cron יותר מפעם ביום — לכן אין crons ב-vercel.json.
-# כאן: קריאה ל-/api/cron/task-webhooks כל 5 דקות (כמו קודם).
+# כאן: קריאה ל-/api/cron/task-webhooks בקצב גבוה. GitHub עלול לדחות scheduled runs בעומס —
+# אם רואים עיכובים של עשרות דק׳, הוסיפו שירות חיצוני (למשל cron-job.org) לאותו URL כל דקה.
 #
 # Secrets (Repo → Settings → Secrets and variables → Actions):
 #   CRM_SITE_URL   — כתובת production ללא סלאש בסוף, למשל https://crm-liftygo.vercel.app
@@ -26,7 +27,7 @@ jobs:
         run: |
           set -e
           if [ -z "${CRM_SITE_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
-            echo "::notice::דילוג: הגדר secrets CRM_SITE_URL ו-CRON_SECRET כדי להפעיל sweep כל 5 דקות."
+            echo "::notice::דילוג: הגדר secrets CRM_SITE_URL ו-CRON_SECRET כדי להפעיל sweep (תזכורות משימות)."
             exit 0
           fi
           BASE="${CRM_SITE_URL%/}"

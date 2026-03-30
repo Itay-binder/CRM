@@ -3,6 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
+import {
+  naiveLocalInputToStoredIso,
+  utcIsoToJerusalemDatetimeLocal,
+} from "@/lib/datetime/taskTimestamps";
+import { LabelPicker, LabelPills } from "@/app/components/LabelPicker";
+import { columnIntegrationKind, InlineFieldShell } from "@/app/components/InlineFieldShell";
 
 type Pipeline = {
   id: string;
@@ -30,6 +36,8 @@ type Opportunity = {
   utmMedium?: string;
   utmContent?: string;
   landingpage?: string;
+  labelIds?: string[];
+  labels?: Array<{ id: string; name: string; color: string }>;
   tags?: string[];
   lastLeadAt?: string | null;
   customValues?: Record<string, unknown>;
@@ -58,25 +66,11 @@ type TaskItem = {
   createdAt: string;
 };
 
-function pad2OppTask(n: number) {
-  return String(n).padStart(2, "0");
-}
 function toLocalInputOppTask(iso: string): string {
-  const s = String(iso ?? "").trim();
-  if (!s) return "";
-  const d = new Date(s);
-  if (!Number.isNaN(d.getTime())) {
-    return `${d.getFullYear()}-${pad2OppTask(d.getMonth() + 1)}-${pad2OppTask(d.getDate())}T${pad2OppTask(d.getHours())}:${pad2OppTask(d.getMinutes())}`;
-  }
-  const d2 = new Date(s.replace(" ", "T"));
-  if (Number.isNaN(d2.getTime())) return "";
-  return `${d2.getFullYear()}-${pad2OppTask(d2.getMonth() + 1)}-${pad2OppTask(d2.getDate())}T${pad2OppTask(d2.getHours())}:${pad2OppTask(d2.getMinutes())}`;
+  return utcIsoToJerusalemDatetimeLocal(String(iso ?? ""));
 }
 function fromLocalInputOppTask(v: string): string {
-  const s = v.trim();
-  if (!s) return "";
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? s : d.toISOString();
+  return naiveLocalInputToStoredIso(v);
 }
 type SortDir = "asc" | "desc";
 type SortState = { col: string; dir: SortDir } | null;
@@ -195,6 +189,11 @@ export default function PipelineClient() {
   const [oppNoteUploading, setOppNoteUploading] = useState(false);
   const [oppCustomFieldIds, setOppCustomFieldIds] = useState<string[]>([]);
   const [oppCustomFieldLabelById, setOppCustomFieldLabelById] = useState<Record<string, string>>({});
+  const [catalogLabels, setCatalogLabels] = useState<Array<{ id: string; name: string; color: string }>>([]);
+  const [labelPickOppId, setLabelPickOppId] = useState<string | null>(null);
+  const [labelPickDraft, setLabelPickDraft] = useState<string[]>([]);
+  const [detailLabelIds, setDetailLabelIds] = useState<string[]>([]);
+  const [newOppLabelIds, setNewOppLabelIds] = useState<string[]>([]);
   const [pipelineMenuOpenId, setPipelineMenuOpenId] = useState<string | null>(null);
   const [editPipelineOpen, setEditPipelineOpen] = useState(false);
   const [editPipelineId, setEditPipelineId] = useState<string | null>(null);
@@ -248,7 +247,7 @@ export default function PipelineClient() {
     setLoading(true);
     setErr(null);
     try {
-      const [pRes, oRes, cRes, cfRes] = await Promise.all([
+      const [pRes, oRes, cRes, cfRes, lRes] = await Promise.all([
         fetch("/api/opportunities/pipelines", { credentials: "include", cache: "no-store" }),
         fetch(
           selectedPipelineId
@@ -264,13 +263,14 @@ export default function PipelineClient() {
             cache: "no-store",
           }
         ),
+        fetch("/api/labels", { credentials: "include", cache: "no-store" }),
       ]);
       const adminsRes = await fetch("/api/admin-users", {
         credentials: "include",
         cache: "no-store",
       });
 
-      for (const r of [pRes, oRes, cRes, cfRes, adminsRes]) {
+      for (const r of [pRes, oRes, cRes, cfRes, lRes, adminsRes]) {
         if (r.status === 401) {
           window.location.href = `/login?returnTo=${encodeURIComponent("/pipeline")}`;
           return;
@@ -300,6 +300,10 @@ export default function PipelineClient() {
         ok?: boolean;
         fields?: Array<{ fieldId: string; label?: string }>;
       };
+      const lJson = (await lRes.json().catch(() => ({}))) as {
+        ok?: boolean;
+        labels?: Array<{ id: string; name: string; color: string }>;
+      };
       const adminsJson = (await adminsRes.json().catch(() => ({}))) as {
         ok?: boolean;
         users?: Array<{ email: string; name?: string }>;
@@ -327,6 +331,9 @@ export default function PipelineClient() {
         }
       }
       setOppCustomFieldLabelById(labelMap);
+      if (lJson.ok && Array.isArray(lJson.labels)) {
+        setCatalogLabels(lJson.labels);
+      }
       setOppCustomFieldIds(
         Array.from(
           new Set(
@@ -439,6 +446,24 @@ export default function PipelineClient() {
     window.sessionStorage.setItem("crm:selectedPipelineId", selectedPipelineId);
   }, [selectedPipelineId]);
 
+  useEffect(() => {
+    if (!labelPickOppId) return;
+    const o = opportunities.find((x) => x.id === labelPickOppId);
+    setLabelPickDraft([...(o?.labelIds ?? [])]);
+  }, [labelPickOppId, opportunities]);
+
+  const selectedOppLabelKey = selectedOpp
+    ? `${selectedOpp.id}:${(selectedOpp.labelIds ?? []).join(",")}`
+    : "";
+  useEffect(() => {
+    if (!selectedOpp) {
+      setDetailLabelIds([]);
+      return;
+    }
+    setDetailLabelIds([...(selectedOpp.labelIds ?? [])]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedOppLabelKey]);
+
   async function createPipeline() {
     try {
       const res = await fetch("/api/opportunities/pipelines", {
@@ -476,6 +501,7 @@ export default function PipelineClient() {
           stage: newOppStage || selectedPipeline?.stages?.[0] || "New Lead",
           status: newOppStatus,
           assignedRep: newOppAssignedRep,
+          labelIds: newOppLabelIds,
         }),
       });
       const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
@@ -486,6 +512,7 @@ export default function PipelineClient() {
       setNewOppStage("");
       setNewOppStatus("פתוח");
       setNewOppAssignedRep("");
+      setNewOppLabelIds([]);
       await load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "יצירת הזדמנות נכשלה");
@@ -529,6 +556,7 @@ export default function PipelineClient() {
       utmMedium?: string;
       utmContent?: string;
       landingpage?: string;
+      labelIds?: string[];
       tags?: string[];
       notes?: NoteItem[];
       tasks?: TaskItem[];
@@ -610,7 +638,10 @@ export default function PipelineClient() {
       const value = String(o.assignedRep ?? "");
       return adminLabelByEmail.get(value) ?? value;
     }
-    if (col === "tags") return (o.tags ?? []).join(", ");
+    if (col === "tags") {
+      if (o.labels?.length) return o.labels.map((l) => l.name).join(", ");
+      return (o.tags ?? []).join(", ");
+    }
     if (col === "createdAt") return formatJerusalemDate(o.createdAt);
     if (col === "updatedAt") return formatJerusalemDate(o.updatedAt);
     if (col === "lastLeadAt") return formatJerusalemDate(o.lastLeadAt);
@@ -741,8 +772,11 @@ export default function PipelineClient() {
 
   function startInlineEdit(o: Opportunity, col: string) {
     if (INLINE_READONLY.has(col)) return;
-    const current =
-      col === "tags" ? (o.tags ?? []).join(", ") : opportunityCell(o, col);
+    if (col === "tags") {
+      setLabelPickOppId(o.id);
+      return;
+    }
+    const current = opportunityCell(o, col);
     setEditingCell({ id: o.id, col, value: current });
   }
 
@@ -767,11 +801,6 @@ export default function PipelineClient() {
     }
     if (col === "assignedRep") {
       await saveOpportunityPatch(o.id, { assignedRep: value });
-      return;
-    }
-    if (col === "tags") {
-      const tags = value.split(",").map((x) => x.trim()).filter(Boolean);
-      await saveOpportunityPatch(o.id, { tags });
       return;
     }
     if (["name", "email", "phone", "utmSource", "utmCampaign", "utmMedium", "utmContent", "landingpage"].includes(col)) {
@@ -1148,24 +1177,30 @@ export default function PipelineClient() {
                                   style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
                                 />
                               )
-                            ) : (
-                              <button
-                                type="button"
-                                disabled={INLINE_READONLY.has(col)}
-                                onClick={() => startInlineEdit(o, col)}
+                            ) : INLINE_READONLY.has(col) ? (
+                              <span
                                 style={{
-                                  border: "none",
-                                  background: "transparent",
-                                  cursor: INLINE_READONLY.has(col) ? "default" : "pointer",
-                                  padding: 0,
+                                  display: "block",
                                   textAlign: "right",
-                                  width: "100%",
-                                  color: INLINE_READONLY.has(col) ? "#374151" : "#111827",
+                                  wordBreak: "break-word",
+                                  color: "#374151",
                                 }}
-                                title={INLINE_READONLY.has(col) ? "" : "לחץ לעריכה מהירה"}
                               >
                                 {opportunityCell(o, col)}
-                              </button>
+                              </span>
+                            ) : (
+                              <InlineFieldShell
+                                integration={columnIntegrationKind(col)}
+                                rawValue={opportunityCell(o, col)}
+                                label={
+                                  col === "tags" ? (
+                                    <LabelPills labels={o.labels ?? []} />
+                                  ) : (
+                                    opportunityCell(o, col)
+                                  )
+                                }
+                                onEdit={() => startInlineEdit(o, col)}
+                              />
                             )
                           )}
                         </td>
@@ -1493,10 +1528,102 @@ export default function PipelineClient() {
                   <option key={u.email} value={u.email}>{u.name?.trim() || u.email}</option>
                 ))}
               </select>
+              <div style={{ marginTop: 4 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>תגיות</div>
+                <LabelPicker
+                  labels={catalogLabels}
+                  selectedIds={newOppLabelIds}
+                  onToggle={(id) =>
+                    setNewOppLabelIds((prev) =>
+                      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+                    )
+                  }
+                  onCreate={async (name, color) => {
+                    const res = await fetch("/api/labels", {
+                      method: "POST",
+                      credentials: "include",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ name, color }),
+                    });
+                    const j = (await res.json().catch(() => ({}))) as {
+                      ok?: boolean;
+                      label?: { id: string; name: string; color: string };
+                    };
+                    if (!res.ok || !j.ok || !j.label) throw new Error("יצירת תגית נכשלה");
+                    setCatalogLabels((prev) => [...prev, j.label!].sort((a, b) => a.name.localeCompare(b.name, "he")));
+                    setNewOppLabelIds((prev) => [...prev, j.label!.id]);
+                  }}
+                  maxHeight={200}
+                />
+              </div>
             </div>
             <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
               <button type="button" onClick={() => void createOpportunity()} style={{ padding: "10px 12px", borderRadius: 12, border: "none", background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)", color: "#fff", cursor: "pointer", fontWeight: 800 }}>Create</button>
               <button type="button" onClick={() => setCreateOpportunityOpen(false)} style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {labelPickOppId && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 95, background: "rgba(0,0,0,0.25)", display: "grid", placeItems: "center" }} onMouseDown={() => setLabelPickOppId(null)}>
+          <div
+            style={{ width: "min(400px, 94vw)", background: "#fff", borderRadius: 16, border: "1px solid #e5e7eb", padding: 16, maxHeight: "90vh", overflow: "auto" }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: "0 0 12px", fontSize: 16 }}>תגיות להזדמנות</h3>
+            <LabelPicker
+              labels={catalogLabels}
+              selectedIds={labelPickDraft}
+              onToggle={(id) =>
+                setLabelPickDraft((prev) =>
+                  prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+                )
+              }
+              onCreate={async (name, color) => {
+                const res = await fetch("/api/labels", {
+                  method: "POST",
+                  credentials: "include",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ name, color }),
+                });
+                const j = (await res.json().catch(() => ({}))) as {
+                  ok?: boolean;
+                  label?: { id: string; name: string; color: string };
+                };
+                if (!res.ok || !j.ok || !j.label) throw new Error("יצירת תגית נכשלה");
+                setCatalogLabels((prev) => [...prev, j.label!].sort((a, b) => a.name.localeCompare(b.name, "he")));
+                setLabelPickDraft((prev) => [...prev, j.label!.id]);
+              }}
+            />
+            <div style={{ marginTop: 14, display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => setLabelPickOppId(null)}
+                style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
+              >
+                ביטול
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const id = labelPickOppId;
+                  if (!id) return;
+                  void saveOpportunityPatch(id, { labelIds: labelPickDraft });
+                  setLabelPickOppId(null);
+                }}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)",
+                  color: "#fff",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                }}
+              >
+                שמור
+              </button>
             </div>
           </div>
         </div>
@@ -1922,10 +2049,36 @@ export default function PipelineClient() {
                   <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>landingpage</span>
                   <input value={selectedOpp.landingpage ?? ""} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, landingpage: e.target.value } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
                 </label>
-                <label style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>תגיות</span>
-                  <input value={(selectedOpp.tags ?? []).join(", ")} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, tags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) } : x))} placeholder="מופרדות בפסיק" style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
-                </label>
+                <div style={{ display: "grid", gap: 8, gridColumn: "1 / -1" }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>תגיות (labelIds)</span>
+                  <LabelPicker
+                    labels={catalogLabels}
+                    selectedIds={detailLabelIds}
+                    onToggle={(id) =>
+                      setDetailLabelIds((prev) =>
+                        prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+                      )
+                    }
+                    onCreate={async (name, color) => {
+                      const res = await fetch("/api/labels", {
+                        method: "POST",
+                        credentials: "include",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ name, color }),
+                      });
+                      const j = (await res.json().catch(() => ({}))) as {
+                        ok?: boolean;
+                        label?: { id: string; name: string; color: string };
+                      };
+                      if (!res.ok || !j.ok || !j.label) throw new Error("יצירת תגית נכשלה");
+                      setCatalogLabels((prev) =>
+                        [...prev, j.label!].sort((a, b) => a.name.localeCompare(b.name, "he"))
+                      );
+                      setDetailLabelIds((prev) => [...prev, j.label!.id]);
+                    }}
+                    maxHeight={220}
+                  />
+                </div>
                 {oppCustomFieldIds.map((fid) => (
                   <label key={fid} style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>{opportunityFieldLabel(fid)}</span>
@@ -1951,7 +2104,7 @@ export default function PipelineClient() {
                         utmMedium: selectedOpp.utmMedium ?? "",
                         utmContent: selectedOpp.utmContent ?? "",
                         landingpage: selectedOpp.landingpage ?? "",
-                        tags: selectedOpp.tags ?? [],
+                        labelIds: detailLabelIds,
                         customValues: selectedOpp.customValues ?? {},
                       },
                       { fromDetail: true, showSavedToast: true, prevStatusBeforeSave: prev }

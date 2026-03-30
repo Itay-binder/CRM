@@ -3,6 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
+import {
+  naiveLocalInputToStoredIso,
+  utcIsoToJerusalemDatetimeLocal,
+} from "@/lib/datetime/taskTimestamps";
+import { columnIntegrationKind, InlineFieldShell } from "@/app/components/InlineFieldShell";
 
 type LeadsOk = {
   ok: true;
@@ -50,25 +55,11 @@ type TaskItem = {
   createdAt: string;
 };
 
-function pad2Task(n: number) {
-  return String(n).padStart(2, "0");
-}
 function toLocalInputTask(iso: string): string {
-  const s = String(iso ?? "").trim();
-  if (!s) return "";
-  const d = new Date(s);
-  if (!Number.isNaN(d.getTime())) {
-    return `${d.getFullYear()}-${pad2Task(d.getMonth() + 1)}-${pad2Task(d.getDate())}T${pad2Task(d.getHours())}:${pad2Task(d.getMinutes())}`;
-  }
-  const d2 = new Date(s.replace(" ", "T"));
-  if (Number.isNaN(d2.getTime())) return "";
-  return `${d2.getFullYear()}-${pad2Task(d2.getMonth() + 1)}-${pad2Task(d2.getDate())}T${pad2Task(d2.getHours())}:${pad2Task(d2.getMinutes())}`;
+  return utcIsoToJerusalemDatetimeLocal(String(iso ?? ""));
 }
 function fromLocalInputTask(v: string): string {
-  const s = v.trim();
-  if (!s) return "";
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? s : d.toISOString();
+  return naiveLocalInputToStoredIso(v);
 }
 type ContactDetail = {
   id: string;
@@ -463,7 +454,13 @@ export default function ContactsClient() {
     setSortDir("asc");
   }
 
-  const CONTACT_INLINE_READONLY = new Set(["id", "contactCode", "createdAt", "updatedAt"]);
+  const CONTACT_INLINE_READONLY = new Set([
+    "id",
+    "contactCode",
+    "createdAt",
+    "updatedAt",
+    "labelIds",
+  ]);
 
   function onResizeColumnStart(col: string, startX: number) {
     const base = contactColWidths[col] ?? 180;
@@ -991,30 +988,22 @@ export default function ContactsClient() {
                               />
                             )
                           ) : (
-                            <button
-                              type="button"
-                              onClick={() =>
+                            <InlineFieldShell
+                              integration={columnIntegrationKind(h)}
+                              rawValue={String(row[h] ?? "")}
+                              label={
+                                h === "assignedRep"
+                                  ? adminLabelByEmail.get(String(row[h] ?? "").trim()) ?? (row[h] ?? "")
+                                  : formatContactTableCell(h, String(row[h] ?? ""))
+                              }
+                              onEdit={() =>
                                 setEditingCell({
                                   id: String(row.id),
                                   col: h,
                                   value: String(row[h] ?? ""),
                                 })
                               }
-                              style={{
-                                border: "none",
-                                background: "transparent",
-                                cursor: "pointer",
-                                padding: 0,
-                                textAlign: "right",
-                                width: "100%",
-                                color: "#111827",
-                              }}
-                              title="לחץ לעריכה מהירה"
-                            >
-                              {h === "assignedRep"
-                                ? adminLabelByEmail.get(String(row[h] ?? "").trim()) ?? (row[h] ?? "")
-                                : row[h] ?? ""}
-                            </button>
+                            />
                           )
                         )}
                       </td>

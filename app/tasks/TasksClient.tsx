@@ -2,6 +2,10 @@
 
 import { useEffect, useMemo, useState, type DragEvent } from "react";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
+import {
+  naiveLocalInputToStoredIso,
+  utcIsoToJerusalemDatetimeLocal,
+} from "@/lib/datetime/taskTimestamps";
 
 type TaskStatus = "todo" | "in_progress" | "done";
 type TaskComment = { id: string; text: string; createdAt: string };
@@ -32,27 +36,12 @@ const COLUMNS: Array<{ id: TaskStatus; label: string }> = [
   { id: "done", label: "Done" },
 ];
 
-function pad2(n: number) {
-  return String(n).padStart(2, "0");
-}
-
 function toLocalInput(iso: string): string {
-  const s = String(iso ?? "").trim();
-  if (!s) return "";
-  const d = new Date(s);
-  if (!Number.isNaN(d.getTime())) {
-    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-  }
-  const d2 = new Date(s.replace(" ", "T"));
-  if (Number.isNaN(d2.getTime())) return "";
-  return `${d2.getFullYear()}-${pad2(d2.getMonth() + 1)}-${pad2(d2.getDate())}T${pad2(d2.getHours())}:${pad2(d2.getMinutes())}`;
+  return utcIsoToJerusalemDatetimeLocal(String(iso ?? ""));
 }
 
 function fromLocalInput(v: string): string {
-  const s = v.trim();
-  if (!s) return "";
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? s : d.toISOString();
+  return naiveLocalInputToStoredIso(v);
 }
 
 function entityHref(t: Task): string {

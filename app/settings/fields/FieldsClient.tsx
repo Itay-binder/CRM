@@ -326,7 +326,17 @@ function LabelsCatalogBlock() {
   );
 }
 
-export default function FieldsClient() {
+type FieldsClientProps = {
+  /** טננט עם ניהול הזמנות — הצגת הסבר + זריעת שאלון מוביל */
+  showMoverQuestionnaireSeed?: boolean;
+  /** אדמין / מייל מנהל — כפתור זריעה פעיל */
+  moverSeedCanRun?: boolean;
+};
+
+export default function FieldsClient({
+  showMoverQuestionnaireSeed = false,
+  moverSeedCanRun = false,
+}: FieldsClientProps = {}) {
   const [scope, setScope] = useState<FieldScope>("all");
   const [entityType, setEntityType] = useState<EntityType>("contact");
   const [loading, setLoading] = useState(false);
@@ -346,8 +356,32 @@ export default function FieldsClient() {
   const [pipelinePick, setPipelinePick] = useState<string[]>([]);
   /** false = כל הפייפליינים (שולחים pipelineIds ריק); true = רק הנבחרים ב-pipelinePick */
   const [restrictPipelines, setRestrictPipelines] = useState(false);
+  const [moverSeedBusy, setMoverSeedBusy] = useState(false);
+  const [moverSeedMsg, setMoverSeedMsg] = useState<string | null>(null);
 
   const pipelineNameById = useMemo(() => new Map(pipelines.map((p) => [p.id, p.name])), [pipelines]);
+
+  async function runMoverQuestionnaireSeed() {
+    setMoverSeedBusy(true);
+    setMoverSeedMsg(null);
+    try {
+      const res = await fetch("/api/moving-orders/seed-fields", {
+        method: "POST",
+        credentials: "include",
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; fieldIds?: string[] };
+      if (!res.ok || !j.ok) {
+        setMoverSeedMsg(j.error ?? "הזריעה נכשלה");
+        return;
+      }
+      setMoverSeedMsg(`נוצרו/עודכנו ${j.fieldIds?.length ?? 0} שדות (מוביל + שאלון הצטרפות).`);
+      await load();
+    } catch {
+      setMoverSeedMsg("שגיאת רשת");
+    } finally {
+      setMoverSeedBusy(false);
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -528,6 +562,65 @@ export default function FieldsClient() {
   return (
     <div style={{ maxWidth: 1100 }}>
       <h1 style={{ margin: "4px 0 10px", fontSize: 20 }}>שדות מותאמים</h1>
+      {showMoverQuestionnaireSeed ? (
+        <div
+          style={{
+            marginBottom: 14,
+            padding: 14,
+            borderRadius: 12,
+            border: "1px solid #c4b5fd",
+            background: "#f5f3ff",
+            fontSize: 14,
+            lineHeight: 1.5,
+            color: "#3730a3",
+          }}
+        >
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>שדות מוביל ושאלון הצטרפות</div>
+          <p style={{ margin: "0 0 10px" }}>
+            <strong>דיפלוי בלבד לא יוצר שדות ב־Firestore.</strong> הזריעה רצה רק בפעולות שרת: קריאה ל־
+            <code dir="ltr" style={{ fontSize: 12 }}>
+              {" "}
+              POST /api/ingest/mover-welcome
+            </code>{" "}
+            (בתחילת הבקשה), או לחיצה על הכפתור להלן (אדמין בלבד).
+          </p>
+          {moverSeedMsg ? (
+            <div
+              style={{
+                marginBottom: 10,
+                padding: 8,
+                borderRadius: 8,
+                background: moverSeedMsg.includes("נכשל") || moverSeedMsg.includes("שגיאה") ? "#fef2f2" : "#ecfdf5",
+                color: moverSeedMsg.includes("נכשל") || moverSeedMsg.includes("שגיאה") ? "#991b1b" : "#065f46",
+              }}
+            >
+              {moverSeedMsg}
+            </div>
+          ) : null}
+          {moverSeedCanRun ? (
+            <button
+              type="button"
+              onClick={() => void runMoverQuestionnaireSeed()}
+              disabled={moverSeedBusy || loading}
+              style={{
+                padding: "10px 16px",
+                borderRadius: 10,
+                border: "none",
+                fontWeight: 700,
+                cursor: moverSeedBusy ? "wait" : "pointer",
+                background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)",
+                color: "#fff",
+              }}
+            >
+              {moverSeedBusy ? "מזריע…" : "צור/עדכן עכשיו שדות מוביל + שאלון (פייפליין לקוחות)"}
+            </button>
+          ) : (
+            <span style={{ fontSize: 13, color: "#5b21b6" }}>
+              אין הרשאת אדמין — בקשו ממנהל ללחוץ כאן, או שלחו וובהוק הצטרפות מוביל פעם אחת.
+            </span>
+          )}
+        </div>
+      ) : null}
       <LabelsCatalogBlock />
       <div
         style={{

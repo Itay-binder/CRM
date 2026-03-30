@@ -4,7 +4,9 @@ import { getTenantByDatabaseId } from "@/lib/tenant/config";
 import { getRequestTenantDatabaseId } from "@/lib/firebase/admin";
 import { isMovingOrdersTenant } from "@/lib/tenant/movingOrders";
 import { isValidIngestApiKeyAsync } from "@/lib/ingest/apiKey";
-import { PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
+import { MOVER_CONTACT_FIELD_IDS, PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
+import { seedMoverCustomFields } from "@/lib/movingOrders/seedMoverFields";
+import { seedMoverWelcomeOpportunityFields } from "@/lib/movingOrders/seedMoverWelcomeOpportunityFields";
 import {
   buildMoverContactCustomPatchFromWelcome,
   buildWelcomeOpportunityCustomValues,
@@ -69,6 +71,20 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  try {
+    await Promise.all([seedMoverCustomFields(), seedMoverWelcomeOpportunityFields()]);
+  } catch (e) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: e instanceof Error ? e.message : "זריעת שדות מוביל נכשלה",
+      } satisfies ApiErr,
+      { status: 500 }
+    );
+  }
+
+  const moverFieldIdSet = new Set(MOVER_CONTACT_FIELD_IDS);
+
   const results: Array<{
     opportunityId: string;
     contactId?: string;
@@ -113,13 +129,20 @@ export async function POST(req: NextRequest) {
         const lead = await getLeadById(contactId);
         if (lead) {
           const patch = buildMoverContactCustomPatchFromWelcome(item);
+          const patchRec = patch as Record<string, unknown>;
           const prevCf = (lead.customFields ?? {}) as Record<string, unknown>;
-          const mergedCf = { ...prevCf, ...patch };
-          const customFields = await validateCustomValues("contact", mergedCf, {
+          const mergedCf = { ...prevCf, ...patchRec };
+          let customFields = await validateCustomValues("contact", mergedCf, {
             pipelineId: PAYING_CUSTOMERS_PIPELINE_ID,
             previousValues: prevCf,
           });
+          for (const fid of moverFieldIdSet) {
+            if (Object.prototype.hasOwnProperty.call(patchRec, fid)) {
+              customFields = { ...customFields, [fid]: patchRec[fid] };
+            }
+          }
           await updateLead(contactId, {
+            pipelineId: PAYING_CUSTOMERS_PIPELINE_ID,
             ...(item.name?.trim() ? { name: item.name.trim() } : {}),
             ...(item.email?.trim() ? { email: item.email.trim() } : {}),
             ...(item.phone?.trim() ? { phone: item.phone.trim() } : {}),

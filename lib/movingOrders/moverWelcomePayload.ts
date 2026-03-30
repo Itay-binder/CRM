@@ -97,9 +97,10 @@ export function buildMoverContactCustomPatchFromWelcome(
   const regions = item.activity_regions?.trim();
   if (regions) {
     out[MOVER_FIELD_IDS.regions] = regions;
-    if (/כל\s+הארץ|ארצי|בכל הארץ/i.test(regions)) {
-      out[MOVER_FIELD_IDS.nationwide] = true;
-    }
+    out[MOVER_FIELD_IDS.nationwide] = /כל\s+הארץ|ארצי|בכל הארץ/i.test(regions);
+  } else if (item.activity_regions !== undefined) {
+    out[MOVER_FIELD_IDS.regions] = "";
+    out[MOVER_FIELD_IDS.nationwide] = false;
   }
 
   if (item.activity_days_text !== undefined) {

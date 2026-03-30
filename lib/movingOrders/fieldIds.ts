@@ -37,3 +37,6 @@ export const MOVER_FIELD_IDS = {
   small: "contact_mover_small",
   apartment: "contact_mover_apartment",
 } as const;
+
+/** כל מזהי השדות ב־Firestore (למיזוג אחרי validate ולוידוא קליטה) */
+export const MOVER_CONTACT_FIELD_IDS: string[] = Object.values(MOVER_FIELD_IDS);

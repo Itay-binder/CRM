@@ -26,6 +26,10 @@ type CrmTask = {
   googleCalendarId?: string;
 };
 
+function crmTaskKey(t: CrmTask): string {
+  return `${t.entityType}|${t.entityId}|${t.id}`;
+}
+
 function israelNow(): TZDate {
   return new TZDate(new Date(), CRM_TZ);
 }
@@ -68,6 +72,7 @@ export default function CalendarClient() {
   const [loading, setLoading] = useState(true);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [crmCardSyncKey, setCrmCardSyncKey] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
@@ -193,6 +198,52 @@ export default function CalendarClient() {
       setErr(e instanceof Error ? e.message : "סנכרון נכשל");
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function syncSingleCrmTaskToCalendar(t: CrmTask) {
+    if (!connected) return;
+    const dueOk = Boolean(parseTaskInstant(String(t.dueAt ?? "").trim()));
+    if (!dueOk) {
+      setErr("לסנכרון ללוח שנה נדרש דדליין למשימה. ערכו את המשימה והוסיפו דדליין.");
+      return;
+    }
+    const gcal = calId.trim();
+    if (!gcal) {
+      setErr("בחרו לוח יעד למעלה.");
+      return;
+    }
+    const k = crmTaskKey(t);
+    setCrmCardSyncKey(k);
+    setErr(null);
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entityType: t.entityType,
+          entityId: t.entityId,
+          taskId: t.id,
+          syncToGoogleCalendar: true,
+          googleCalendarId: gcal,
+        }),
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        task?: CrmTask;
+      };
+      if (!res.ok || !j.ok || !j.task) throw new Error(j.error ?? "סנכרון נכשל");
+      setCrmTasks((arr) =>
+        arr.map((x) => (crmTaskKey(x) === k ? { ...x, ...j.task } : x))
+      );
+      setSyncMsg(`המשימה "${j.task.title}" סונכרנה ללוח.`);
+      await loadEvents();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "סנכרון נכשל");
+    } finally {
+      setCrmCardSyncKey(null);
     }
   }
 
@@ -526,32 +577,70 @@ export default function CalendarClient() {
                   minHeight: 420,
                 }}
               >
-                <div style={{ fontWeight: 900, marginBottom: 12, fontSize: 16 }}>משימות CRM (דדליין בשבוע)</div>
+                <div style={{ fontWeight: 900, marginBottom: 4, fontSize: 16 }}>משימות CRM (דדליין בשבוע)</div>
+                <p style={{ margin: "0 0 10px", fontSize: 11, color: "#6b7280", lineHeight: 1.4 }}>
+                  הלוח לסנכרון הוא זה שבחרתם למעלה (&quot;לוח לתצוגה&quot;).
+                </p>
                 {tasksThisWeek.length === 0 ? (
                   <div style={{ color: "#9ca3af" }}>אין משימות עם דדליין בשבוע זה.</div>
                 ) : (
                   <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 10 }}>
-                    {tasksThisWeek.map((t) => (
-                      <li
-                        key={`${t.entityType}-${t.entityId}-${t.id}`}
-                        style={{
-                          border: "1px solid #f3f4f6",
-                          borderRadius: 12,
-                          padding: 12,
-                          background: "#fafafa",
-                        }}
-                      >
-                        <div style={{ fontWeight: 800 }}>{t.title}</div>
-                        <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
-                          {formatIsraelDateTime(t.dueAt)} · {t.entityName}
-                        </div>
-                        {t.syncToGoogleCalendar ? (
-                          <div style={{ fontSize: 11, color: "#059669", marginTop: 4, fontWeight: 700 }}>
-                            מסונכרן ל-Google
+                    {tasksThisWeek.map((t) => {
+                      const k = crmTaskKey(t);
+                      const dueOk = Boolean(parseTaskInstant(String(t.dueAt ?? "").trim()));
+                      const canSync = connected && dueOk && Boolean(calId.trim());
+                      const cardBusy = crmCardSyncKey === k;
+                      return (
+                        <li
+                          key={k}
+                          style={{
+                            border: "1px solid #f3f4f6",
+                            borderRadius: 12,
+                            padding: 12,
+                            background: "#fafafa",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 8,
+                          }}
+                        >
+                          <div style={{ fontWeight: 800 }}>{t.title}</div>
+                          <div style={{ fontSize: 12, color: "#6b7280" }}>
+                            {formatIsraelDateTime(t.dueAt)} · {t.entityName}
                           </div>
-                        ) : null}
-                      </li>
-                    ))}
+                          {t.syncToGoogleCalendar ? (
+                            <div style={{ fontSize: 11, color: "#059669", fontWeight: 700 }}>
+                              מסונכרן ל-Google
+                            </div>
+                          ) : null}
+                          <div>
+                            <button
+                              type="button"
+                              disabled={!canSync || cardBusy}
+                              title={
+                                !connected
+                                  ? "חברו Google Calendar למעלה"
+                                  : !dueOk
+                                    ? "נדרש דדליין"
+                                    : "שולח את המשימה ללוח שנבחר"
+                              }
+                              onClick={() => void syncSingleCrmTaskToCalendar(t)}
+                              style={{
+                                padding: "4px 10px",
+                                borderRadius: 8,
+                                border: "1px solid #c4b5fd",
+                                background: canSync && !cardBusy ? "#f5f3ff" : "#f3f4f6",
+                                color: canSync && !cardBusy ? "#5b21b6" : "#9ca3af",
+                                fontWeight: 800,
+                                fontSize: 11,
+                                cursor: canSync && !cardBusy ? "pointer" : "not-allowed",
+                              }}
+                            >
+                              {cardBusy ? "מסנכרן…" : t.syncToGoogleCalendar ? "עדכן בלוח" : "סנכרן ללוח"}
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>

@@ -74,7 +74,7 @@ export function deriveOrderCapabilities(order: MovingOrderPayload): OrderCapabil
   };
 }
 
-function driverWorksOnDay(daysStr: string, markers: string[]): boolean {
+export function driverWorksOnDay(daysStr: string, markers: string[]): boolean {
   const d = daysStr.trim().toLowerCase();
   if (!d) return false;
   for (const marker of markers) {

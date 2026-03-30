@@ -86,6 +86,8 @@ function statusLabel(s: MovingOrderStatus): string {
       return "בוצעה";
     case "cancelled":
       return "בוטלה";
+    case "rejected":
+      return "לא אושרה";
     default:
       return s;
   }
@@ -445,7 +447,7 @@ export default function OrdersBoardTab() {
     if (col === "stage") {
       await patchOrderApi(o.id, { stage: value || o.stage });
     } else if (col === "status") {
-      if (["pending", "dispatched", "completed", "cancelled"].includes(value)) {
+      if (["pending", "dispatched", "completed", "cancelled", "rejected"].includes(value)) {
         await patchOrderApi(o.id, { status: value });
       }
     } else if (col === "pipelineId") {
@@ -710,7 +712,7 @@ export default function OrdersBoardTab() {
                             }}
                             style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
                           >
-                            {(["pending", "dispatched", "completed", "cancelled"] as const).map((s) => (
+                            {(["pending", "dispatched", "completed", "cancelled", "rejected"] as const).map((s) => (
                               <option key={s} value={s}>
                                 {statusLabel(s)}
                               </option>

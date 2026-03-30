@@ -3,13 +3,20 @@ import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { validateCustomValues } from "@/lib/customFields/repo";
 import { listLeadsFiltered } from "@/lib/leads/repo";
+import { listOpportunities } from "@/lib/opportunities/repo";
 import { rawCustomValuesFromPayload } from "@/lib/movingOrders/customValuesFromPayload";
 import { ensureMovingOrdersIntakePipeline } from "@/lib/movingOrders/ensureIntakePipeline";
+import { PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
 import { getCityRegionMap } from "@/lib/movingOrders/cityRegionSettingsRepo";
-import { matchDriversForOrder } from "@/lib/movingOrders/matchDrivers";
+import { matchMoversForOrderDetailed } from "@/lib/movingOrders/matchMovers";
 import { MOVING_ORDERS_INTAKE_PIPELINE_ID, MOVING_ORDER_STAGES } from "@/lib/movingOrders/pipelineConstants";
 import { defaultStageForStatus, statusFromStage } from "@/lib/movingOrders/stageSync";
-import type { MovingOrderPayload, MovingOrderRecord, MovingOrderStatus } from "@/lib/movingOrders/types";
+import type {
+  DriverMatchFlag,
+  MovingOrderPayload,
+  MovingOrderRecord,
+  MovingOrderStatus,
+} from "@/lib/movingOrders/types";
 
 const COLLECTION = "movingOrders";
 
@@ -26,10 +33,48 @@ function sanitizeDocId(orderId: string): string {
   return orderId.trim().replace(/[/\\]/g, "_").slice(0, 800) || "unknown";
 }
 
-const STATUSES: MovingOrderStatus[] = ["pending", "dispatched", "completed", "cancelled"];
+const STATUSES: MovingOrderStatus[] = ["pending", "dispatched", "completed", "cancelled", "rejected"];
 
 function coerceStatus(raw: unknown): MovingOrderStatus {
   return STATUSES.includes(raw as MovingOrderStatus) ? (raw as MovingOrderStatus) : "pending";
+}
+
+function coerceDriverMatchFlags(raw: unknown): Record<string, DriverMatchFlag> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const o = raw as Record<string, unknown>;
+  const out: Record<string, DriverMatchFlag> = {};
+  for (const [k, v] of Object.entries(o)) {
+    if (v === "ok" || v === "orange" || v === "red") out[k] = v;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+async function rematchMovingOrderDrivers(input: {
+  payload: MovingOrderPayload;
+  customValues: Record<string, unknown>;
+  prevManual: string[];
+  prevExcluded: string[];
+}): Promise<{
+  matchedDriverIds: string[];
+  optionalDriverIds: string[];
+  driverMatchFlags: Record<string, DriverMatchFlag>;
+  excludedDriverIds: string[];
+}> {
+  const leads = await listLeadsFiltered();
+  const opportunities = await listOpportunities(PAYING_CUSTOMERS_PIPELINE_ID);
+  const settlementRegionMap = await getCityRegionMap();
+  const manualSet = new Set(input.prevManual.map((x) => String(x).trim()).filter(Boolean));
+  const { matchedDriverIds, optionalDriverIds, driverMatchFlags } = matchMoversForOrderDetailed(
+    leads,
+    opportunities,
+    input.payload,
+    input.customValues,
+    settlementRegionMap,
+    manualSet
+  );
+  const knownIds = new Set<string>([...matchedDriverIds, ...optionalDriverIds, ...manualSet]);
+  const excludedDriverIds = input.prevExcluded.map(String).filter((x) => knownIds.has(x));
+  return { matchedDriverIds, optionalDriverIds, driverMatchFlags, excludedDriverIds };
 }
 
 function normalizeOrderStage(
@@ -118,12 +163,6 @@ export async function upsertMovingOrderFromIngest(
   if (!orderId) throw new Error("order_id is required");
 
   const docId = sanitizeDocId(orderId);
-  const leads = await listLeadsFiltered();
-  const settlementRegionMap = await getCityRegionMap();
-  const { matched, optional } = matchDriversForOrder(leads, payload, settlementRegionMap);
-
-  const matchedIds = matched.map((l) => l.id);
-  const optionalIds = optional.map((l) => l.id);
 
   const ref = d.collection(COLLECTION).doc(docId);
   const prev = await ref.get();
@@ -137,9 +176,6 @@ export async function upsertMovingOrderFromIngest(
     : [];
 
   const now = FieldValue.serverTimestamp();
-  const knownIds = new Set([...matchedIds, ...optionalIds, ...prevManual]);
-  const excludedDriverIds = prevExcluded.filter((x) => knownIds.has(x));
-
   const rawCustom = rawCustomValuesFromPayload(payload);
   const existingCustom =
     typeof prevData.customValues === "object" && prevData.customValues !== null
@@ -150,17 +186,24 @@ export async function upsertMovingOrderFromIngest(
     previousValues: existingCustom,
   });
 
+  const match = await rematchMovingOrderDrivers({
+    payload,
+    customValues,
+    prevManual,
+    prevExcluded: prevExcluded,
+  });
+
   if (prev.exists) {
-    const prevStatus = coerceStatus(prevData.status);
     const prevStage = typeof prevData.stage === "string" ? prevData.stage : "";
     await ref.set(
       {
         orderId,
         payload,
         customValues,
-        matchedDriverIds: matchedIds,
-        optionalDriverIds: optionalIds,
-        excludedDriverIds,
+        matchedDriverIds: match.matchedDriverIds,
+        optionalDriverIds: match.optionalDriverIds,
+        driverMatchFlags: match.driverMatchFlags,
+        excludedDriverIds: match.excludedDriverIds,
         updatedAt: now,
         ...(prevStage.trim() ? {} : { stage: MOVING_ORDER_STAGES[0], status: "pending" }),
       },
@@ -174,10 +217,11 @@ export async function upsertMovingOrderFromIngest(
         customValues,
         pipelineId: MOVING_ORDERS_INTAKE_PIPELINE_ID,
         stage: MOVING_ORDER_STAGES[0],
-        matchedDriverIds: matchedIds,
-        optionalDriverIds: optionalIds,
+        matchedDriverIds: match.matchedDriverIds,
+        optionalDriverIds: match.optionalDriverIds,
+        driverMatchFlags: match.driverMatchFlags,
         manualDriverIds: [],
-        excludedDriverIds: [],
+        excludedDriverIds: match.excludedDriverIds,
         createdAt: now,
         updatedAt: now,
         status: "pending" as MovingOrderStatus,
@@ -222,17 +266,18 @@ export async function createMovingOrderManual(
     date: input.date?.trim() || undefined,
   };
 
-  const leads = await listLeadsFiltered();
-  const settlementRegionMap = await getCityRegionMap();
-  const { matched, optional } = matchDriversForOrder(leads, payload, settlementRegionMap);
-  const matchedIds = matched.map((l) => l.id);
-  const optionalIds = optional.map((l) => l.id);
-
   const rawCustom = rawCustomValuesFromPayload(payload);
   const pid = input.pipelineId.trim() || MOVING_ORDERS_INTAKE_PIPELINE_ID;
   const st = input.stage.trim() || MOVING_ORDER_STAGES[0];
   const customValues = await validateCustomValues("moving_order", rawCustom, {
     pipelineId: pid,
+  });
+
+  const match = await rematchMovingOrderDrivers({
+    payload,
+    customValues,
+    prevManual: [],
+    prevExcluded: [],
   });
 
   const now = FieldValue.serverTimestamp();
@@ -242,10 +287,11 @@ export async function createMovingOrderManual(
     customValues,
     pipelineId: pid,
     stage: st,
-    matchedDriverIds: matchedIds,
-    optionalDriverIds: optionalIds,
+    matchedDriverIds: match.matchedDriverIds,
+    optionalDriverIds: match.optionalDriverIds,
+    driverMatchFlags: match.driverMatchFlags,
     manualDriverIds: [],
-    excludedDriverIds: [],
+    excludedDriverIds: match.excludedDriverIds,
     createdAt: now,
     updatedAt: now,
     status: "pending" as MovingOrderStatus,
@@ -266,6 +312,7 @@ export async function updateMovingOrder(
     excludedDriverIds?: string[];
     manualDriverIds?: string[];
     dispatchedAt?: string | null;
+    matchRejectionReason?: string | null;
   },
   db?: Firestore
 ): Promise<MovingOrderRecord> {
@@ -285,6 +332,10 @@ export async function updateMovingOrder(
       : existing.pipelineId ?? MOVING_ORDERS_INTAKE_PIPELINE_ID
   ).trim();
 
+  let resolvedPayload: MovingOrderPayload =
+    (existing.payload as MovingOrderPayload) ?? { order_id: String(existing.orderId ?? id) };
+  let resolvedCustom = prevCustom;
+
   const payload: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
 
   if (input.pipelineId !== undefined) {
@@ -292,37 +343,75 @@ export async function updateMovingOrder(
   }
 
   if (input.payload !== undefined && typeof input.payload === "object") {
-    const cur = (existing.payload as MovingOrderPayload) ?? { order_id: String(existing.orderId ?? id) };
-    const next: MovingOrderPayload = {
-      ...cur,
+    resolvedPayload = {
+      ...resolvedPayload,
       ...input.payload,
       order_id:
-        String(cur.order_id ?? input.payload.order_id ?? existing.orderId ?? id ?? "").trim() ||
-        String(existing.orderId ?? id),
+        String(
+          resolvedPayload.order_id ??
+            input.payload.order_id ??
+            existing.orderId ??
+            id ??
+            ""
+        ).trim() || String(existing.orderId ?? id),
     };
-    if (!String(next.order_id ?? "").trim()) throw new Error("חסר order_id בפיילואד");
-    const leads = await listLeadsFiltered();
-    const settlementRegionMap = await getCityRegionMap();
-    const { matched, optional } = matchDriversForOrder(leads, next, settlementRegionMap);
-    payload.payload = next;
-    payload.matchedDriverIds = matched.map((l) => l.id);
-    payload.optionalDriverIds = optional.map((l) => l.id);
-    const rawCustom = rawCustomValuesFromPayload(next);
-    payload.customValues = await validateCustomValues("moving_order", { ...prevCustom, ...rawCustom }, {
+    if (!String(resolvedPayload.order_id ?? "").trim()) throw new Error("חסר order_id בפיילואד");
+    const rawCustom = rawCustomValuesFromPayload(resolvedPayload);
+    resolvedCustom = await validateCustomValues("moving_order", { ...resolvedCustom, ...rawCustom }, {
       pipelineId: effPipe,
       previousValues: prevCustom,
     });
+    payload.payload = resolvedPayload;
+    payload.customValues = resolvedCustom;
   }
 
   if (input.customValues !== undefined) {
     const baseline =
-      (payload.customValues as Record<string, unknown> | undefined) ?? prevCustom;
-    payload.customValues = await validateCustomValues(
+      (payload.customValues as Record<string, unknown> | undefined) ?? resolvedCustom;
+    resolvedCustom = await validateCustomValues(
       "moving_order",
       { ...baseline, ...input.customValues },
       { pipelineId: effPipe, previousValues: baseline }
     );
+    payload.customValues = resolvedCustom;
   }
+
+  const prevManual = Array.isArray(existing.manualDriverIds)
+    ? (existing.manualDriverIds as unknown[]).map((x) => String(x))
+    : [];
+  const prevExcludedExisting = Array.isArray(existing.excludedDriverIds)
+    ? (existing.excludedDriverIds as unknown[]).map((x) => String(x))
+    : [];
+
+  const effManual =
+    input.manualDriverIds !== undefined ? input.manualDriverIds.map((x) => String(x)) : prevManual;
+  const effExcludedBefore =
+    input.excludedDriverIds !== undefined
+      ? input.excludedDriverIds.map((x) => String(x))
+      : prevExcludedExisting;
+
+  const rematchNeeded =
+    input.payload !== undefined ||
+    input.customValues !== undefined ||
+    input.manualDriverIds !== undefined;
+
+  if (rematchNeeded) {
+    const r = await rematchMovingOrderDrivers({
+      payload: resolvedPayload,
+      customValues: resolvedCustom,
+      prevManual: effManual,
+      prevExcluded: effExcludedBefore,
+    });
+    payload.matchedDriverIds = r.matchedDriverIds;
+    payload.optionalDriverIds = r.optionalDriverIds;
+    payload.driverMatchFlags = r.driverMatchFlags;
+    if (input.excludedDriverIds === undefined) {
+      payload.excludedDriverIds = r.excludedDriverIds;
+    }
+  }
+
+  if (input.manualDriverIds !== undefined) payload.manualDriverIds = input.manualDriverIds;
+  if (input.excludedDriverIds !== undefined) payload.excludedDriverIds = input.excludedDriverIds;
 
   if (input.stage !== undefined) {
     const st = input.stage.trim() || MOVING_ORDER_STAGES[0];
@@ -333,9 +422,13 @@ export async function updateMovingOrder(
     payload.stage = defaultStageForStatus(input.status);
   }
 
-  if (input.excludedDriverIds !== undefined) payload.excludedDriverIds = input.excludedDriverIds;
-  if (input.manualDriverIds !== undefined) payload.manualDriverIds = input.manualDriverIds;
   if (input.dispatchedAt !== undefined) payload.dispatchedAt = input.dispatchedAt;
+
+  if (input.matchRejectionReason !== undefined) {
+    const t = input.matchRejectionReason?.trim();
+    if (!t) payload.matchRejectionReason = FieldValue.delete();
+    else payload.matchRejectionReason = t;
+  }
 
   const mergedStatus =
     payload.status !== undefined ? coerceStatus(payload.status) : coerceStatus(existing.status);

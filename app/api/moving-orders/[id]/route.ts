@@ -7,7 +7,13 @@ import type { MovingOrderPayload, MovingOrderStatus } from "@/lib/movingOrders/t
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const STATUSES = new Set<MovingOrderStatus>(["pending", "dispatched", "completed", "cancelled"]);
+const STATUSES = new Set<MovingOrderStatus>([
+  "pending",
+  "dispatched",
+  "completed",
+  "cancelled",
+  "rejected",
+]);
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApprovedUser(req);

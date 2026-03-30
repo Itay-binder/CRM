@@ -1,4 +1,6 @@
-export type MovingOrderStatus = "pending" | "dispatched" | "completed" | "cancelled";
+export type MovingOrderStatus = "pending" | "dispatched" | "completed" | "cancelled" | "rejected";
+
+export type DriverMatchFlag = "ok" | "orange" | "red";
 
 /** גוף הזמנה כפי שנכנס מ-webhook חיצוני */
 export type MovingOrderPayload = {
@@ -6,6 +8,12 @@ export type MovingOrderPayload = {
   move_type?: string;
   pickup?: string;
   dropoff?: string;
+  /** עיר איסוף (מפורשת) */
+  pickup_city?: string;
+  /** עיר פריקה (מפורשת) */
+  dropoff_city?: string;
+  /** יום בשבוע בהזמנה (למשל א׳–ש׳) */
+  day_order?: string;
   date?: string;
   is_urgent?: string;
   crane_info?: string;
@@ -53,6 +61,10 @@ export type MovingOrderRecord = {
   manualDriverIds: string[];
   /** מזהי מובילים שהמשתמש ביטל מהבחירה (ברירת מחדל: כולם מסומנים) */
   excludedDriverIds: string[];
+  /** סטטוס התאמה לכל מזהה איש קשר (מוביל) */
+  driverMatchFlags?: Record<string, DriverMatchFlag>;
+  /** סיבת דחייה (שליחה ל-webhook ביטול התאמה) */
+  matchRejectionReason?: string;
   dispatchedAt: string | null;
   createdAt: string | null;
   updatedAt: string | null;
@@ -63,4 +75,21 @@ export type DriverSummary = {
   name?: string;
   phone?: string;
   email?: string;
+};
+
+/** פירוט מוביל לטאב התאמה — נטען מה-API */
+export type MoverMatchEnrichment = {
+  opportunityId?: string;
+  regions: string;
+  workAvailability: string;
+  activityDays: string;
+  apartmentMover: string;
+  smallMover: string;
+  sos: string;
+  crane: string;
+  leadCount: string;
+  lastLeadAt: string | null;
+  flexibleHours: string;
+  hourStart: string;
+  hourEnd: string;
 };

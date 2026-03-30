@@ -5,6 +5,9 @@ const KEYS: (keyof MovingOrderPayload)[] = [
   "move_type",
   "pickup",
   "dropoff",
+  "pickup_city",
+  "dropoff_city",
+  "day_order",
   "date",
   "is_urgent",
   "crane_info",
@@ -34,6 +37,14 @@ const KEYS: (keyof MovingOrderPayload)[] = [
   "drive_folder_name",
 ];
 
+function pickStr(body: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v = body[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return undefined;
+}
+
 /** נרמול גוף webhook: items_list כמערך → מחרוזת JSON בשדה items_list בפיילואד */
 export function normalizePayloadForStorage(body: Record<string, unknown>): MovingOrderPayload {
   const rawItems = body.items_list;
@@ -53,10 +64,16 @@ export function normalizePayloadForStorage(body: Record<string, unknown>): Movin
         : undefined;
 
   const base = body as unknown as MovingOrderPayload;
+  const pickup_city = pickStr(body, "pickup_city", "moving_order_pickup_city") ?? base.pickup_city;
+  const dropoff_city = pickStr(body, "dropoff_city", "moving_order_dropoff_city") ?? base.dropoff_city;
+  const day_order = pickStr(body, "day_order", "moving_order_day_order") ?? base.day_order;
   return {
     ...base,
     ...(items_list !== undefined ? { items_list } : {}),
     ...(Number.isFinite(drive_files_count) ? { drive_files_count } : {}),
+    ...(pickup_city ? { pickup_city } : {}),
+    ...(dropoff_city ? { dropoff_city } : {}),
+    ...(day_order ? { day_order } : {}),
   };
 }
 

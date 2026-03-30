@@ -80,6 +80,20 @@ export function buildDefaultTriggers(): WebhookTriggerRow[] {
       enabled: false,
       url: "",
     },
+    {
+      id: "def-moving-order-match-send",
+      label: "התאמת הזמנות — שליחה למובילים",
+      event: "moving_order_match_send",
+      enabled: true,
+      url: "https://hook.us1.make.com/7ig76p1u6ycbq5au3smo14ufelkdyer3",
+    },
+    {
+      id: "def-moving-order-match-cancel",
+      label: "התאמת הזמנות — דחייה",
+      event: "moving_order_match_cancel",
+      enabled: true,
+      url: "https://hook.us1.make.com/jjbdvct4ygbx7ee6wixpiao6zrcglxql",
+    },
   ];
 }
 
@@ -120,10 +134,14 @@ export function parseWebhookTriggers(raw: unknown): WebhookTriggerRow[] | null {
 }
 
 export async function getWebhookTriggers(db: Firestore): Promise<WebhookTriggerRow[]> {
+  const defaults = buildDefaultTriggers();
   const snap = await db.collection(COLLECTION).doc(DOC_ID).get();
-  if (!snap.exists) return buildDefaultTriggers();
+  if (!snap.exists) return defaults;
   const parsed = parseWebhookTriggers(snap.data());
-  return parsed ?? buildDefaultTriggers();
+  if (!parsed) return defaults;
+  const byEvent = new Map<WebhookEventId, WebhookTriggerRow>();
+  for (const t of parsed) byEvent.set(t.event, t);
+  return defaults.map((d) => byEvent.get(d.event) ?? d);
 }
 
 export async function saveWebhookTriggers(

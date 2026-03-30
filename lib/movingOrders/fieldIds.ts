@@ -38,5 +38,18 @@ export const MOVER_FIELD_IDS = {
   apartment: "contact_mover_apartment",
 } as const;
 
+/**
+ * שמות שדות הזדמנות (לקוחות משלמים) לפי הספק — עם נפילה לשדות וולקאם מוביל.
+ */
+export const MOVER_OPPORTUNITY_FIELD_IDS = {
+  activityRegions: "opportunity_activity_regions",
+  activityDaysText: "opportunity_activity_days_text",
+  smallMover: "opportunity_small_mover",
+  apartmentMover: "opportunity_apartment_mover",
+  workAvailabilityStatus: "opportunity_work_availability_status",
+  immediateAvailability: "opportunity_immediate_availability",
+  leadsCount: "opportunity_leads_count",
+} as const;
+
 /** כל מזהי השדות ב־Firestore (למיזוג אחרי validate ולוידוא קליטה) */
 export const MOVER_CONTACT_FIELD_IDS: string[] = Object.values(MOVER_FIELD_IDS);

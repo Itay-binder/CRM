@@ -43,7 +43,7 @@ export async function ensureMovingOrdersIntakePipeline(): Promise<MovingOrderPip
     await seedMovingOrderCustomFields();
   } else {
     const d = (snap.data() ?? {}) as Record<string, unknown>;
-    const cur = Array.isArray(d.stages) ? (d.stages as string[]).map(String) : [];
+    const cur = Array.isArray(d.stages) ? (d.stages as string[]).map((s) => String(s).trim()) : [];
     if (cur.length === 0) {
       await ref.set(
         {
@@ -52,6 +52,14 @@ export async function ensureMovingOrdersIntakePipeline(): Promise<MovingOrderPip
         },
         { merge: true }
       );
+    } else {
+      let merged = [...cur];
+      for (const s of MOVING_ORDER_STAGES) {
+        if (!merged.includes(s)) merged.push(s);
+      }
+      if (merged.length !== cur.length) {
+        await ref.set({ stages: merged, updatedAt: now }, { merge: true });
+      }
     }
   }
 

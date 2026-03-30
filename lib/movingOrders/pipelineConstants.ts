@@ -8,6 +8,7 @@ export const MOVING_ORDER_STAGES = [
   "הועברה למובילים רלוונטים",
   "הזמנה סגורה",
   "בוטל",
+  "לא אושרה",
 ] as const;
 
 export type MovingOrderStageLabel = (typeof MOVING_ORDER_STAGES)[number];

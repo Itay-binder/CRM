@@ -3,7 +3,11 @@ import { requireApprovedUser } from "@/lib/auth/guard";
 import { getLeadById } from "@/lib/leads/repo";
 import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
 import { createMovingOrderManual, listMovingOrders } from "@/lib/movingOrders/repo";
-import type { DriverSummary } from "@/lib/movingOrders/types";
+import { listOpportunities } from "@/lib/opportunities/repo";
+import { opportunitiesByContactId } from "@/lib/movingOrders/matchMovers";
+import { buildMoverEnrichment } from "@/lib/movingOrders/moverFieldReaders";
+import { PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
+import type { DriverSummary, MoverMatchEnrichment } from "@/lib/movingOrders/types";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -42,7 +46,19 @@ export async function GET(req: NextRequest) {
         }
       })
     );
-    return NextResponse.json({ ok: true, orders, drivers });
+
+    const opps = await listOpportunities(PAYING_CUSTOMERS_PIPELINE_ID);
+    const oppByContact = opportunitiesByContactId(opps);
+    const moverEnrichment: Record<string, MoverMatchEnrichment> = {};
+    await Promise.all(
+      [...idSet].map(async (cid) => {
+        const lead = await getLeadById(cid);
+        if (!lead) return;
+        moverEnrichment[cid] = buildMoverEnrichment(lead, oppByContact.get(cid));
+      })
+    );
+
+    return NextResponse.json({ ok: true, orders, drivers, moverEnrichment });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "Unknown error" },

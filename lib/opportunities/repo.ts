@@ -523,7 +523,6 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
     utmContent: utmCo,
     landingpage: input.landingpage?.trim() || "",
     labelIds: resolvedLabelIds,
-    tags: FieldValue.delete(),
     lastLeadAt: now,
     customValues: input.customValues ?? {},
     assignedRep:
@@ -943,7 +942,6 @@ export async function updateOpportunity(
         utmContent: typeof after.utmContent === "string" ? after.utmContent : "",
         landingpage: typeof after.landingpage === "string" ? after.landingpage : "",
         labelIds: readStringIdArray(after.labelIds),
-        tags: FieldValue.delete(),
         customValues:
           typeof after.customValues === "object" && after.customValues !== null
             ? after.customValues

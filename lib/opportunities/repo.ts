@@ -12,6 +12,7 @@ import { normalizeIncomingLabelIds } from "@/lib/labels/repo";
 import { ensureMovingOrdersIntakePipeline } from "@/lib/movingOrders/ensureIntakePipeline";
 import { MOVING_ORDERS_INTAKE_PIPELINE_ID } from "@/lib/movingOrders/pipelineConstants";
 import { statusFromStage } from "@/lib/movingOrders/stageSync";
+import { normalizePhone } from "@/lib/leads/repo";
 
 export type PipelineScope = "opportunity" | "moving_order";
 
@@ -695,6 +696,41 @@ export async function appendOpportunityNote(
   if (contactId) await reconcileContactNotesAcrossEntities(contactId);
 
   return (await getOpportunityById(id)) as OpportunityRecord;
+}
+
+/**
+ * מוצא הזדמנות בפייפליין לקוחות משלמים לפי טלפון (מותאם לוובהוק שאלון מוביל).
+ * אם יש כמה — נבחר העדכנית ביותר לפי updatedAt.
+ */
+export async function findCustomersPipelineOpportunityByNormalizedPhone(
+  phoneRaw: string
+): Promise<string | null> {
+  const target = normalizePhone(phoneRaw);
+  if (!target) return null;
+  const db = await getAdminDb();
+  const snap = await db
+    .collection("opportunities")
+    .where("pipelineId", "==", CUSTOMERS_PIPELINE_ID)
+    .get();
+  let bestId: string | null = null;
+  let bestTime = -1;
+  for (const doc of snap.docs) {
+    const d = (doc.data() ?? {}) as Record<string, unknown>;
+    const p1 = normalizePhone(typeof d.phone === "string" ? d.phone : undefined);
+    const p2 = normalizePhone(typeof d.contactPhone === "string" ? d.contactPhone : undefined);
+    if (p1 !== target && p2 !== target) continue;
+    const u = d.updatedAt;
+    let t = 0;
+    if (u && typeof u === "object" && "toDate" in u) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      t = ((u as any).toDate?.() as Date | undefined)?.getTime?.() ?? 0;
+    }
+    if (t >= bestTime) {
+      bestTime = t;
+      bestId = doc.id;
+    }
+  }
+  return bestId;
 }
 
 export async function getOpportunityById(id: string): Promise<OpportunityRecord | null> {

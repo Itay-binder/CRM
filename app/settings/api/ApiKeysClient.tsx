@@ -504,6 +504,21 @@ ${hKey}
 ${hTenant}
   -d '[{"order_id":"demo-1","name":"דוגמה","phone":"0500000000","pickup":"א","dropoff":"ב","date":"2026-03-31"}]'`}
       />
+      <p style={{ margin: "10px 0 0 0", fontWeight: 700, fontSize: 13 }}>
+        שאלון הצטרפות מוביל (פייפליין לקוחות משלמים)
+      </p>
+      <p style={{ margin: "4px 0 0", color: "#4b5563", fontSize: 13, lineHeight: 1.5 }}>
+        <strong>POST</strong> <code dir="ltr">/api/ingest/mover-welcome</code> — מערך כמו בוובהוק Make; מזהה
+        הזדמנות לפי <code dir="ltr">phone</code> (או <code dir="ltr">opportunity_id</code>); ממלא שדות
+        מותאמים על ההזדמנות ומסנכרן שדות מוביל על איש הקשר.
+      </p>
+      <CodeBlock
+        text={`curl -X POST "${base}/api/ingest/mover-welcome" \\
+${hJson}
+${hKey}
+${hTenant}
+  -d '[{"name":"דוגמה","phone":"0500000000","email":"a@b.com","activity_regions":"גוש דן, שפלה","activity_regions_array":["גוש דן","שפלה"],"activity_days_text":"א\\u0027, ב\\u0027","activity_days_array":["א\\u0027","ב\\u0027"],"activity_start":"06:00","activity_end":"23:59","activity_flexible":true,"activity_hours":null,"immediate_availability":"כן","mover_services":"הובלות דירה, הובלות שמצריכות מנוף","notes":"—"}]'`}
+      />
 
       {sectionTitle("6", "נתיב חלופי לליד")}
       <p style={{ margin: 0, color: "#4b5563", fontSize: 14, lineHeight: 1.55 }}>

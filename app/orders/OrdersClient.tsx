@@ -72,12 +72,24 @@ export default function OrdersClient() {
         method: "POST",
         credentials: "include",
       });
-      const j = (await res.json()) as { ok?: boolean; error?: string; fieldIds?: string[] };
+      const j = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        fieldIds?: string[];
+        contactFieldIds?: string[];
+        opportunityWelcomeFieldIds?: string[];
+      };
       if (!res.ok || !j.ok) {
         setSeedMsg(j.error ?? "נכשל");
         return;
       }
-      setSeedMsg(`נוצרו/עודכנו ${j.fieldIds?.length ?? 0} שדות מוביל.`);
+      const c = j.contactFieldIds?.length ?? j.fieldIds?.length ?? 0;
+      const o = j.opportunityWelcomeFieldIds?.length ?? 0;
+      setSeedMsg(
+        o > 0
+          ? `נוצרו/עודכנו ${c} שדות איש קשר (מוביל) ו-${o} שדות הזדמנות (שאלון הצטרפות).`
+          : `נוצרו/עודכנו ${j.fieldIds?.length ?? 0} שדות מוביל.`
+      );
     } catch {
       setSeedMsg("שגיאה");
     }

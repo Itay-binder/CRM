@@ -9,11 +9,17 @@ import { reconcileTasksGoogleCalendar } from "@/lib/googleCalendar/taskSync";
 import { fireServerWebhooks } from "@/lib/webhooks/dispatchServerWebhooks";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 import { normalizeIncomingLabelIds } from "@/lib/labels/repo";
+import { ensureMovingOrdersIntakePipeline } from "@/lib/movingOrders/ensureIntakePipeline";
+import { MOVING_ORDERS_INTAKE_PIPELINE_ID } from "@/lib/movingOrders/pipelineConstants";
+import { statusFromStage } from "@/lib/movingOrders/stageSync";
+
+export type PipelineScope = "opportunity" | "moving_order";
 
 export type PipelineRecord = {
   id: string;
   name: string;
   stages: string[];
+  scope: PipelineScope;
   createdAt: Date | null;
   updatedAt: Date | null;
 };
@@ -68,6 +74,7 @@ export type OpportunityRecord = {
 export type CreatePipelineInput = {
   name: string;
   stages: string[];
+  scope?: PipelineScope;
 };
 
 export type CreateOpportunityInput = {
@@ -143,6 +150,39 @@ function normalizeStages(stages: string[]): string[] {
   return Array.from(new Set(out));
 }
 
+function readPipelineScope(d: Record<string, unknown>): PipelineScope {
+  return d.scope === "moving_order" ? "moving_order" : "opportunity";
+}
+
+function opportunityStagesByPipelineId(
+  docs: Array<{ id: string; data: () => Record<string, unknown> | undefined }>
+): Map<string, string[]> {
+  return new Map(
+    docs
+      .map((doc) => {
+        const d = (doc.data() ?? {}) as Record<string, unknown>;
+        if (readPipelineScope(d) !== "opportunity") return null;
+        return [doc.id, normalizeStages((d.stages as string[] | undefined) ?? [])] as const;
+      })
+      .filter((x): x is readonly [string, string[]] => x !== null)
+  );
+}
+
+export async function getPipelineById(id: string): Promise<PipelineRecord | null> {
+  const db = await getAdminDb();
+  const snap = await db.collection("pipelines").doc(id).get();
+  if (!snap.exists) return null;
+  const d = (snap.data() ?? {}) as Record<string, unknown>;
+  return {
+    id: snap.id,
+    name: String(d.name ?? ""),
+    stages: normalizeStages((d.stages as string[] | undefined) ?? []),
+    scope: readPipelineScope(d),
+    createdAt: mapTs(d.createdAt),
+    updatedAt: mapTs(d.updatedAt),
+  };
+}
+
 /** Pipeline stage name that triggers win automation (note + customer pipeline opportunity). */
 export const WON_PIPELINE_STAGE_LABEL = "זכיה";
 
@@ -161,6 +201,7 @@ export async function ensureCustomersPipeline(): Promise<PipelineRecord> {
     await ref.set({
       name: "לקוחות",
       stages: ["חדש"],
+      scope: "opportunity",
       createdAt: now,
       updatedAt: now,
     });
@@ -171,6 +212,7 @@ export async function ensureCustomersPipeline(): Promise<PipelineRecord> {
     id: again.id,
     name: String(d.name ?? "לקוחות"),
     stages: normalizeStages((d.stages as string[] | undefined) ?? ["חדש"]),
+    scope: readPipelineScope(d),
     createdAt: mapTs(d.createdAt),
     updatedAt: mapTs(d.updatedAt),
   };
@@ -197,6 +239,7 @@ export async function ensureDefaultPipeline(): Promise<PipelineRecord> {
     await ref.set({
       name: "מוקד מכירות",
       stages: ["Pending", "Contacted", "Proposal Sent", "זכיה", "Closed"],
+      scope: "opportunity",
       createdAt: now,
       updatedAt: now,
     });
@@ -220,27 +263,34 @@ export async function ensureDefaultPipeline(): Promise<PipelineRecord> {
     stages: normalizeStages(
       (d.stages as string[] | undefined) ?? ["Pending", "Contacted", "Proposal Sent", "זכיה", "Closed"]
     ),
+    scope: readPipelineScope(d),
     createdAt: mapTs(d.createdAt),
     updatedAt: mapTs(d.updatedAt),
   };
 }
 
-export async function listPipelines(): Promise<PipelineRecord[]> {
-  if (await shouldSeedDefaultPipeline()) {
+export async function listPipelines(scope: PipelineScope = "opportunity"): Promise<PipelineRecord[]> {
+  if (scope === "opportunity" && (await shouldSeedDefaultPipeline())) {
     await ensureDefaultPipeline();
+  }
+  if (scope === "moving_order") {
+    await ensureMovingOrdersIntakePipeline();
   }
   const db = await getAdminDb();
   const snap = await db.collection("pipelines").get();
-  const rows = snap.docs.map((doc) => {
-    const d = (doc.data() ?? {}) as Record<string, unknown>;
-    return {
-      id: doc.id,
-      name: String(d.name ?? ""),
-      stages: normalizeStages((d.stages as string[] | undefined) ?? []),
-      createdAt: mapTs(d.createdAt),
-      updatedAt: mapTs(d.updatedAt),
-    } satisfies PipelineRecord;
-  });
+  const rows = snap.docs
+    .map((doc) => {
+      const d = (doc.data() ?? {}) as Record<string, unknown>;
+      return {
+        id: doc.id,
+        name: String(d.name ?? ""),
+        stages: normalizeStages((d.stages as string[] | undefined) ?? []),
+        scope: readPipelineScope(d),
+        createdAt: mapTs(d.createdAt),
+        updatedAt: mapTs(d.updatedAt),
+      } satisfies PipelineRecord;
+    })
+    .filter((p) => p.scope === scope);
   return rows.sort((a, b) => a.name.localeCompare(b.name, "he"));
 }
 
@@ -252,9 +302,11 @@ export async function createPipeline(input: CreatePipelineInput): Promise<Pipeli
   if (stages.length === 0) throw new Error("At least one stage is required");
 
   const now = FieldValue.serverTimestamp();
+  const scope: PipelineScope = input.scope ?? "opportunity";
   const ref = await db.collection("pipelines").add({
     name,
     stages,
+    scope,
     createdAt: now,
     updatedAt: now,
   });
@@ -264,6 +316,7 @@ export async function createPipeline(input: CreatePipelineInput): Promise<Pipeli
     id: snap.id,
     name: String(d.name ?? name),
     stages: normalizeStages((d.stages as string[] | undefined) ?? stages),
+    scope: readPipelineScope(d),
     createdAt: mapTs(d.createdAt),
     updatedAt: mapTs(d.updatedAt),
   };
@@ -275,12 +328,7 @@ export async function listOpportunities(pipelineId?: string | null): Promise<Opp
   }
   const db = await getAdminDb();
   const pipelinesSnap = await db.collection("pipelines").get();
-  const pipelineStagesById = new Map(
-    pipelinesSnap.docs.map((doc) => {
-      const d = (doc.data() ?? {}) as Record<string, unknown>;
-      return [doc.id, normalizeStages((d.stages as string[] | undefined) ?? [])] as const;
-    })
-  );
+  const pipelineStagesById = opportunityStagesByPipelineId(pipelinesSnap.docs);
   let snap;
   if (pipelineId?.trim()) {
     snap = await db.collection("opportunities").where("pipelineId", "==", pipelineId.trim()).get();
@@ -656,12 +704,7 @@ export async function getOpportunityById(id: string): Promise<OpportunityRecord 
     db.collection("pipelines").get(),
   ]);
   if (!snap.exists) return null;
-  const pipelineStagesById = new Map(
-    pipelinesSnap.docs.map((doc) => {
-      const d = (doc.data() ?? {}) as Record<string, unknown>;
-      return [doc.id, normalizeStages((d.stages as string[] | undefined) ?? [])] as const;
-    })
-  );
+  const pipelineStagesById = opportunityStagesByPipelineId(pipelinesSnap.docs);
   const d = (snap.data() ?? {}) as Record<string, unknown>;
   return {
     id: snap.id,
@@ -1026,6 +1069,7 @@ export async function updatePipeline(
   const snap = await ref.get();
   if (!snap.exists) throw new Error("Pipeline not found");
   const prev = (snap.data() ?? {}) as Record<string, unknown>;
+  const prevScope = readPipelineScope(prev);
   const prevStages = normalizeStages((prev.stages as string[] | undefined) ?? []);
   const nextStages = input.stages ? normalizeStages(input.stages) : undefined;
   const payload: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
@@ -1036,16 +1080,16 @@ export async function updatePipeline(
   }
   await ref.set(payload, { merge: true });
 
-  // If stages were removed, move opportunities from removed stage
+  // If stages were removed, move entities from removed stage
   // to the nearest previous remaining stage (fallback to first stage).
   if (nextStages) {
     const nextSet = new Set(nextStages);
     const removed = prevStages.filter((s) => !nextSet.has(s));
     if (removed.length) {
-      const opportunitiesSnap = await db
-        .collection("opportunities")
-        .where("pipelineId", "==", id)
-        .get();
+      const coll =
+        prevScope === "moving_order"
+          ? await db.collection("movingOrders").where("pipelineId", "==", id).get()
+          : await db.collection("opportunities").where("pipelineId", "==", id).get();
       for (const removedStage of removed) {
         const removedIdx = prevStages.indexOf(removedStage);
         let fallback = nextStages[0];
@@ -1058,14 +1102,17 @@ export async function updatePipeline(
         }
         const batch = db.batch();
         let touched = 0;
-        for (const doc of opportunitiesSnap.docs) {
+        for (const doc of coll.docs) {
           const d = (doc.data() ?? {}) as Record<string, unknown>;
           if (String(d.stage ?? "") === removedStage) {
-            batch.set(
-              doc.ref,
-              { stage: fallback, updatedAt: FieldValue.serverTimestamp() },
-              { merge: true }
-            );
+            const extra: Record<string, unknown> = {
+              stage: fallback,
+              updatedAt: FieldValue.serverTimestamp(),
+            };
+            if (prevScope === "moving_order") {
+              extra.status = statusFromStage(fallback);
+            }
+            batch.set(doc.ref, extra, { merge: true });
             touched++;
           }
         }
@@ -1080,6 +1127,7 @@ export async function updatePipeline(
     id: again.id,
     name: String(d.name ?? ""),
     stages: normalizeStages((d.stages as string[] | undefined) ?? []),
+    scope: readPipelineScope(d),
     createdAt: mapTs(d.createdAt),
     updatedAt: mapTs(d.updatedAt),
   };
@@ -1096,6 +1144,7 @@ export async function duplicatePipeline(id: string): Promise<PipelineRecord> {
   return createPipeline({
     name: `${name} (copy)`,
     stages,
+    scope: readPipelineScope(d),
   });
 }
 
@@ -1113,10 +1162,22 @@ export async function deletePipeline(id: string): Promise<void> {
   if (id === "default-sales" && (await shouldSeedDefaultPipeline())) {
     throw new Error("Default pipeline cannot be deleted");
   }
+  if (id === MOVING_ORDERS_INTAKE_PIPELINE_ID) {
+    throw new Error("Default moving orders pipeline cannot be deleted");
+  }
   const db = await getAdminDb();
-  const snap = await db.collection("opportunities").where("pipelineId", "==", id).limit(1).get();
-  if (!snap.empty) {
-    throw new Error("Cannot delete pipeline with existing opportunities");
+  const pref = await db.collection("pipelines").doc(id).get();
+  const scope = pref.exists ? readPipelineScope((pref.data() ?? {}) as Record<string, unknown>) : "opportunity";
+  if (scope === "moving_order") {
+    const snap = await db.collection("movingOrders").where("pipelineId", "==", id).limit(1).get();
+    if (!snap.empty) {
+      throw new Error("Cannot delete pipeline with existing orders");
+    }
+  } else {
+    const snap = await db.collection("opportunities").where("pipelineId", "==", id).limit(1).get();
+    if (!snap.empty) {
+      throw new Error("Cannot delete pipeline with existing opportunities");
+    }
   }
   await db.collection("pipelines").doc(id).delete();
 }

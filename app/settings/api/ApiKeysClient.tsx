@@ -489,6 +489,21 @@ ${hKey}
 ${hTenant}
   -d '{"provider":"make","externalId":"deal-456","opportunity":{"contactId":"CONTACT_ID","pipelineId":"PIPELINE_ID","stage":"Pending","name":"עסקה"}}'`}
       />
+      <p style={{ margin: "10px 0 0", fontWeight: 700, fontSize: 13 }}>
+        הזמנת הובלה (טננט עם ניהול הזמנות בלבד)
+      </p>
+      <p style={{ margin: "4px 0 0", color: "#4b5563", fontSize: 13, lineHeight: 1.5 }}>
+        <strong>POST</strong> <code dir="ltr">/api/ingest/moving-order</code> או{" "}
+        <code dir="ltr">/api/ingest/order</code> — גוף: מערך אובייקטים או אובייקט עם{" "}
+        <code dir="ltr">order_id</code>.
+      </p>
+      <CodeBlock
+        text={`curl -X POST "${base}/api/ingest/order" \\
+${hJson}
+${hKey}
+${hTenant}
+  -d '[{"order_id":"demo-1","name":"דוגמה","phone":"0500000000","pickup":"א","dropoff":"ב","date":"2026-03-31"}]'`}
+      />
 
       {sectionTitle("6", "נתיב חלופי לליד")}
       <p style={{ margin: 0, color: "#4b5563", fontSize: 14, lineHeight: 1.55 }}>

@@ -3,7 +3,7 @@ import { requireApprovedUser } from "@/lib/auth/guard";
 import {
   deletePipeline,
   duplicatePipeline,
-  listPipelines,
+  getPipelineById,
   updatePipeline,
 } from "@/lib/opportunities/repo";
 
@@ -23,7 +23,7 @@ export async function GET(
     );
   }
   const { id } = await params;
-  const pipeline = (await listPipelines()).find((p) => p.id === id);
+  const pipeline = await getPipelineById(id);
   if (!pipeline) {
     return NextResponse.json(
       { ok: false, error: "Pipeline not found" } satisfies ApiErr,

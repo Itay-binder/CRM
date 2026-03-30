@@ -3,6 +3,7 @@ import { requireApprovedUser } from "@/lib/auth/guard";
 import { getLeadById } from "@/lib/leads/repo";
 import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
 import { getMovingOrder, updateMovingOrder } from "@/lib/movingOrders/repo";
+import { MOVING_ORDER_STAGES } from "@/lib/movingOrders/pipelineConstants";
 import type { MovingOrderRecord } from "@/lib/movingOrders/types";
 import { postWebhookForEvent } from "@/lib/webhooks/dispatchServerWebhooks";
 
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const dispatchedAt = new Date().toISOString();
   const updated = await updateMovingOrder(
     id,
-    { status: "dispatched", dispatchedAt },
+    { stage: MOVING_ORDER_STAGES[1], dispatchedAt },
     g.db
   );
 

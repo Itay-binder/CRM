@@ -40,6 +40,9 @@ export type MovingOrderPayload = {
 export type MovingOrderRecord = {
   id: string;
   orderId: string;
+  pipelineId: string;
+  stage: string;
+  customValues?: Record<string, unknown>;
   status: MovingOrderStatus;
   payload: MovingOrderPayload;
   /** מובילים שעומדים בכל התנאים */

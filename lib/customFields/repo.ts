@@ -1,7 +1,7 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
 
-export type CustomFieldEntity = "contact" | "opportunity";
+export type CustomFieldEntity = "contact" | "opportunity" | "moving_order";
 export type CustomFieldType =
   | "text"
   | "number"
@@ -55,7 +55,7 @@ function normalizeFieldId(raw: string): string {
 
 function ensureEntityPrefixedFieldId(entityType: CustomFieldEntity, raw: string): string {
   const normalized = normalizeFieldId(raw);
-  const base = normalized.replace(/^(contact|opportunity|opportiunity)_+/g, "");
+  const base = normalized.replace(/^(contact|opportunity|opportiunity|moving_order)_+/g, "");
   if (!base) return "";
   return `${entityType}_${base}`;
 }

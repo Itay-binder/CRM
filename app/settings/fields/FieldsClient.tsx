@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-type EntityType = "contact" | "opportunity";
+type EntityType = "contact" | "opportunity" | "moving_order";
 type FieldType =
   | "text"
   | "number"
@@ -73,6 +73,36 @@ const OPPORTUNITY_SYSTEM_FIELDS: SystemField[] = [
   { kind: "system", entityType: "opportunity", label: "תאריך יצירה", fieldId: "opportunity_created_at", type: "readonly", isRequired: false, isActive: true },
   { kind: "system", entityType: "opportunity", label: "תאריך עדכון", fieldId: "opportunity_updated_at", type: "readonly", isRequired: false, isActive: true },
   { kind: "system", entityType: "opportunity", label: "תאריך ליד אחרון", fieldId: "opportunity_last_lead_at", type: "readonly", isRequired: false, isActive: true },
+];
+
+const MOVING_ORDER_SYSTEM_FIELDS: SystemField[] = [
+  {
+    kind: "system",
+    entityType: "moving_order",
+    label: "מזהה הזמנה (מסמך)",
+    fieldId: "moving_order_doc_order_id",
+    type: "readonly",
+    isRequired: false,
+    isActive: true,
+  },
+  {
+    kind: "system",
+    entityType: "moving_order",
+    label: "פייפליין הזמנה",
+    fieldId: "moving_order_pipeline_id_sys",
+    type: "readonly",
+    isRequired: false,
+    isActive: true,
+  },
+  {
+    kind: "system",
+    entityType: "moving_order",
+    label: "שלב נוכחי",
+    fieldId: "moving_order_stage_sys",
+    type: "readonly",
+    isRequired: false,
+    isActive: true,
+  },
 ];
 
 const LABEL_SWATCHES = [
@@ -323,17 +353,18 @@ export default function FieldsClient() {
     setLoading(true);
     setErr(null);
     try {
-      const [res, pRes] = await Promise.all([
+      const [res, pRes, mRes] = await Promise.all([
         fetch(`/api/custom-fields`, { credentials: "include", cache: "no-store" }),
         fetch(`/api/opportunities/pipelines`, { credentials: "include", cache: "no-store" }),
+        fetch(`/api/opportunities/pipelines?scope=moving_order`, { credentials: "include", cache: "no-store" }),
       ]);
-      if (res.status === 401 || pRes.status === 401) {
+      if (res.status === 401 || pRes.status === 401 || mRes.status === 401) {
         window.location.href = `/login?returnTo=${encodeURIComponent(
           "/settings/fields"
         )}`;
         return;
       }
-      if (res.status === 403 || pRes.status === 403) {
+      if (res.status === 403 || pRes.status === 403 || mRes.status === 403) {
         window.location.href = `/pending?returnTo=${encodeURIComponent(
           "/settings/fields"
         )}`;
@@ -343,9 +374,22 @@ export default function FieldsClient() {
         ok?: boolean;
         pipelines?: Array<{ id: string; name: string }>;
       };
-      if (pJson.ok && Array.isArray(pJson.pipelines)) {
-        setPipelines(pJson.pipelines.map((x) => ({ id: x.id, name: x.name })));
+      const mJson = (await mRes.json().catch(() => ({}))) as {
+        ok?: boolean;
+        pipelines?: Array<{ id: string; name: string }>;
+      };
+      const merged: PipelineOpt[] = [];
+      const seen = new Set<string>();
+      for (const list of [
+        ...(pJson.ok && pJson.pipelines ? pJson.pipelines : []),
+        ...(mJson.ok && mJson.pipelines ? mJson.pipelines : []),
+      ]) {
+        if (!seen.has(list.id)) {
+          seen.add(list.id);
+          merged.push({ id: list.id, name: list.name });
+        }
       }
+      if (merged.length) setPipelines(merged);
       const j = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         error?: string;
@@ -473,7 +517,11 @@ export default function FieldsClient() {
     setPipelinePick((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
-  const systemRows: SystemField[] = [...CONTACT_SYSTEM_FIELDS, ...OPPORTUNITY_SYSTEM_FIELDS];
+  const systemRows: SystemField[] = [
+    ...CONTACT_SYSTEM_FIELDS,
+    ...OPPORTUNITY_SYSTEM_FIELDS,
+    ...MOVING_ORDER_SYSTEM_FIELDS,
+  ];
   const filteredSystemRows = systemRows.filter((f) => scope === "all" || f.entityType === scope);
   const filteredCustomRows = rows.filter((f) => scope === "all" || f.entityType === scope);
 
@@ -505,6 +553,7 @@ export default function FieldsClient() {
           >
             <option value="contact">Contact</option>
             <option value="opportunity">Opportunity</option>
+            <option value="moving_order">הזמנות הובלה</option>
           </select>
         </div>
 
@@ -722,6 +771,7 @@ export default function FieldsClient() {
             { id: "all", label: "כל השדות" },
             { id: "contact", label: "תיקיית אנשי קשר" },
             { id: "opportunity", label: "תיקיית הזדמנויות" },
+            { id: "moving_order", label: "תיקיית הזמנות הובלה" },
           ] as Array<{ id: FieldScope; label: string }>).map((f) => (
             <button
               key={f.id}

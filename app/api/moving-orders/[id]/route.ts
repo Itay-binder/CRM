@@ -47,6 +47,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     patch.manualDriverIds = body.manualDriverIds.map((x) => String(x));
   }
 
+  if (typeof body.stage === "string" && body.stage.trim()) {
+    patch.stage = body.stage.trim();
+  }
+
+  if (typeof body.pipelineId === "string" && body.pipelineId.trim()) {
+    patch.pipelineId = body.pipelineId.trim();
+  }
+
+  if (body.customValues && typeof body.customValues === "object" && !Array.isArray(body.customValues)) {
+    patch.customValues = body.customValues as Record<string, unknown>;
+  }
+
+  if (typeof body.dispatchedAt === "string" || body.dispatchedAt === null) {
+    patch.dispatchedAt = body.dispatchedAt as string | null;
+  }
+
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ ok: false, error: "אין שדות לעדכון" }, { status: 400 });
   }

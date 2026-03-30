@@ -2,8 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { WhatsAppIconLink } from "@/app/components/InlineFieldShell";
+import OrdersBoardTab from "@/app/orders/OrdersBoardTab";
+import OrdersPipelinesTab from "@/app/orders/OrdersPipelinesTab";
 import type { DriverSummary } from "@/lib/movingOrders/types";
 import type { MovingOrderRecord, MovingOrderStatus } from "@/lib/movingOrders/types";
+
+type TabId = "match" | "board" | "pipelines";
 
 type ApiListOk = {
   ok: true;
@@ -29,11 +33,13 @@ function statusLabel(s: MovingOrderStatus): string {
 }
 
 export default function OrdersClient() {
+  const [tab, setTab] = useState<TabId>("match");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [orders, setOrders] = useState<MovingOrderRecord[]>([]);
   const [drivers, setDrivers] = useState<Record<string, DriverSummary>>({});
   const [seedMsg, setSeedMsg] = useState<string | null>(null);
+  const [orderSeedMsg, setOrderSeedMsg] = useState<string | null>(null);
   const [dispatching, setDispatching] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -59,7 +65,7 @@ export default function OrdersClient() {
     void load();
   }, [load]);
 
-  async function seedFields() {
+  async function seedMoverFields() {
     setSeedMsg(null);
     try {
       const res = await fetch("/api/moving-orders/seed-fields", {
@@ -77,6 +83,24 @@ export default function OrdersClient() {
     }
   }
 
+  async function seedOrderFields() {
+    setOrderSeedMsg(null);
+    try {
+      const res = await fetch("/api/moving-orders/seed-order-fields", {
+        method: "POST",
+        credentials: "include",
+      });
+      const j = (await res.json()) as { ok?: boolean; error?: string; fieldIds?: string[] };
+      if (!res.ok || !j.ok) {
+        setOrderSeedMsg(j.error ?? "נכשל");
+        return;
+      }
+      setOrderSeedMsg(`נוצרו/עודכנו ${j.fieldIds?.length ?? 0} שדות הזמנה.`);
+    } catch {
+      setOrderSeedMsg("שגיאה");
+    }
+  }
+
   function isChecked(order: MovingOrderRecord, leadId: string): boolean {
     return !order.excludedDriverIds.includes(leadId);
   }
@@ -86,9 +110,7 @@ export default function OrdersClient() {
     if (checked) ex.delete(leadId);
     else ex.add(leadId);
     const excludedDriverIds = [...ex];
-    setOrders((prev) =>
-      prev.map((o) => (o.id === order.id ? { ...o, excludedDriverIds } : o))
-    );
+    setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, excludedDriverIds } : o)));
     try {
       const res = await fetch(`/api/moving-orders/${encodeURIComponent(order.id)}`, {
         method: "PATCH",
@@ -193,69 +215,118 @@ export default function OrdersClient() {
     [orders]
   );
 
-  if (loading) {
-    return <div style={{ padding: 24 }}>טוען…</div>;
-  }
+  const tabBtn = (id: TabId, label: string) => (
+    <button
+      key={id}
+      type="button"
+      onClick={() => setTab(id)}
+      style={{
+        padding: "10px 16px",
+        borderRadius: 999,
+        border: tab === id ? "2px solid #6d28d9" : "1px solid #e5e7eb",
+        background: tab === id ? "#f5f3ff" : "#fff",
+        fontWeight: 800,
+        cursor: "pointer",
+        fontSize: 14,
+      }}
+    >
+      {label}
+    </button>
+  );
 
   return (
-    <div style={{ maxWidth: 980 }}>
+    <div style={{ maxWidth: 1200 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         <div>
           <h1 style={{ margin: "0 0 6px", fontSize: 26 }}>ניהול הזמנות</h1>
           <p style={{ margin: 0, color: "#4b5563", fontSize: 14, lineHeight: 1.5 }}>
-            כרטיסיות נוצרות מ־webhook לכתובת{" "}
-            <code style={{ background: "#f3f4f6", padding: "2px 6px", borderRadius: 6 }}>/api/ingest/moving-order</code>{" "}
-            (מפתח API + כותרת <code style={{ background: "#f3f4f6", padding: "2px 6px", borderRadius: 6 }}>x-crm-tenant</code>
-            ).
+            קליטה דרך{" "}
+            <code style={{ background: "#f3f4f6", padding: "2px 6px", borderRadius: 6 }}>/api/ingest/moving-order</code>
+            או{" "}
+            <code style={{ background: "#f3f4f6", padding: "2px 6px", borderRadius: 6 }}>/api/ingest/order</code>
+            {" "}— מפתח API + כותרת{" "}
+            <code style={{ background: "#f3f4f6", padding: "2px 6px", borderRadius: 6 }}>x-crm-tenant</code>.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void seedFields()}
-          style={{
-            padding: "10px 14px",
-            borderRadius: 10,
-            border: "1px solid #d1d5db",
-            background: "#fff",
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
-          התקן שדות מובילים (פייפליין לקוחות משלמים)
-        </button>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => void seedOrderFields()}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "1px solid #c4b5fd",
+              background: "#f5f3ff",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            שדות הזמנה (קליטת הזמנות)
+          </button>
+          <button
+            type="button"
+            onClick={() => void seedMoverFields()}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "1px solid #d1d5db",
+              background: "#fff",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            שדות מובילים (לקוחות משלמים)
+          </button>
+        </div>
       </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 18, marginBottom: 16 }}>
+        {tabBtn("match", "התאמת הזמנה")}
+        {tabBtn("board", "הזמנות")}
+        {tabBtn("pipelines", "פייפליינים")}
+      </div>
+
       {err ? (
         <div style={{ marginTop: 16, padding: 12, borderRadius: 10, background: "#fef2f2", color: "#991b1b" }}>{err}</div>
       ) : null}
-      {seedMsg ? (
-        <div style={{ marginTop: 12, fontSize: 14, color: "#374151" }}>{seedMsg}</div>
-      ) : null}
+      {seedMsg ? <div style={{ marginTop: 8, fontSize: 14, color: "#374151" }}>{seedMsg}</div> : null}
+      {orderSeedMsg ? <div style={{ marginTop: 8, fontSize: 14, color: "#374151" }}>{orderSeedMsg}</div> : null}
 
-      <div style={{ display: "grid", gap: 16, marginTop: 22 }}>
-        {sorted.length === 0 ? (
-          <div style={{ padding: 20, background: "#fff", borderRadius: 14, border: "1px solid #e5e7eb" }}>
-            אין הזמנות עדיין.
+      {tab === "pipelines" ? <OrdersPipelinesTab /> : null}
+      {tab === "board" ? <OrdersBoardTab /> : null}
+
+      {tab === "match" ? (
+        loading ? (
+          <div style={{ padding: 24 }}>טוען…</div>
+        ) : (
+          <div style={{ display: "grid", gap: 16, marginTop: 22 }}>
+            {sorted.length === 0 ? (
+              <div style={{ padding: 20, background: "#fff", borderRadius: 14, border: "1px solid #e5e7eb" }}>
+                אין הזמנות עדיין.
+              </div>
+            ) : null}
+            {sorted.map((order) => (
+              <OrderCard
+                key={order.id}
+                order={order}
+                drivers={drivers}
+                dispatching={dispatching === order.id}
+                isChecked={(id) => isChecked(order, id)}
+                onToggleCheck={(id, c) => void setExcluded(order, id, c)}
+                onDispatch={() => void dispatch(order)}
+                onCancel={() => {
+                  if (window.confirm("לבטל את ההזמנה?")) void patchStatus(order, "cancelled");
+                }}
+                onComplete={() => {
+                  if (window.confirm("לסמן את ההזמנה כבוצעה?")) void patchStatus(order, "completed");
+                }}
+                onAddManual={(cid) => void addManualDriver(order, cid)}
+                statusLabel={statusLabel}
+              />
+            ))}
           </div>
-        ) : null}
-        {sorted.map((order) => (
-          <OrderCard
-            key={order.id}
-            order={order}
-            drivers={drivers}
-            dispatching={dispatching === order.id}
-            isChecked={(id) => isChecked(order, id)}
-            onToggleCheck={(id, c) => void setExcluded(order, id, c)}
-            onDispatch={() => void dispatch(order)}
-            onCancel={() => {
-              if (window.confirm("לבטל את ההזמנה?")) void patchStatus(order, "cancelled");
-            }}
-            onComplete={() => {
-              if (window.confirm("לסמן את ההזמנה כבוצעה?")) void patchStatus(order, "completed");
-            }}
-            onAddManual={(cid) => void addManualDriver(order, cid)}
-          />
-        ))}
-      </div>
+        )
+      ) : null}
     </div>
   );
 }
@@ -270,6 +341,7 @@ function OrderCard({
   onCancel,
   onComplete,
   onAddManual,
+  statusLabel,
 }: {
   order: MovingOrderRecord;
   drivers: Record<string, DriverSummary>;
@@ -280,6 +352,7 @@ function OrderCard({
   onCancel: () => void;
   onComplete: () => void;
   onAddManual: (contact: { id: string; name: string; phone: string; email: string }) => void;
+  statusLabel: (s: MovingOrderStatus) => string;
 }) {
   const [pickerQ, setPickerQ] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -333,6 +406,9 @@ function OrderCard({
         <strong>תאריך:</strong> {p.date ?? "—"}
       </div>
       <div style={{ fontSize: 14, color: "#374151", marginBottom: 4 }}>
+        <strong>שלב בפייפליין:</strong> {order.stage ?? "—"}
+      </div>
+      <div style={{ fontSize: 14, color: "#374151", marginBottom: 4 }}>
         <strong>סטטוס:</strong> {statusLabel(order.status)}
         {order.dispatchedAt ? (
           <span style={{ color: "#6b7280", fontWeight: 400 }}> · נשלח webhook ב־{order.dispatchedAt.slice(0, 16).replace("T", " ")}</span>
@@ -359,7 +435,7 @@ function OrderCard({
         ) : null}
       </div>
 
-      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>מובילים מתאימים</div>
+      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>מובילים מתאימים (תשתית — הסינון יורחב)</div>
       <ul style={{ listStyle: "none", padding: 0, margin: "0 0 12px", display: "grid", gap: 6 }}>
         {order.matchedDriverIds.map((id) => {
           const driverPhone = drivers[id]?.phone?.trim();
@@ -537,8 +613,11 @@ function OrderCard({
 }
 
 function cardTitle(order: MovingOrderRecord): string {
+  const cv = order.customValues ?? {};
+  const fromCv = cv.moving_order_name ?? cv.moving_order_items_text;
+  if (typeof fromCv === "string" && fromCv.trim()) return fromCv.trim().slice(0, 80);
   const p = order.payload;
-  const parts = [p.items_list?.trim(), p.move_type?.trim(), p.name?.trim()].filter(Boolean);
+  const parts = [p.items_text?.trim(), p.move_type?.trim(), p.name?.trim()].filter(Boolean);
   if (parts.length) return parts[0] as string;
   return p.order_id || order.id;
 }

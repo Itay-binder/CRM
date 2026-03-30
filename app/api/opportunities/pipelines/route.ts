@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
-import { createPipeline, listPipelines } from "@/lib/opportunities/repo";
+import {
+  createPipeline,
+  listPipelines,
+  type PipelineScope,
+} from "@/lib/opportunities/repo";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -17,7 +21,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const pipelines = await listPipelines();
+    const scopeQ = req.nextUrl.searchParams.get("scope");
+    const scope: PipelineScope =
+      scopeQ === "moving_order" ? "moving_order" : "opportunity";
+    const pipelines = await listPipelines(scope);
     return NextResponse.json({ ok: true, pipelines });
   } catch (e) {
     return NextResponse.json(
@@ -37,10 +44,15 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = (await req.json()) as { name?: string; stages?: string[] };
+    const body = (await req.json()) as {
+      name?: string;
+      stages?: string[];
+      scope?: PipelineScope;
+    };
     const created = await createPipeline({
       name: body.name ?? "",
       stages: Array.isArray(body.stages) ? body.stages : [],
+      scope: body.scope === "moving_order" ? "moving_order" : "opportunity",
     });
     return NextResponse.json({ ok: true, pipeline: created });
   } catch (e) {

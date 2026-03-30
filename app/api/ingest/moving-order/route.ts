@@ -3,6 +3,7 @@ import { getTenantByDatabaseId } from "@/lib/tenant/config";
 import { getRequestTenantDatabaseId } from "@/lib/firebase/admin";
 import { isMovingOrdersTenant } from "@/lib/tenant/movingOrders";
 import { isValidIngestApiKeyAsync } from "@/lib/ingest/apiKey";
+import { normalizePayloadForStorage } from "@/lib/movingOrders/customValuesFromPayload";
 import { upsertMovingOrderFromIngest } from "@/lib/movingOrders/repo";
 import type { MovingOrderPayload } from "@/lib/movingOrders/types";
 
@@ -64,7 +65,8 @@ export async function POST(req: NextRequest) {
 
   const out: Array<{ id: string; order_id: string }> = [];
   try {
-    for (const payload of items) {
+    for (const raw of items) {
+      const payload = normalizePayloadForStorage(raw as Record<string, unknown>);
       const rec = await upsertMovingOrderFromIngest(payload);
       out.push({ id: rec.id, order_id: rec.orderId });
     }

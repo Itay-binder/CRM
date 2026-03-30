@@ -20,7 +20,8 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const orders = await listMovingOrders(g.db);
+    const pipelineId = req.nextUrl.searchParams.get("pipelineId")?.trim() || undefined;
+    const orders = await listMovingOrders({ pipelineId: pipelineId ?? null, db: g.db });
     const idSet = new Set<string>();
     for (const o of orders) {
       for (const id of o.matchedDriverIds) idSet.add(id);

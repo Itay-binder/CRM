@@ -15,6 +15,8 @@ export type UnifiedTask = {
   entityType: "contact" | "opportunity";
   entityId: string;
   entityName: string;
+  /** טלפון איש קשר (לחיוג מהיר) */
+  entityPhone?: string;
   createdAt: string;
   /** "__contact__" for contact tasks, else opportunity pipeline id */
   pipelineId: string;
@@ -95,6 +97,7 @@ export async function listUnifiedTasks(): Promise<UnifiedTask[]> {
           (typeof d.name === "string" && d.name) ||
           (typeof d.email === "string" && d.email) ||
           doc.id,
+        entityPhone: typeof d.phone === "string" ? d.phone : undefined,
       });
     }
   }
@@ -232,6 +235,14 @@ export async function updateTaskAndSync(
 
   let pipelineId = "__contact__";
   let pipelineName = "אנשי קשר";
+  let entityPhone: string | undefined =
+    input.entityType === "contact"
+      ? typeof data.phone === "string"
+        ? data.phone
+        : undefined
+      : (typeof data.contactPhone === "string" && data.contactPhone.trim()) ||
+        (typeof data.phone === "string" && data.phone.trim()) ||
+        undefined;
   if (input.entityType === "opportunity") {
     pipelineId = String(data.pipelineId ?? "").trim() || "__unknown_pipeline__";
     const pSnap = await db.collection("pipelines").doc(pipelineId).get();
@@ -246,6 +257,7 @@ export async function updateTaskAndSync(
     entityType: input.entityType,
     entityId: input.entityId,
     entityName,
+    entityPhone,
     pipelineId,
     pipelineName,
   };

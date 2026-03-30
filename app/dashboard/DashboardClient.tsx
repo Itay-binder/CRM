@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import CheckoutPagesManager from "@/app/components/CheckoutPagesManager";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
+import { formatIsraelYmdUtc, israelTodayAndTomorrowKeys, parseTaskInstant } from "@/lib/datetime/taskTimestamps";
 
 type MetricsOk = {
   ok: true;
@@ -18,8 +19,10 @@ type TaskRow = {
   dueAt: string;
   status: "todo" | "in_progress" | "done";
   entityType: "contact" | "opportunity";
+  entityId: string;
   entityName: string;
   assignedRep?: string;
+  entityPhone?: string;
 };
 
 type WidgetId = "kpi_total" | "stages" | "tasks" | "checkout";
@@ -29,7 +32,7 @@ const DASHBOARD_WIDGETS_KEY = "crm:dashboard:widgets";
 const DEFAULT_WIDGETS: WidgetConfig[] = [
   { id: "kpi_total", title: "סה\"כ לידים", visible: true },
   { id: "stages", title: "לידים לפי סטטוס", visible: true },
-  { id: "tasks", title: "משימות", visible: true },
+  { id: "tasks", title: "משימות (היום · מחר · באיחור)", visible: true },
   { id: "checkout", title: "דפי סליקה", visible: true },
 ];
 
@@ -147,9 +150,38 @@ export default function DashboardClient() {
     });
   }
 
-  const sortedTasks = [...tasks].sort((a, b) =>
-    String(a.dueAt ?? "").localeCompare(String(b.dueAt ?? ""), "he")
-  );
+  const dashboardTasksFiltered = useMemo(() => {
+    const { today, tomorrow } = israelTodayAndTomorrowKeys();
+    return tasks
+      .filter((t) => {
+        if (t.status === "done") return false;
+        if (!t.dueAt?.trim()) return false;
+        const du = parseTaskInstant(t.dueAt);
+        if (!du) return false;
+        const ymd = formatIsraelYmdUtc(du);
+        if (ymd < today) return true;
+        if (ymd === today || ymd === tomorrow) return true;
+        return false;
+      })
+      .sort((a, b) => {
+        const ta = parseTaskInstant(a.dueAt)?.getTime() ?? 0;
+        const tb = parseTaskInstant(b.dueAt)?.getTime() ?? 0;
+        return ta - tb;
+      });
+  }, [tasks]);
+
+  function taskEntityHref(t: TaskRow) {
+    return t.entityType === "contact"
+      ? `/contacts?openContactId=${encodeURIComponent(t.entityId)}`
+      : `/pipeline?openOpportunityId=${encodeURIComponent(t.entityId)}`;
+  }
+
+  function dashboardTaskOverdue(t: TaskRow): boolean {
+    if (t.status === "done") return false;
+    const du = parseTaskInstant(t.dueAt);
+    if (!du) return false;
+    return du.getTime() < Date.now();
+  }
 
   function renderWidget(id: WidgetId) {
     if (id === "kpi_total") {
@@ -188,12 +220,19 @@ export default function DashboardClient() {
     if (id === "tasks") {
       return (
         <div key={id} style={{ marginTop: 16, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, overflow: "hidden" }}>
-          <div style={{ padding: "12px 14px", borderBottom: "1px solid #f3f4f6", fontWeight: 900 }}>משימות</div>
+          <div style={{ padding: "12px 14px", borderBottom: "1px solid #f3f4f6", fontWeight: 900 }}>
+            משימות — היום, מחר ובאיחור
+            <div style={{ marginTop: 4, fontSize: 12, fontWeight: 600, color: "#6b7280" }}>
+              <a href="/tasks" style={{ color: "#5b21b6" }}>
+                לכל המשימות
+              </a>
+            </div>
+          </div>
           <div style={{ overflowX: "auto", maxWidth: "100%" }}>
-            <table style={{ width: "100%", minWidth: 760, borderCollapse: "collapse" }}>
+            <table style={{ width: "100%", minWidth: 800, borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  {["כותרת", "סטטוס", "קשור ל", "אחראי", "Due"].map((h) => (
+                  {["כותרת", "סטטוס", "קשור ל", "פלאפון", "אחראי", "דדליין"].map((h) => (
                     <th key={h} style={{ textAlign: "right", padding: "10px 12px", borderBottom: "2px solid #e5e7eb", background: "#f8fafc", fontSize: 12, fontWeight: 900 }}>
                       {h}
                     </th>
@@ -201,21 +240,45 @@ export default function DashboardClient() {
                 </tr>
               </thead>
               <tbody>
-                {sortedTasks.slice(0, 20).map((t) => (
-                  <tr key={`${t.entityType}-${t.id}-${t.title}`}>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{t.title}</td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{t.status}</td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{t.entityType === "contact" ? "איש קשר" : "הזדמנות"} · {t.entityName}</td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>{t.assignedRep ?? "-"}</td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6" }}>
-                      {t.dueAt ? formatIsraelDateTime(t.dueAt) : "-"}
-                    </td>
-                  </tr>
-                ))}
-                {!loading && sortedTasks.length === 0 && (
+                {dashboardTasksFiltered.slice(0, 40).map((t) => {
+                  const overdue = dashboardTaskOverdue(t);
+                  const phone = t.entityPhone?.replace(/[^\d+]/g, "").trim();
+                  return (
+                    <tr
+                      key={`${t.entityType}-${t.entityId}-${t.id}`}
+                      style={{
+                        borderBottom: "1px solid #f3f4f6",
+                        background: overdue ? "rgba(254, 242, 242, 0.65)" : undefined,
+                        boxShadow: overdue ? "inset 3px 0 0 #f87171" : undefined,
+                      }}
+                    >
+                      <td style={{ padding: "10px 12px" }}>{t.title}</td>
+                      <td style={{ padding: "10px 12px" }}>{t.status}</td>
+                      <td style={{ padding: "10px 12px" }}>
+                        <a href={taskEntityHref(t)} style={{ color: "#4c1d95", fontWeight: 700 }}>
+                          {t.entityType === "contact" ? "איש קשר" : "הזדמנות"} · {t.entityName}
+                        </a>
+                      </td>
+                      <td style={{ padding: "10px 12px" }}>
+                        {phone ? (
+                          <a href={`tel:${phone}`} style={{ color: "#2563eb", fontWeight: 700 }}>
+                            {t.entityPhone}
+                          </a>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td style={{ padding: "10px 12px" }}>{t.assignedRep ?? "—"}</td>
+                      <td style={{ padding: "10px 12px", fontWeight: overdue ? 800 : 600, color: overdue ? "#b91c1c" : undefined }}>
+                        {t.dueAt ? formatIsraelDateTime(t.dueAt) : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {!loading && dashboardTasksFiltered.length === 0 && (
                   <tr>
-                    <td colSpan={5} style={{ padding: 12, color: "#6b7280", fontWeight: 700 }}>
-                      אין משימות להצגה.
+                    <td colSpan={6} style={{ padding: 12, color: "#6b7280", fontWeight: 700 }}>
+                      אין משימות פתוחות עם דדליין היום, מחר או שעברו.
                     </td>
                   </tr>
                 )}

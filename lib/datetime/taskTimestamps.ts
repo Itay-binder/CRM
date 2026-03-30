@@ -1,3 +1,4 @@
+import { addDays } from "date-fns";
 import { TZDate } from "@date-fns/tz";
 
 /** שעון ישראל לכל ערכי datetime-local ולמחרוזות תאריך בלי אזור (במערכת CRM זו). */
@@ -67,4 +68,23 @@ export function utcIsoToJerusalemDatetimeLocal(iso: string): string {
   const z = new TZDate(d, CRM_TASK_TIMEZONE);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${z.getFullYear()}-${pad(z.getMonth() + 1)}-${pad(z.getDate())}T${pad(z.getHours())}:${pad(z.getMinutes())}`;
+}
+
+/** YYYY-MM-DD לפי לוח שנה בישראל */
+export function formatIsraelYmdUtc(instant: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: CRM_TASK_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(instant);
+}
+
+export function israelTodayAndTomorrowKeys(now = new Date()): { today: string; tomorrow: string } {
+  const today = formatIsraelYmdUtc(now);
+  const z = new TZDate(now.getTime(), CRM_TASK_TIMEZONE);
+  const next = addDays(z, 1);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const tomorrow = `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())}`;
+  return { today, tomorrow };
 }

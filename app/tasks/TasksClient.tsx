@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useState, type DragEvent } from "react";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
+import { InlineFieldShell } from "@/app/components/InlineFieldShell";
 import {
   naiveLocalInputToStoredIso,
+  parseTaskInstant,
   utcIsoToJerusalemDatetimeLocal,
 } from "@/lib/datetime/taskTimestamps";
 
@@ -21,6 +23,7 @@ type Task = {
   entityType: "contact" | "opportunity";
   entityId: string;
   entityName: string;
+  entityPhone?: string;
   createdAt: string;
   pipelineId: string;
   pipelineName: string;
@@ -50,6 +53,45 @@ function entityHref(t: Task): string {
     : `/pipeline?openOpportunityId=${encodeURIComponent(t.entityId)}`;
 }
 
+function taskRowKey(t: Task): string {
+  return `${t.entityType}|${t.entityId}|${t.id}`;
+}
+
+type TableSortKey =
+  | "title"
+  | "status"
+  | "dueAt"
+  | "reminderAt"
+  | "entityPhone"
+  | "createdAt"
+  | "pipelineName"
+  | "entityName";
+
+function compareTasksForSort(a: Task, b: Task, key: TableSortKey, dir: "asc" | "desc"): number {
+  const sign = dir === "asc" ? 1 : -1;
+  const ttime = (raw: string | undefined) => parseTaskInstant(raw)?.getTime() ?? 0;
+  switch (key) {
+    case "dueAt":
+      return sign * (ttime(a.dueAt) - ttime(b.dueAt));
+    case "reminderAt":
+      return sign * (ttime(a.reminderAt) - ttime(b.reminderAt));
+    case "createdAt":
+      return sign * (ttime(a.createdAt) - ttime(b.createdAt));
+    default: {
+      const va = String((a as Record<string, unknown>)[key] ?? "");
+      const vb = String((b as Record<string, unknown>)[key] ?? "");
+      return sign * va.localeCompare(vb, "he");
+    }
+  }
+}
+
+function taskDeadlinePassed(t: Task): boolean {
+  if (t.status === "done") return false;
+  const du = parseTaskInstant(t.dueAt);
+  if (!du) return false;
+  return du.getTime() < Date.now();
+}
+
 export default function TasksClient() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -60,6 +102,13 @@ export default function TasksClient() {
   const [dueLocal, setDueLocal] = useState("");
   const [reminderLocal, setReminderLocal] = useState("");
   const [commentText, setCommentText] = useState("");
+  const [tableSortKey, setTableSortKey] = useState<TableSortKey>("createdAt");
+  const [tableSortDir, setTableSortDir] = useState<"asc" | "desc">("desc");
+  const [inlineEdit, setInlineEdit] = useState<{
+    key: string;
+    field: "title" | "status" | "dueAt" | "reminderAt";
+    draft: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!active) {
@@ -119,6 +168,51 @@ export default function TasksClient() {
     };
   }, [tasks]);
 
+  const tableRowsSorted = useMemo(() => {
+    const copy = [...tasks];
+    copy.sort((a, b) => compareTasksForSort(a, b, tableSortKey, tableSortDir));
+    return copy;
+  }, [tasks, tableSortKey, tableSortDir]);
+
+  function onTableSortClick(key: TableSortKey) {
+    if (tableSortKey === key) {
+      setTableSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setTableSortKey(key);
+      const alpha =
+        key === "title" ||
+        key === "entityName" ||
+        key === "pipelineName" ||
+        key === "entityPhone" ||
+        key === "status";
+      setTableSortDir(alpha ? "asc" : "desc");
+    }
+  }
+
+  function sortIndicator(key: TableSortKey): string {
+    if (tableSortKey !== key) return "";
+    return tableSortDir === "asc" ? " ▲" : " ▼";
+  }
+
+  async function commitInlineEditIfNeeded(t: Task) {
+    if (!inlineEdit || inlineEdit.key !== taskRowKey(t)) return;
+    const field = inlineEdit.field;
+    const d = inlineEdit.draft.trim();
+    let ok = false;
+    if (field === "title") {
+      if (!d) {
+        setInlineEdit(null);
+        return;
+      }
+      ok = await patchTask(t, { title: d });
+    } else if (field === "dueAt") {
+      ok = await patchTask(t, { dueAt: d ? fromLocalInput(d) : "" });
+    } else if (field === "reminderAt") {
+      ok = await patchTask(t, { reminderAt: d ? fromLocalInput(d) : "" });
+    }
+    if (ok) setInlineEdit(null);
+  }
+
   const pipelineSections = useMemo(() => {
     const seen = new Map<string, string>();
     for (const t of tasks) {
@@ -150,7 +244,7 @@ export default function TasksClient() {
       reminderAt?: string;
       commentText?: string;
     }
-  ) {
+  ): Promise<boolean> {
     const res = await fetch("/api/tasks", {
       method: "PATCH",
       credentials: "include",
@@ -169,7 +263,7 @@ export default function TasksClient() {
     };
     if (!res.ok || !j.ok || !j.task) {
       setErr(j.error ?? "עדכון משימה נכשל");
-      return;
+      return false;
     }
     setTasks((arr) =>
       arr.map((t) => (t.id === task.id && t.entityId === task.entityId ? j.task! : t))
@@ -177,6 +271,7 @@ export default function TasksClient() {
     setActive((cur) =>
       cur && cur.id === task.id && cur.entityId === task.entityId ? j.task! : cur
     );
+    return true;
   }
 
   function renderTaskCard(t: Task, opts?: { pipelineScope?: string }) {
@@ -192,7 +287,8 @@ export default function TasksClient() {
         }}
         style={{
           border: "1px solid #f3f4f6",
-          background: "#fafafa",
+          background: taskDeadlinePassed(t) ? "rgba(254, 242, 242, 0.75)" : "#fafafa",
+          boxShadow: taskDeadlinePassed(t) ? "inset 3px 0 0 #f87171" : undefined,
           borderRadius: 12,
           padding: 10,
           cursor: blocked ? "default" : "grab",
@@ -380,43 +476,200 @@ export default function TasksClient() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: "#f9fafb", textAlign: "right" }}>
-                <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>משימה</th>
-                <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>סטטוס</th>
-                <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>דדליין</th>
-                <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>תזכורת</th>
-                <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>פייפליין</th>
-                <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>קשר</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tasks.map((t) => (
-                <tr key={`${t.entityType}-${t.entityId}-${t.id}`} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                  <td style={{ padding: 10 }}>
+                {(
+                  [
+                    ["title", "משימה"],
+                    ["status", "סטטוס"],
+                    ["dueAt", "דדליין"],
+                    ["reminderAt", "תזכורת"],
+                    ["createdAt", "נוצרה"],
+                    ["entityPhone", "פלאפון"],
+                    ["pipelineName", "פייפליין"],
+                    ["entityName", "קשור ל"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <th key={key} style={{ padding: 10, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>
                     <button
                       type="button"
-                      onClick={() => setActive(t)}
+                      onClick={() => onTableSortClick(key)}
                       style={{
                         border: "none",
                         background: "transparent",
                         cursor: "pointer",
                         fontWeight: 800,
-                        textAlign: "right",
+                        fontSize: 13,
+                        color: tableSortKey === key ? "#5b21b6" : "#111827",
+                        padding: 0,
                       }}
                     >
-                      {t.title}
+                      {label}
+                      {sortIndicator(key)}
                     </button>
-                  </td>
-                  <td style={{ padding: 10 }}>{t.status}</td>
-                  <td style={{ padding: 10 }}>{formatIsraelDateTime(t.dueAt)}</td>
-                  <td style={{ padding: 10 }}>{formatIsraelDateTime(t.reminderAt ?? "")}</td>
-                  <td style={{ padding: 10 }}>{t.pipelineName}</td>
-                  <td style={{ padding: 10 }}>
-                    <a href={entityHref(t)} style={{ color: "#4c1d95", fontWeight: 700 }}>
-                      {t.entityType === "contact" ? "איש קשר" : "הזדמנות"}: {t.entityName}
-                    </a>
-                  </td>
-                </tr>
-              ))}
+                  </th>
+                ))}
+                <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>פרטים</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tableRowsSorted.map((t) => {
+                const rk = taskRowKey(t);
+                const overdue = taskDeadlinePassed(t);
+                return (
+                  <tr
+                    key={rk}
+                    style={{
+                      borderBottom: "1px solid #f3f4f6",
+                      background: overdue ? "rgba(254, 242, 242, 0.5)" : undefined,
+                      boxShadow: overdue ? "inset 3px 0 0 #fca5a5" : undefined,
+                    }}
+                  >
+                    <td style={{ padding: 6, verticalAlign: "middle", minWidth: 160 }}>
+                      {inlineEdit?.key === rk && inlineEdit.field === "title" ? (
+                        <input
+                          autoFocus
+                          value={inlineEdit.draft}
+                          onChange={(e) =>
+                            setInlineEdit((s) => (s && s.key === rk ? { ...s, draft: e.target.value } : s))
+                          }
+                          onBlur={() => void commitInlineEditIfNeeded(t)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") void commitInlineEditIfNeeded(t);
+                            if (e.key === "Escape") setInlineEdit(null);
+                          }}
+                          style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #c4b5fd" }}
+                        />
+                      ) : (
+                        <InlineFieldShell
+                          rawValue={t.title}
+                          label={t.title}
+                          onEdit={() =>
+                            setInlineEdit({ key: rk, field: "title", draft: t.title })
+                          }
+                        />
+                      )}
+                    </td>
+                    <td style={{ padding: 6, verticalAlign: "middle", minWidth: 120 }}>
+                      {inlineEdit?.key === rk && inlineEdit.field === "status" ? (
+                        <select
+                          autoFocus
+                          value={inlineEdit.draft}
+                          onChange={(e) => {
+                            const v = e.target.value as TaskStatus;
+                            void (async () => {
+                              const ok = await patchTask(t, { status: v });
+                              if (ok) setInlineEdit(null);
+                            })();
+                          }}
+                          style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #c4b5fd" }}
+                        >
+                          <option value="todo">To Do</option>
+                          <option value="in_progress">In Progress</option>
+                          <option value="done">Done</option>
+                        </select>
+                      ) : (
+                        <InlineFieldShell
+                          rawValue={t.status}
+                          label={t.status}
+                          onEdit={() =>
+                            setInlineEdit({ key: rk, field: "status", draft: t.status })
+                          }
+                        />
+                      )}
+                    </td>
+                    <td style={{ padding: 6, verticalAlign: "middle", minWidth: 130 }}>
+                      {inlineEdit?.key === rk && inlineEdit.field === "dueAt" ? (
+                        <input
+                          type="datetime-local"
+                          autoFocus
+                          value={inlineEdit.draft}
+                          onChange={(e) =>
+                            setInlineEdit((s) => (s && s.key === rk ? { ...s, draft: e.target.value } : s))
+                          }
+                          onBlur={() => void commitInlineEditIfNeeded(t)}
+                          style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #c4b5fd" }}
+                        />
+                      ) : (
+                        <InlineFieldShell
+                          rawValue={t.dueAt}
+                          label={formatIsraelDateTime(t.dueAt)}
+                          onEdit={() =>
+                            setInlineEdit({
+                              key: rk,
+                              field: "dueAt",
+                              draft: toLocalInput(t.dueAt),
+                            })
+                          }
+                        />
+                      )}
+                    </td>
+                    <td style={{ padding: 6, verticalAlign: "middle", minWidth: 130 }}>
+                      {inlineEdit?.key === rk && inlineEdit.field === "reminderAt" ? (
+                        <input
+                          type="datetime-local"
+                          autoFocus
+                          value={inlineEdit.draft}
+                          onChange={(e) =>
+                            setInlineEdit((s) => (s && s.key === rk ? { ...s, draft: e.target.value } : s))
+                          }
+                          onBlur={() => void commitInlineEditIfNeeded(t)}
+                          style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #c4b5fd" }}
+                        />
+                      ) : (
+                        <InlineFieldShell
+                          rawValue={t.reminderAt ?? ""}
+                          label={t.reminderAt ? formatIsraelDateTime(t.reminderAt) : "—"}
+                          onEdit={() =>
+                            setInlineEdit({
+                              key: rk,
+                              field: "reminderAt",
+                              draft: toLocalInput(t.reminderAt ?? ""),
+                            })
+                          }
+                        />
+                      )}
+                    </td>
+                    <td style={{ padding: 10, verticalAlign: "middle", fontSize: 12, color: "#374151" }}>
+                      {t.createdAt ? formatIsraelDateTime(t.createdAt) : "—"}
+                    </td>
+                    <td style={{ padding: 6, verticalAlign: "middle", minWidth: 120 }}>
+                      {t.entityPhone?.trim() ? (
+                        <InlineFieldShell
+                          readonly
+                          integration="phone"
+                          rawValue={t.entityPhone}
+                          label={t.entityPhone}
+                          onEdit={() => {}}
+                        />
+                      ) : (
+                        <span style={{ color: "#9ca3af" }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ padding: 10, verticalAlign: "middle" }}>{t.pipelineName}</td>
+                    <td style={{ padding: 10, verticalAlign: "middle" }}>
+                      <a href={entityHref(t)} style={{ color: "#4c1d95", fontWeight: 700 }}>
+                        {t.entityName}
+                      </a>
+                    </td>
+                    <td style={{ padding: 10, verticalAlign: "middle" }}>
+                      <button
+                        type="button"
+                        onClick={() => setActive(t)}
+                        style={{
+                          border: "1px solid #e5e7eb",
+                          background: "#fff",
+                          borderRadius: 8,
+                          padding: "6px 10px",
+                          cursor: "pointer",
+                          fontWeight: 700,
+                          fontSize: 12,
+                        }}
+                      >
+                        פתח
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

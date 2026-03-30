@@ -26,13 +26,12 @@ export async function GET(req: NextRequest) {
     const entity = req.nextUrl.searchParams.get("entityType") as
       | CustomFieldEntity
       | null;
-    const hasPipe = req.nextUrl.searchParams.has("pipelineId");
-    const pipeQ = req.nextUrl.searchParams.get("pipelineId");
+    const pipeQ = req.nextUrl.searchParams.get("pipelineId")?.trim() || "";
+    const filterByPipeline =
+      req.nextUrl.searchParams.has("pipelineId") && pipeQ.length > 0;
     const fields = await listCustomFields(
       entity ?? undefined,
-      hasPipe
-        ? { filterByPipeline: true, pipelineId: pipeQ?.trim() || null }
-        : undefined
+      filterByPipeline ? { filterByPipeline: true, pipelineId: pipeQ } : undefined
     );
     return NextResponse.json({ ok: true, fields });
   } catch (e) {

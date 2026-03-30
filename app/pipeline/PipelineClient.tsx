@@ -260,7 +260,7 @@ export default function PipelineClient() {
     setLoading(true);
     setErr(null);
     try {
-      const [pRes, oRes, cRes, cfRes, lRes] = await Promise.all([
+      const [pRes, oRes, cRes, lRes] = await Promise.all([
         fetch("/api/opportunities/pipelines", { credentials: "include", cache: "no-store" }),
         fetch(
           selectedPipelineId
@@ -269,13 +269,6 @@ export default function PipelineClient() {
           { credentials: "include", cache: "no-store" }
         ),
         fetch("/api/contacts", { credentials: "include", cache: "no-store" }),
-        fetch(
-          `/api/custom-fields?entityType=opportunity&pipelineId=${encodeURIComponent(selectedPipelineId)}`,
-          {
-            credentials: "include",
-            cache: "no-store",
-          }
-        ),
         fetch("/api/labels", { credentials: "include", cache: "no-store" }),
       ]);
       const adminsRes = await fetch("/api/admin-users", {
@@ -283,7 +276,7 @@ export default function PipelineClient() {
         cache: "no-store",
       });
 
-      for (const r of [pRes, oRes, cRes, cfRes, lRes, adminsRes]) {
+      for (const r of [pRes, oRes, cRes, lRes, adminsRes]) {
         if (r.status === 401) {
           window.location.href = `/login?returnTo=${encodeURIComponent("/pipeline")}`;
           return;
@@ -309,10 +302,6 @@ export default function PipelineClient() {
         rows?: ContactRow[];
         error?: string;
       };
-      const cfJson = (await cfRes.json().catch(() => ({}))) as {
-        ok?: boolean;
-        fields?: Array<{ fieldId: string; label?: string }>;
-      };
       const lJson = (await lRes.json().catch(() => ({}))) as {
         ok?: boolean;
         labels?: Array<{ id: string; name: string; color: string }>;
@@ -332,7 +321,39 @@ export default function PipelineClient() {
       setOpportunities(opp);
       setContacts(cJson.rows ?? []);
       setAdminUsers(adminsJson.ok ? adminsJson.users ?? [] : []);
-      setSelectedPipelineId((prev) => prev || p[0]?.id || "");
+
+      const sessionPipe =
+        typeof window !== "undefined"
+          ? window.sessionStorage.getItem("crm:selectedPipelineId")?.trim() || ""
+          : "";
+      const inPipelines = (id: string) => Boolean(id && p.some((pl) => pl.id === id));
+      const resolvedPipelineId =
+        (inPipelines(selectedPipelineId) ? selectedPipelineId : "") ||
+        (inPipelines(sessionPipe) ? sessionPipe : "") ||
+        p[0]?.id ||
+        "";
+
+      const cfRes = await fetch(
+        resolvedPipelineId
+          ? `/api/custom-fields?entityType=opportunity&pipelineId=${encodeURIComponent(resolvedPipelineId)}`
+          : `/api/custom-fields?entityType=opportunity`,
+        { credentials: "include", cache: "no-store" }
+      );
+      if (cfRes.status === 401) {
+        window.location.href = `/login?returnTo=${encodeURIComponent("/pipeline")}`;
+        return;
+      }
+      if (cfRes.status === 403) {
+        window.location.href = `/pending?returnTo=${encodeURIComponent("/pipeline")}`;
+        return;
+      }
+      const cfJson = (await cfRes.json().catch(() => ({}))) as {
+        ok?: boolean;
+        fields?: Array<{ fieldId: string; label?: string }>;
+      };
+
+      setSelectedPipelineId((prev) => (inPipelines(prev) ? prev : resolvedPipelineId));
+
       const customFromSettings =
         cfJson.ok && Array.isArray(cfJson.fields)
           ? cfJson.fields.map((f) => f.fieldId)
@@ -347,38 +368,31 @@ export default function PipelineClient() {
       if (lJson.ok && Array.isArray(lJson.labels)) {
         setCatalogLabels(lJson.labels);
       }
+      const keysFromOpps = Array.from(
+        new Set(opp.flatMap((o) => Object.keys((o.customValues ?? {}) as Record<string, unknown>)))
+      );
+      const allOppColKeys = Array.from(
+        new Set([...BASE_OPP_COLS, ...customFromSettings, ...keysFromOpps])
+      );
+
       setOppCustomFieldIds(
-        Array.from(
-          new Set(
-            [
-              ...customFromSettings,
-              ...opp.flatMap((o) =>
-                Object.keys((o.customValues ?? {}) as Record<string, unknown>)
-              ),
-            ]
-          )
-        ).sort()
+        Array.from(new Set([...customFromSettings, ...keysFromOpps])).sort()
       );
-      setOppColumnOrder((prev) =>
-        prev.length ? prev : [...BASE_OPP_COLS, ...Array.from(new Set(opp.flatMap((o) => Object.keys((o.customValues ?? {}) as Record<string, unknown>)))).sort()]
-      );
+      setOppColumnOrder((prev) => {
+        if (!prev.length) return allOppColKeys;
+        const next = [...prev];
+        for (const k of allOppColKeys) {
+          if (!next.includes(k)) next.push(k);
+        }
+        return next;
+      });
       setOppVisibleCols((prev) => {
-        const available = [
-          ...BASE_OPP_COLS,
-          ...Array.from(
-            new Set(opp.flatMap((o) => Object.keys((o.customValues ?? {}) as Record<string, unknown>)))
-          ).sort(),
-        ];
-        return prev.length ? Array.from(new Set([...prev, ...available])) : available;
+        if (!prev.length) return [...allOppColKeys];
+        return Array.from(new Set([...prev, ...allOppColKeys]));
       });
       setBoardPreviewFields((prev) => {
         if (prev.length) return prev;
-        const available = new Set([
-          ...BASE_OPP_COLS,
-          ...Array.from(
-            new Set(opp.flatMap((o) => Object.keys((o.customValues ?? {}) as Record<string, unknown>)))
-          ),
-        ]);
+        const available = new Set(allOppColKeys);
         const defaults = ["contactName", "status", "stage", "assignedRep", "phone"];
         return defaults.filter((x) => available.has(x)).slice(0, 5);
       });

@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 import CrmShell from "@/app/components/CrmShell";
 import SettingsSectionNav from "@/app/components/SettingsSectionNav";
 import FieldsClient from "@/app/settings/fields/FieldsClient";
-import { isAdminEmail } from "@/lib/auth/profile";
 import { isMovingOrdersTenant } from "@/lib/tenant/movingOrders";
 
 export const dynamic = "force-dynamic";
@@ -33,10 +32,7 @@ export default async function CustomFieldsPage() {
       currentTenantId={ctx.tenant.id}
     >
       <SettingsSectionNav active="fields" showMovingOrders={isMovingOrdersTenant(ctx.tenant.id)} />
-      <FieldsClient
-        showMoverQuestionnaireSeed={isMovingOrdersTenant(ctx.tenant.id)}
-        moverSeedCanRun={ctx.profile.role === "admin" || isAdminEmail(ctx.profile.email)}
-      />
+      <FieldsClient />
     </CrmShell>
   );
 }

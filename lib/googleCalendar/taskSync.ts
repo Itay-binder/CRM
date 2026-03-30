@@ -140,12 +140,31 @@ export async function reconcileTasksGoogleCalendar(
     const evId = String(merged.googleEventId ?? "").trim();
     try {
       if (evId) {
-        await calendar.events.update({
-          calendarId: calId,
-          eventId: evId,
-          requestBody: body,
-        });
-        merged.googleEventId = evId;
+        try {
+          await calendar.events.update({
+            calendarId: calId,
+            eventId: evId,
+            requestBody: body,
+          });
+          merged.googleEventId = evId;
+        } catch (upErr: unknown) {
+          // אירוע נמחק ידנית ב-Google — יוצרים מחדש אחד; בשמירות הבאות נמשיך לעדכן את אותו id
+          const o = upErr && typeof upErr === "object" ? (upErr as Record<string, unknown>) : {};
+          const resp = o.response as { status?: number } | undefined;
+          const status = resp?.status ?? (typeof o.status === "number" ? o.status : 0);
+          const notFound =
+            status === 404 ||
+            (upErr instanceof Error && /404|not found|Not Found/i.test(upErr.message));
+          if (!notFound) {
+            const msg = upErr instanceof Error ? upErr.message : "Google Calendar error";
+            throw new Error(msg);
+          }
+          const created = await calendar.events.insert({
+            calendarId: calId,
+            requestBody: body,
+          });
+          merged.googleEventId = created.data.id ?? undefined;
+        }
       } else {
         const created = await calendar.events.insert({
           calendarId: calId,

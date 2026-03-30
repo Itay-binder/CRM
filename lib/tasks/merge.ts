@@ -10,6 +10,12 @@ export type RawTaskIn = {
   reminderAt?: string;
   reminderWebhookFiredAt?: string;
   deadline15mWebhookFiredAt?: string;
+  /** סנכרון ל-Google Calendar (לוח שנבחר ב-googleCalendarId) */
+  syncToGoogleCalendar?: boolean;
+  /** מזהה לוח ב-Google (calendarList id) */
+  googleCalendarId?: string;
+  /** מזהה אירוע לאחר יצירה/עדכון */
+  googleEventId?: string;
 };
 
 /**

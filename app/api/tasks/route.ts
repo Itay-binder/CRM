@@ -54,6 +54,8 @@ export async function PATCH(req: NextRequest) {
       dueAt?: string;
       reminderAt?: string;
       commentText?: string;
+      syncToGoogleCalendar?: boolean;
+      googleCalendarId?: string;
     };
     const entityType = body.entityType;
     const entityId = body.entityId?.trim();
@@ -70,6 +72,8 @@ export async function PATCH(req: NextRequest) {
       dueAt: body.dueAt,
       reminderAt: body.reminderAt,
       commentText: body.commentText,
+      syncToGoogleCalendar: body.syncToGoogleCalendar,
+      googleCalendarId: body.googleCalendarId,
     });
     return NextResponse.json({ ok: true, task });
   } catch (e) {

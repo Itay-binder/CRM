@@ -1,5 +1,7 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
+import { reconcileTasksGoogleCalendar } from "@/lib/googleCalendar/taskSync";
+import type { RawTaskIn } from "@/lib/tasks/merge";
 
 export type TaskStatus = "todo" | "in_progress" | "done";
 export type TaskComment = { id: string; text: string; createdAt: string };
@@ -21,6 +23,9 @@ export type UnifiedTask = {
   /** "__contact__" for contact tasks, else opportunity pipeline id */
   pipelineId: string;
   pipelineName: string;
+  syncToGoogleCalendar?: boolean;
+  googleCalendarId?: string;
+  googleEventId?: string;
 };
 
 type RawTask = {
@@ -34,6 +39,9 @@ type RawTask = {
   status?: TaskStatus;
   comments?: TaskComment[];
   createdAt?: string;
+  syncToGoogleCalendar?: boolean;
+  googleCalendarId?: string;
+  googleEventId?: string;
 };
 
 function normalizeStatus(task: RawTask): TaskStatus {
@@ -49,6 +57,7 @@ function normalizeTask(raw: RawTask): UnifiedTask | null {
   if (!id || !title) return null;
   const status = normalizeStatus(raw);
   const rem = String(raw.reminderAt ?? "").trim();
+  const gcal = String(raw.googleCalendarId ?? "").trim();
   return {
     id,
     title,
@@ -63,6 +72,9 @@ function normalizeTask(raw: RawTask): UnifiedTask | null {
     entityName: "",
     pipelineId: "__contact__",
     pipelineName: "אנשי קשר",
+    ...(raw.syncToGoogleCalendar ? { syncToGoogleCalendar: true } : {}),
+    ...(gcal ? { googleCalendarId: gcal } : {}),
+    ...(raw.googleEventId ? { googleEventId: String(raw.googleEventId) } : {}),
   };
 }
 
@@ -133,6 +145,8 @@ export async function updateTaskAndSync(
     dueAt?: string;
     reminderAt?: string;
     commentText?: string;
+    syncToGoogleCalendar?: boolean;
+    googleCalendarId?: string;
   }
 ): Promise<UnifiedTask> {
   const db = await getAdminDb();
@@ -175,11 +189,38 @@ export async function updateTaskAndSync(
     if (r) nextTask.reminderAt = r;
     else delete nextTask.reminderAt;
   }
+  if (input.syncToGoogleCalendar !== undefined) {
+    if (input.syncToGoogleCalendar) nextTask.syncToGoogleCalendar = true;
+    else {
+      delete nextTask.syncToGoogleCalendar;
+      delete nextTask.googleCalendarId;
+      delete nextTask.googleEventId;
+    }
+  }
+  if (input.googleCalendarId !== undefined) {
+    const gc = input.googleCalendarId.trim();
+    if (gc) nextTask.googleCalendarId = gc;
+    else delete nextTask.googleCalendarId;
+  }
   if (effDue !== prevDue || effRem !== prevRem) {
     delete nextTask.reminderWebhookFiredAt;
     delete nextTask.deadline15mWebhookFiredAt;
   }
-  tasks[idx] = nextTask;
+  const prevTasksForCal = [...tasks];
+  const entityLabel =
+    (typeof data.name === "string" && data.name) ||
+    (typeof data.email === "string" && data.email) ||
+    input.entityId;
+  const reconciled = await reconcileTasksGoogleCalendar(
+    prevTasksForCal as RawTaskIn[],
+    [nextTask as RawTaskIn],
+    {
+      entityType: input.entityType,
+      entityId: input.entityId,
+      entityLabel: String(entityLabel),
+    }
+  );
+  tasks[idx] = (reconciled[0] ?? nextTask) as RawTask;
 
   const notes = Array.isArray(data.notes) ? [...(data.notes as Array<{ id: string; text: string; createdAt: string }>)] : [];
   if (trimmedComment) {

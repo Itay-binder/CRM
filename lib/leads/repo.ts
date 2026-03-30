@@ -7,6 +7,7 @@ import {
   reconcileContactNotesAcrossEntities,
 } from "@/lib/notes/contactNotesSync";
 import { mergeTaskArrays, type RawTaskIn } from "@/lib/tasks/merge";
+import { reconcileTasksGoogleCalendar } from "@/lib/googleCalendar/taskSync";
 import { fireServerWebhooks } from "@/lib/webhooks/dispatchServerWebhooks";
 import { normalizeIncomingLabelIds } from "@/lib/labels/repo";
 
@@ -422,7 +423,21 @@ export async function updateLead(
   if (input.tasks !== undefined) {
     const prevData = (snap.data() ?? {}) as Record<string, unknown>;
     const prevTasks = Array.isArray(prevData.tasks) ? [...(prevData.tasks as RawTaskIn[])] : [];
-    payload.tasks = mergeTaskArrays(prevTasks, input.tasks as RawTaskIn[]);
+    const merged = mergeTaskArrays(prevTasks, input.tasks as RawTaskIn[]);
+    const leadLabel =
+      (typeof prevData.name === "string" && prevData.name) ||
+      (typeof prevData.email === "string" && prevData.email) ||
+      docId;
+    const reconciled = await Promise.all(
+      merged.map((t) =>
+        reconcileTasksGoogleCalendar(prevTasks, [t], {
+          entityType: "contact",
+          entityId: docId,
+          entityLabel: String(leadLabel),
+        }).then((r) => r[0] ?? t)
+      )
+    );
+    payload.tasks = reconciled;
   }
   const beforeLead = (snap.data() ?? {}) as Record<string, unknown>;
   await ref.set(payload, { merge: true });

@@ -5,6 +5,7 @@ import { allocateRunningCode } from "@/lib/counters/repo";
 import { getTenantByDatabaseId } from "@/lib/tenant/config";
 import { reconcileContactNotesAcrossEntities } from "@/lib/notes/contactNotesSync";
 import { mergeTaskArrays, type RawTaskIn } from "@/lib/tasks/merge";
+import { reconcileTasksGoogleCalendar } from "@/lib/googleCalendar/taskSync";
 import { fireServerWebhooks } from "@/lib/webhooks/dispatchServerWebhooks";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 import { normalizeIncomingLabelIds } from "@/lib/labels/repo";
@@ -804,7 +805,18 @@ export async function updateOpportunity(
   if (input.notes !== undefined) payload.notes = input.notes;
   if (input.tasks !== undefined) {
     const prevTasks = Array.isArray(existing.tasks) ? [...(existing.tasks as RawTaskIn[])] : [];
-    payload.tasks = mergeTaskArrays(prevTasks, input.tasks as RawTaskIn[]);
+    const merged = mergeTaskArrays(prevTasks, input.tasks as RawTaskIn[]);
+    const oppLabel = (typeof existing.name === "string" && existing.name) || id;
+    const reconciled = await Promise.all(
+      merged.map((t) =>
+        reconcileTasksGoogleCalendar(prevTasks, [t], {
+          entityType: "opportunity",
+          entityId: id,
+          entityLabel: String(oppLabel),
+        }).then((r) => r[0] ?? t)
+      )
+    );
+    payload.tasks = reconciled;
   }
 
   const nextStageStr = String(

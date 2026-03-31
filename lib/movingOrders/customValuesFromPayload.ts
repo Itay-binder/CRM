@@ -45,9 +45,48 @@ function pickStr(body: Record<string, unknown>, ...keys: string[]): string | und
   return undefined;
 }
 
+function isEffectivelyEmpty(v: unknown): boolean {
+  if (v === undefined || v === null) return true;
+  if (typeof v === "string" && !v.trim()) return true;
+  return false;
+}
+
+/**
+ * מילוי שדות הפיילואד הקצרים (name, pickup…) מ־moving_order_* כשזה מה שנשלח מ-Make בלבד.
+ * בלי זה rawCustomValuesFromPayload לא יוצר moving_order_* ב-customValues.
+ */
+function hydratePayloadFromMovingOrderKeys(
+  body: Record<string, unknown>,
+  payload: MovingOrderPayload
+): MovingOrderPayload {
+  const p = { ...payload } as Record<string, unknown>;
+  for (const k of KEYS) {
+    const short = String(k);
+    if (isEffectivelyEmpty(p[short])) {
+      const pref = `moving_order_${short}`;
+      const fromPref = body[pref];
+      if (!isEffectivelyEmpty(fromPref)) {
+        p[short] = fromPref;
+      }
+    }
+  }
+  if (isEffectivelyEmpty(p.items_list)) {
+    const il = body.moving_order_items_list;
+    if (typeof il === "string" && il.trim()) p.items_list = il.trim();
+  }
+  if (p.drive_files_count === undefined || !Number.isFinite(Number(p.drive_files_count))) {
+    const d = body.moving_order_drive_files_count;
+    if (d !== undefined && d !== null) {
+      const n = typeof d === "number" ? d : Number.parseInt(String(d), 10);
+      if (Number.isFinite(n)) p.drive_files_count = n;
+    }
+  }
+  return p as MovingOrderPayload;
+}
+
 /** נרמול גוף webhook: items_list כמערך → מחרוזת JSON בשדה items_list בפיילואד */
 export function normalizePayloadForStorage(body: Record<string, unknown>): MovingOrderPayload {
-  const rawItems = body.items_list;
+  const rawItems = body.items_list ?? body.moving_order_items_list;
   let items_list: string | undefined;
   if (Array.isArray(rawItems)) {
     items_list = JSON.stringify(rawItems);
@@ -55,7 +94,7 @@ export function normalizePayloadForStorage(body: Record<string, unknown>): Movin
     items_list = rawItems;
   }
 
-  const driveCount = body.drive_files_count;
+  const driveCount = body.drive_files_count ?? body.moving_order_drive_files_count;
   const drive_files_count =
     typeof driveCount === "number"
       ? driveCount
@@ -67,7 +106,7 @@ export function normalizePayloadForStorage(body: Record<string, unknown>): Movin
   const pickup_city = pickStr(body, "pickup_city", "moving_order_pickup_city") ?? base.pickup_city;
   const dropoff_city = pickStr(body, "dropoff_city", "moving_order_dropoff_city") ?? base.dropoff_city;
   const day_order = pickStr(body, "day_order", "moving_order_day_order") ?? base.day_order;
-  return {
+  const merged: MovingOrderPayload = {
     ...base,
     ...(items_list !== undefined ? { items_list } : {}),
     ...(Number.isFinite(drive_files_count) ? { drive_files_count } : {}),
@@ -75,6 +114,7 @@ export function normalizePayloadForStorage(body: Record<string, unknown>): Movin
     ...(dropoff_city ? { dropoff_city } : {}),
     ...(day_order ? { day_order } : {}),
   };
+  return hydratePayloadFromMovingOrderKeys(body, merged);
 }
 
 export function rawCustomValuesFromPayload(payload: MovingOrderPayload): Record<string, unknown> {

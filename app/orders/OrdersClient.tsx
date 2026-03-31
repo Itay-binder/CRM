@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import OrdersBoardTab from "@/app/orders/OrdersBoardTab";
 import { MatchOrderCard } from "@/app/orders/MatchOrderCard";
 import OrdersPipelinesTab from "@/app/orders/OrdersPipelinesTab";
@@ -12,6 +12,12 @@ import type {
 } from "@/lib/movingOrders/types";
 
 type TabId = "orders" | "pipelines" | "match";
+
+const ORDERS_TAB_STORAGE_KEY = "liftygo_crm_orders_tab";
+
+function isTabId(v: string): v is TabId {
+  return v === "orders" || v === "pipelines" || v === "match";
+}
 type ApiListOk = {
   ok: true;
   orders: MovingOrderRecord[];
@@ -70,6 +76,24 @@ export default function OrdersClient() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useLayoutEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(ORDERS_TAB_STORAGE_KEY);
+      if (raw && isTabId(raw)) setTab(raw);
+    } catch {
+      /* private mode / no storage */
+    }
+  }, []);
+
+  const setTabPersist = useCallback((next: TabId) => {
+    setTab(next);
+    try {
+      sessionStorage.setItem(ORDERS_TAB_STORAGE_KEY, next);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   async function setExcluded(order: MovingOrderRecord, leadId: string, checked: boolean) {
     const ex = new Set(order.excludedDriverIds);
@@ -219,7 +243,7 @@ export default function OrdersClient() {
         <div style={{ display: "inline-flex", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 4 }}>
           <button
             type="button"
-            onClick={() => setTab("orders")}
+            onClick={() => setTabPersist("orders")}
             style={{
               padding: "8px 12px",
               border: "none",
@@ -233,7 +257,7 @@ export default function OrdersClient() {
           </button>
           <button
             type="button"
-            onClick={() => setTab("pipelines")}
+            onClick={() => setTabPersist("pipelines")}
             style={{
               padding: "8px 12px",
               border: "none",
@@ -247,7 +271,7 @@ export default function OrdersClient() {
           </button>
           <button
             type="button"
-            onClick={() => setTab("match")}
+            onClick={() => setTabPersist("match")}
             style={{
               padding: "8px 12px",
               border: "none",

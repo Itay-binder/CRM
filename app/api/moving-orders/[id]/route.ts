@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
-import { getMovingOrder, updateMovingOrder } from "@/lib/movingOrders/repo";
+import { deleteMovingOrder, getMovingOrder, updateMovingOrder } from "@/lib/movingOrders/repo";
 import type { MovingOrderPayload, MovingOrderStatus } from "@/lib/movingOrders/types";
 
 export const dynamic = "force-dynamic";
@@ -89,5 +89,27 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       { ok: false, error: e instanceof Error ? e.message : "Unknown error" },
       { status: 400 }
     );
+  }
+}
+
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireApprovedUser(_req);
+  if (!auth.ok) {
+    return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+  }
+
+  const g = await assertMovingOrdersWorkspace();
+  if (!g.ok) {
+    return NextResponse.json({ ok: false, error: g.error }, { status: g.status });
+  }
+
+  const { id } = await params;
+  try {
+    await deleteMovingOrder(id, g.db);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Unknown error";
+    const status = msg.includes("לא נמצא") ? 404 : 400;
+    return NextResponse.json({ ok: false, error: msg }, { status });
   }
 }

@@ -114,6 +114,8 @@ export function MatchOrderCard({
   onToggleCheck,
   onSendMatch,
   onCancelMatch,
+  onDelete,
+  deleting,
   statusLabel,
   sentNow,
 }: {
@@ -122,10 +124,12 @@ export function MatchOrderCard({
   drivers: Record<string, DriverSummary>;
   enrichment: Record<string, MoverMatchEnrichment>;
   dispatching: boolean;
+  deleting?: boolean;
   isChecked: (id: string) => boolean;
   onToggleCheck: (id: string, checked: boolean) => void;
   onSendMatch: () => void;
   onCancelMatch: (reason: string) => void;
+  onDelete?: () => void;
   statusLabel: (s: MovingOrderStatus) => string;
   sentNow?: boolean;
 }) {
@@ -299,6 +303,25 @@ export function MatchOrderCard({
           >
             בטל הזמנה
           </button>
+          {onDelete ? (
+            <button
+              type="button"
+              disabled={Boolean(deleting)}
+              onClick={onDelete}
+              style={{
+                padding: "10px 16px",
+                borderRadius: 10,
+                border: "1px solid #e5e7eb",
+                background: "#f9fafb",
+                color: "#374151",
+                fontWeight: 600,
+                cursor: deleting ? "wait" : "pointer",
+                opacity: deleting ? 0.75 : 1,
+              }}
+            >
+              {deleting ? "מוחק…" : "מחק מהמערכת"}
+            </button>
+          ) : null}
         </div>
       </article>
 

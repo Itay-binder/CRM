@@ -128,6 +128,7 @@ export default function OrdersBoardTab() {
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
   const [boardPreviewFields, setBoardPreviewFields] = useState<string[]>([]);
 
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newPhone, setNewPhone] = useState("");
@@ -493,6 +494,30 @@ export default function OrdersBoardTab() {
     }
   }
 
+  async function deleteOrder(o: MovingOrderRecord) {
+    const title = orderTitle(o);
+    if (
+      !window.confirm(`למחוק לצמיתות את ההזמנה «${title}»? הפעולה אינה הפיכה.`)
+    ) {
+      return;
+    }
+    setDeletingId(o.id);
+    setErr(null);
+    try {
+      const res = await fetch(`/api/moving-orders/${encodeURIComponent(o.id)}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const j = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) throw new Error(j.error ?? "מחיקה נכשלה");
+      await loadAll();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "מחיקה נכשלה");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   async function createOrder() {
     if (!selectedPipelineId || !newStage) return;
     try {
@@ -687,6 +712,22 @@ export default function OrdersBoardTab() {
                     />
                   </th>
                 ))}
+                <th
+                  style={{
+                    textAlign: "right",
+                    padding: "8px 10px",
+                    borderBottom: "2px solid #e5e7eb",
+                    background: "#f8fafc",
+                    fontSize: 12,
+                    fontWeight: 900,
+                    whiteSpace: "nowrap",
+                    minWidth: 88,
+                    width: 88,
+                    verticalAlign: "top",
+                  }}
+                >
+                  פעולות
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -794,11 +835,38 @@ export default function OrdersBoardTab() {
                       )}
                     </td>
                   ))}
+                  <td
+                    style={{
+                      padding: "10px 12px",
+                      borderBottom: "1px solid #f3f4f6",
+                      whiteSpace: "nowrap",
+                      verticalAlign: "top",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      disabled={deletingId === o.id}
+                      onClick={() => void deleteOrder(o)}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 8,
+                        border: "1px solid #fecaca",
+                        background: "#fff1f2",
+                        color: "#9f1239",
+                        fontWeight: 700,
+                        fontSize: 12,
+                        cursor: deletingId === o.id ? "wait" : "pointer",
+                        opacity: deletingId === o.id ? 0.7 : 1,
+                      }}
+                    >
+                      {deletingId === o.id ? "מוחק…" : "מחק"}
+                    </button>
+                  </td>
                 </tr>
               ))}
               {!loading && filteredSortedOrders.length === 0 && (
                 <tr>
-                  <td colSpan={Math.max(displayCols.length, 1)} style={{ padding: 16, color: "#6b7280", fontWeight: 700 }}>
+                  <td colSpan={Math.max(displayCols.length + 1, 1)} style={{ padding: 16, color: "#6b7280", fontWeight: 700 }}>
                     אין הזמנות בפייפליין הנבחר.
                   </td>
                 </tr>
@@ -866,6 +934,29 @@ export default function OrdersBoardTab() {
                                 </option>
                               ))}
                             </select>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void deleteOrder(o);
+                              }}
+                              disabled={deletingId === o.id}
+                              style={{
+                                marginTop: 10,
+                                width: "100%",
+                                padding: "7px 8px",
+                                borderRadius: 8,
+                                border: "1px solid #fecaca",
+                                background: "#fff1f2",
+                                color: "#9f1239",
+                                fontWeight: 800,
+                                fontSize: 12,
+                                cursor: deletingId === o.id ? "wait" : "pointer",
+                              }}
+                            >
+                              {deletingId === o.id ? "מוחק…" : "מחק הזמנה"}
+                            </button>
                           </div>
                         ))
                       )}

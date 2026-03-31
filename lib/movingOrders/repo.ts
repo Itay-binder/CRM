@@ -479,3 +479,11 @@ export async function updateMovingOrder(
   const again = await ref.get();
   return mapDoc(again.id, (again.data() ?? {}) as Record<string, unknown>);
 }
+
+export async function deleteMovingOrder(id: string, db?: Firestore): Promise<void> {
+  const d = db ?? (await getAdminDb());
+  const ref = d.collection(COLLECTION).doc(id.trim());
+  const snap = await ref.get();
+  if (!snap.exists) throw new Error("הזמנה לא נמצאה");
+  await ref.delete();
+}

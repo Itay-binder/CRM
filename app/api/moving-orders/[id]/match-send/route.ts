@@ -7,6 +7,7 @@ import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
 import {
   applyMatchSendSideEffects,
   buildMatchWebhookMovers,
+  customerFacingMoversMessageText,
   flatMatchSendOpportunityFields,
 } from "@/lib/movingOrders/matchOrderActions";
 import { opportunitiesByContactId } from "@/lib/movingOrders/matchMovers";
@@ -82,6 +83,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   );
 
   const movers = await buildMatchWebhookMovers(driverIds, order.driverMatchFlags, leadById, oppByContact);
+  const textForCustomer = customerFacingMoversMessageText(movers);
 
   const webhookOk = await postWebhookForEvent(g.db, "moving_order_match_send", {
     movingOrderId: order.id,
@@ -91,6 +93,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       customValues: order.customValues ?? {},
     },
     movers,
+    customer_message_text: textForCustomer,
+    "הודעת טקסט למזמין": textForCustomer,
     ...flatMatchSendOpportunityFields(movers),
   });
 

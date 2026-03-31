@@ -56,6 +56,7 @@ export default function OrdersClient() {
   const [orderMatchUi, setOrderMatchUi] = useState<Record<string, OrderMatchUiHints>>({});
   const [dispatching, setDispatching] = useState<string | null>(null);
   const [sentSuccessOrderId, setSentSuccessOrderId] = useState<string | null>(null);
+  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
   const autoRematchedOnceRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -185,6 +186,35 @@ export default function OrdersClient() {
     }
   }
 
+  async function deleteOrder(order: MovingOrderRecord) {
+    const cv = order.customValues ?? {};
+    const title =
+      (typeof cv.moving_order_name === "string" && cv.moving_order_name.trim()
+        ? cv.moving_order_name.trim()
+        : null) ||
+      order.payload.name?.trim() ||
+      order.orderId ||
+      order.id;
+    if (!window.confirm(`למחוק לצמיתות את ההזמנה «${title}»? הפעולה אינה הפיכה.`)) return;
+    setDeletingOrderId(order.id);
+    try {
+      const res = await fetch(`/api/moving-orders/${encodeURIComponent(order.id)}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const j = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) {
+        alert(j.error ?? "מחיקה נכשלה");
+        return;
+      }
+      void load();
+    } catch {
+      alert("שגיאת רשת");
+    } finally {
+      setDeletingOrderId(null);
+    }
+  }
+
   async function cancelMatch(order: MovingOrderRecord, reason: string) {
     try {
       const res = await fetch(`/api/moving-orders/${encodeURIComponent(order.id)}/match-cancel`, {
@@ -303,10 +333,12 @@ export default function OrdersClient() {
                 drivers={drivers}
                 enrichment={moverEnrichment}
                 dispatching={dispatching === order.id}
+                deleting={deletingOrderId === order.id}
                 isChecked={(id) => isChecked(order, id)}
                 onToggleCheck={(id, c) => void setExcluded(order, id, c)}
                 onSendMatch={() => void sendMatch(order)}
                 onCancelMatch={(reason) => void cancelMatch(order, reason)}
+                onDelete={() => void deleteOrder(order)}
                 statusLabel={statusLabel}
                 sentNow={sentSuccessOrderId === order.id}
               />

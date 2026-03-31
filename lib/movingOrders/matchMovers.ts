@@ -270,10 +270,10 @@ export function syntheticLeadFromOpportunity(opp: OpportunityRecord): LeadRecord
   };
 }
 
-/** רק ערך שלילי מפורש נחשב לא זמין; חסר / לא מזוהה — לא מסמנים אדום */
+/** זמינות נחשבת תקינה רק כשהשדה מפורש כ"כן" */
 function workAvailabilityOk(merged: Record<string, unknown> | undefined): boolean {
   const raw = readFirstTruthyField(merged, [MOVER_OPPORTUNITY_FIELD_IDS.workAvailabilityStatus]);
-  return triStateYesNo(raw) !== false;
+  return triStateYesNo(raw) === true;
 }
 
 export type MatchMoversDetailedResult = {

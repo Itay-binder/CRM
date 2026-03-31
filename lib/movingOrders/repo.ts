@@ -89,7 +89,17 @@ async function rematchMovingOrderDrivers(input: {
     );
   const knownIds = new Set<string>([...matchedDriverIds, ...optionalDriverIds, ...manualSet]);
   const excludedDriverIds = input.prevExcluded.map(String).filter((x) => knownIds.has(x));
-  return { matchedDriverIds, optionalDriverIds, driverMatchFlags, driverMatchIssues, excludedDriverIds };
+  for (const id of matchedDriverIds) {
+    const issues = driverMatchIssues[id] ?? [];
+    if (issues.some((x) => x.includes("זמינות"))) excludedDriverIds.push(id);
+  }
+  return {
+    matchedDriverIds,
+    optionalDriverIds,
+    driverMatchFlags,
+    driverMatchIssues,
+    excludedDriverIds: Array.from(new Set(excludedDriverIds)),
+  };
 }
 
 function normalizeOrderStage(

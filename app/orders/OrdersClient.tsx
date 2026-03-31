@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import OrdersBoardTab from "@/app/orders/OrdersBoardTab";
 import { MatchOrderCard } from "@/app/orders/MatchOrderCard";
 import OrdersPipelinesTab from "@/app/orders/OrdersPipelinesTab";
@@ -55,6 +55,8 @@ export default function OrdersClient() {
   const [moverEnrichment, setMoverEnrichment] = useState<Record<string, MoverMatchEnrichment>>({});
   const [orderMatchUi, setOrderMatchUi] = useState<Record<string, OrderMatchUiHints>>({});
   const [dispatching, setDispatching] = useState<string | null>(null);
+  const [sentSuccessOrderId, setSentSuccessOrderId] = useState<string | null>(null);
+  const autoRematchedOnceRef = useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -70,6 +72,32 @@ export default function OrdersClient() {
       setDrivers(j.drivers);
       setMoverEnrichment(j.moverEnrichment ?? {});
       setOrderMatchUi(j.orderMatchUi ?? {});
+      const needAutoRematch =
+        !autoRematchedOnceRef.current &&
+        j.orders.some((o) => !o.driverMatchFlags || Object.keys(o.driverMatchFlags).length === 0);
+      if (needAutoRematch) {
+        autoRematchedOnceRef.current = true;
+        await Promise.all(
+          j.orders
+            .filter((o) => !o.driverMatchFlags || Object.keys(o.driverMatchFlags).length === 0)
+            .map((o) =>
+              fetch(`/api/moving-orders/${encodeURIComponent(o.id)}`, {
+                method: "PATCH",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ rematch: true }),
+              }).catch(() => null)
+            )
+        );
+        const r2 = await fetch("/api/moving-orders", { credentials: "include", cache: "no-store" });
+        const j2 = (await r2.json()) as ApiListResponse;
+        if (r2.ok && j2.ok) {
+          setOrders(j2.orders);
+          setDrivers(j2.drivers);
+          setMoverEnrichment(j2.moverEnrichment ?? {});
+          setOrderMatchUi(j2.orderMatchUi ?? {});
+        }
+      }
     } catch {
       setErr("שגיאה בטעינה");
     } finally {
@@ -121,67 +149,16 @@ export default function OrdersClient() {
     }
   }
 
-  async function rematchDrivers(order: MovingOrderRecord) {
-    try {
-      const res = await fetch(`/api/moving-orders/${encodeURIComponent(order.id)}`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rematch: true }),
-      });
-      const j = (await res.json()) as { ok?: boolean; order?: MovingOrderRecord; error?: string };
-      if (!res.ok || !j.ok) {
-        alert(j.error ?? "רענון התאמה נכשל");
-        return;
-      }
-      if (j.order) {
-        setOrders((prev) => prev.map((o) => (o.id === order.id ? j.order! : o)));
-      }
-      void load();
-    } catch {
-      alert("שגיאת רשת");
-    }
-  }
-
-  async function addManualDriver(
-    order: MovingOrderRecord,
-    contact: { id: string; name: string; phone: string; email: string }
-  ) {
-    const contactId = contact.id;
-    if (!contactId || order.manualDriverIds.includes(contactId)) return;
-    const manualDriverIds = [...order.manualDriverIds, contactId];
-    setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, manualDriverIds } : o)));
-    try {
-      const res = await fetch(`/api/moving-orders/${encodeURIComponent(order.id)}`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ manualDriverIds }),
-      });
-      const j = (await res.json()) as { ok?: boolean; order?: MovingOrderRecord };
-      if (res.ok && j.ok && j.order) {
-        setOrders((prev) => prev.map((o) => (o.id === order.id ? j.order! : o)));
-        setDrivers((d) => ({
-          ...d,
-          [contactId]: {
-            id: contactId,
-            name: contact.name,
-            phone: contact.phone,
-            email: contact.email,
-          },
-        }));
-        void load();
-      }
-    } catch {
-      void load();
-    }
-  }
-
   async function sendMatch(order: MovingOrderRecord) {
     const all = [
       ...new Set([...order.matchedDriverIds, ...order.optionalDriverIds, ...order.manualDriverIds]),
     ];
-    const driverIds = all.filter((id) => !order.excludedDriverIds.includes(id));
+    const driverIds = all.filter((id) => {
+      if (order.excludedDriverIds.includes(id)) return false;
+      const issues = order.driverMatchIssues?.[id] ?? [];
+      if (issues.some((x) => x.includes("זמינות"))) return false;
+      return true;
+    });
     setDispatching(order.id);
     try {
       const res = await fetch(`/api/moving-orders/${encodeURIComponent(order.id)}/match-send`, {
@@ -198,6 +175,8 @@ export default function OrdersClient() {
       if (j.order) {
         setOrders((prev) => prev.map((o) => (o.id === order.id ? j.order! : o)));
       }
+      setSentSuccessOrderId(order.id);
+      setTimeout(() => setSentSuccessOrderId((cur) => (cur === order.id ? null : cur)), 6000);
       void load();
     } catch {
       alert("שגיאת רשת");
@@ -328,9 +307,8 @@ export default function OrdersClient() {
                 onToggleCheck={(id, c) => void setExcluded(order, id, c)}
                 onSendMatch={() => void sendMatch(order)}
                 onCancelMatch={(reason) => void cancelMatch(order, reason)}
-                onAddManual={(cid) => void addManualDriver(order, cid)}
-                onRematchDrivers={() => void rematchDrivers(order)}
                 statusLabel={statusLabel}
+                sentNow={sentSuccessOrderId === order.id}
               />
             ))}
           </div>

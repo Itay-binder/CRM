@@ -6,7 +6,7 @@ import { MOVER_OPPORTUNITY_FIELD_IDS } from "@/lib/movingOrders/fieldIds";
 import type { DriverMatchFlag, MovingOrderPayload } from "@/lib/movingOrders/types";
 import {
   immediateSosIndicatesYes,
-  leadIsPayingPipelineMoverCandidate,
+  leadIsMoverPoolMember,
   mergeLeadAndOpportunity,
   moverIsNationwide,
   normHe,
@@ -261,9 +261,32 @@ export function matchMoversForOrderDetailed(
 ): MatchMoversDetailedResult {
   const pipe = payingPipelineId.trim();
   const cv = orderCustomValues;
-  const oppByContact = opportunitiesByContactId(
-    opportunities.filter((o) => (o.pipelineId ?? "").trim() === pipe)
-  );
+  const oppsInPipe = opportunities.filter((o) => (o.pipelineId ?? "").trim() === pipe);
+  const oppByContact = opportunitiesByContactId(oppsInPipe);
+
+  const contactIdsFromPayingOpps = new Set<string>();
+  for (const o of oppsInPipe) {
+    const cid = (o.contactId ?? "").trim();
+    if (cid) contactIdsFromPayingOpps.add(cid);
+  }
+
+  const leadById = new Map(leads.map((l) => [l.id, l]));
+  const moverLeads: LeadRecord[] = [];
+  const seenMover = new Set<string>();
+  for (const cid of contactIdsFromPayingOpps) {
+    const lead = leadById.get(cid);
+    if (!lead || !leadIsMoverPoolMember(lead)) continue;
+    if (seenMover.has(lead.id)) continue;
+    seenMover.add(lead.id);
+    moverLeads.push(lead);
+  }
+  for (const mid of manualContactIds) {
+    if (seenMover.has(mid)) continue;
+    const lead = leadById.get(mid);
+    if (!lead) continue;
+    moverLeads.push(lead);
+    seenMover.add(mid);
+  }
 
   const { pickupCity, dropCity } = resolveOrderCities(payload, cv);
   const regionGroups = coalesceMetroRegionGroups(
@@ -273,11 +296,9 @@ export function matchMoversForOrderDetailed(
   const urgent = orderIsUrgent(payload, cv);
   const dayMarkers = dayMarkersFromOrder(cv, payload);
 
-  const movers = leads.filter((l) => leadIsPayingPipelineMoverCandidate(l, pipe));
-
   const rows: Array<{ id: string; flag: DriverMatchFlag; name: string }> = [];
 
-  for (const lead of movers) {
+  for (const lead of moverLeads) {
     const opp = oppByContact.get(lead.id);
     const merged = mergeLeadAndOpportunity(lead, opp);
     const regionsText = readMoverRegionsText(merged);

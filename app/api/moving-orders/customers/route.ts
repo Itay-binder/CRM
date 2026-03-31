@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { listLeadsFiltered } from "@/lib/leads/repo";
 import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
-import { leadIsPayingPipelineMoverCandidate } from "@/lib/movingOrders/moverFieldReaders";
-import { getPayingCustomersPipelineMeta } from "@/lib/opportunities/repo";
+import { leadIsMoverPoolMember } from "@/lib/movingOrders/moverFieldReaders";
+import { getPayingCustomersPipelineMeta, listOpportunities } from "@/lib/opportunities/repo";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -30,13 +30,21 @@ export async function GET(req: NextRequest) {
   try {
     const payingMeta = await getPayingCustomersPipelineMeta();
     const payingPipelineId = payingMeta.id;
-    const leads = await listLeadsFiltered();
-    let customers = leads.filter((l) => (l.pipelineId ?? "").trim() === payingPipelineId);
+    const [leads, opps] = await Promise.all([
+      listLeadsFiltered(),
+      listOpportunities(payingPipelineId),
+    ]);
+    const contactIds = new Set<string>();
+    for (const o of opps) {
+      const cid = (o.contactId ?? "").trim();
+      if (cid) contactIds.add(cid);
+    }
+    let customers = leads.filter((l) => contactIds.has(l.id));
 
     if (forManualPick) {
-      /* כל אנשי הקשר בפייפליין — לבחירה ידנית בהזמנה */
+      /* אנשי קשר שמקושרים להזדמנות בפייפליין «לקוחות משלמים» */
     } else if (moversOnly) {
-      customers = customers.filter((l) => leadIsPayingPipelineMoverCandidate(l, payingPipelineId));
+      customers = customers.filter(leadIsMoverPoolMember);
     }
 
     const filtered = q

@@ -128,8 +128,8 @@ function ManualMoverPickerBlock({
             <p style={{ color: "#6b7280", margin: 0 }}>טוען רשימה…</p>
           ) : pickerRows.length === 0 ? (
             <p style={{ color: "#6b7280", margin: 0, lineHeight: 1.5 }}>
-              אין אנשי קשר משויכים לפייפליין הזה במסד. ודאו שלידים מסומנים לאותו פייפליין כמו ב«לקוחות משלמים».
-              אם צריך לקבע מזהה אחר — <code dir="ltr">CRM_PAYING_CUSTOMERS_PIPELINE_ID</code> ב־Vercel.
+              אין אנשי קשר שמקושרים להזדמנות בפייפליין הזה (ניהול הזדמנויות). ודאו שלכל הזדמנות יש איש קשר תקין.
+              אם צריך לקבע מזהה פייפליין אחר — <code dir="ltr">CRM_PAYING_CUSTOMERS_PIPELINE_ID</code> ב־Vercel.
             </p>
           ) : (
             <>
@@ -417,7 +417,7 @@ export function MatchOrderCard({
           })}
           {driverIds.length === 0 ? (
             <li style={{ color: "#6b7280" }}>
-              לא נמצאו מובילים לאחר סינון אזורים (בדוק שדות הזמנה ומובילים).
+              לא נמצאו מובילים (מאגר: הזדמנויות «לקוחות משלמים» + התאמת אזורים). לחץ «חשב מובילים מחדש».
             </li>
           ) : null}
         </ul>

@@ -121,16 +121,20 @@ export function moverIsNationwide(merged: Record<string, unknown> | undefined, r
 }
 
 /**
- * איש קשר בפייפליין לקוחות משלמים שאינו מסומן במפורש כלא־מוביל.
- * (ברירת מחדל: כל אנשי הקשר בפייפליין הזה נחשבים מועמדים, עד שמסמנים «לא».)
+ * מועמד למאגר מובילים — לפי איש קשר בלבד (לא לפי pipelineId של הליד).
+ * המאגר מגיע מהזדמנויות בפייפליין «לקוחות משלמים»; איש הקשר עצמו עשוי להיות משויך לפייפליין אחר.
+ */
+export function leadIsMoverPoolMember(lead: LeadRecord): boolean {
+  const v = lead.customFields?.[MOVER_FIELD_IDS.isMover];
+  return triStateYesNo(v) !== false;
+}
+
+/**
+ * @deprecated השתמשו ב־leadIsMoverPoolMember יחד עם רשימת contactId מן ההזדמנויות
  */
 export function leadIsPayingPipelineMoverCandidate(lead: LeadRecord, payingPipelineId: string): boolean {
   if ((lead.pipelineId ?? "").trim() !== payingPipelineId) return false;
-  const v = lead.customFields?.[MOVER_FIELD_IDS.isMover];
-  if (v === false) return false;
-  const s = String(v ?? "").trim().toLowerCase();
-  if (s === "לא" || s === "false" || s === "0" || s === "no") return false;
-  return true;
+  return leadIsMoverPoolMember(lead);
 }
 
 export function mergeLeadAndOpportunity(

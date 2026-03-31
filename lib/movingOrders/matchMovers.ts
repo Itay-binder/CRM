@@ -2,9 +2,10 @@ import type { LeadRecord } from "@/lib/leads/repo";
 import type { OpportunityRecord } from "@/lib/opportunities/repo";
 import { extractCityHints } from "@/lib/movingOrders/israelCities";
 import { deriveOrderCapabilities, driverWorksOnDay, orderDateToJerusalemWeekdayMarkers } from "@/lib/movingOrders/matchDrivers";
-import { MOVER_FIELD_IDS, MOVER_OPPORTUNITY_FIELD_IDS, PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
+import { MOVER_OPPORTUNITY_FIELD_IDS, PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
 import type { DriverMatchFlag, MovingOrderPayload } from "@/lib/movingOrders/types";
 import {
+  leadIsPayingPipelineMoverCandidate,
   mergeLeadAndOpportunity,
   moverIsNationwide,
   normHe,
@@ -16,16 +17,6 @@ import {
   readSmallMoverAnswer,
   readStrFirst,
 } from "@/lib/movingOrders/moverFieldReaders";
-
-function readBool(cf: Record<string, unknown> | undefined, key: string): boolean {
-  const v = cf?.[key];
-  if (v === true) return true;
-  if (v === false) return false;
-  const s = String(v ?? "")
-    .trim()
-    .toLowerCase();
-  return s === "true" || s === "1" || s === "כן" || s === "yes";
-}
 
 function combineFlags(a: DriverMatchFlag, b: DriverMatchFlag): DriverMatchFlag {
   if (a === "red" || b === "red") return "red";
@@ -110,7 +101,8 @@ function buildRegionRuleGroups(
       if (r?.trim()) regs.add(r.trim());
       else if (c.trim()) regs.add(c.trim());
     }
-    groups.push(Array.from(regs));
+    const arr = Array.from(regs).filter((x) => x.trim());
+    if (arr.length) groups.push(arr);
   }
   return groups;
 }
@@ -201,9 +193,22 @@ export function resolveOrderCities(
 ): { pickupCity: string; dropCity: string } {
   let pickupCity = String(cv?.moving_order_pickup_city ?? payload.pickup_city ?? "").trim();
   let dropCity = String(cv?.moving_order_dropoff_city ?? payload.dropoff_city ?? "").trim();
-  const hints = extractCityHints(payload.pickup ?? "", payload.dropoff ?? "");
+  const pickupLine = (payload.pickup ?? "").trim();
+  const dropLine = (payload.dropoff ?? "").trim();
+
+  if (!pickupCity && pickupLine) {
+    const fromPickup = extractCityHints(pickupLine, "");
+    if (fromPickup[0]) pickupCity = fromPickup[0];
+  }
+  if (!dropCity && dropLine) {
+    const fromDrop = extractCityHints(dropLine, "");
+    if (fromDrop[0]) dropCity = fromDrop[0];
+  }
+
+  const hints = extractCityHints(pickupLine, dropLine);
   if (!pickupCity && hints[0]) pickupCity = hints[0];
   if (!dropCity) dropCity = hints[1] ?? hints[0] ?? "";
+
   return { pickupCity, dropCity };
 }
 
@@ -262,11 +267,7 @@ export function matchMoversForOrderDetailed(
   const urgent = orderIsUrgent(payload, cv);
   const dayMarkers = dayMarkersFromOrder(cv, payload);
 
-  const movers = leads.filter(
-    (l) =>
-      (l.pipelineId ?? "").trim() === PAYING_CUSTOMERS_PIPELINE_ID &&
-      readBool(l.customFields, MOVER_FIELD_IDS.isMover)
-  );
+  const movers = leads.filter(leadIsPayingPipelineMoverCandidate);
 
   const rows: Array<{ id: string; flag: DriverMatchFlag; name: string }> = [];
 
@@ -276,12 +277,20 @@ export function matchMoversForOrderDetailed(
     const regionsText = readMoverRegionsText(merged);
     const nationwide = moverIsNationwide(merged, regionsText);
     const moverNorm = normHe(regionsText);
+    const hasRegionRequirement = regionGroups.some((g) => g.length > 0);
+    const regionsDataMissing =
+      !nationwide && !regionsText.trim() && hasRegionRequirement;
 
     const manual = manualContactIds.has(lead.id);
-    const regionOk = manual || moverPassesAllRegionGroups(moverNorm, regionGroups, nationwide);
+    const regionStrictOk = moverPassesAllRegionGroups(moverNorm, regionGroups, nationwide);
+    const regionOk = manual || regionStrictOk || regionsDataMissing;
     if (!regionOk) continue;
 
     let flag: DriverMatchFlag = "ok";
+
+    if (regionsDataMissing && !manual) {
+      flag = combineFlags(flag, "orange");
+    }
 
     if (!workAvailabilityOk(merged)) {
       flag = combineFlags(flag, "red");

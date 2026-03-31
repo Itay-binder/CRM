@@ -41,6 +41,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const patch: Parameters<typeof updateMovingOrder>[1] = {};
 
+  if (body.rematch === true) {
+    patch.rematch = true;
+  }
+
   if (typeof body.status === "string" && STATUSES.has(body.status as MovingOrderStatus)) {
     patch.status = body.status as MovingOrderStatus;
   }

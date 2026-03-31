@@ -57,6 +57,108 @@ function matchRowAccent(flag: "ok" | "orange" | "red" | undefined): string {
   return "transparent";
 }
 
+function ManualMoverPickerBlock({
+  canPick,
+  pickerOpen,
+  onToggleOpen,
+  pickerQ,
+  onPickerQ,
+  pickerRows,
+  pickerLoading,
+  onPickContact,
+}: {
+  canPick: boolean;
+  pickerOpen: boolean;
+  onToggleOpen: () => void;
+  pickerQ: string;
+  onPickerQ: (v: string) => void;
+  pickerRows: Array<{ id: string; name: string; phone: string; email: string }>;
+  pickerLoading: boolean;
+  onPickContact: (c: { id: string; name: string; phone: string; email: string }) => void;
+}) {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <button
+        type="button"
+        disabled={!canPick}
+        onClick={onToggleOpen}
+        style={{
+          padding: "8px 12px",
+          borderRadius: 8,
+          border: "1px solid #d1d5db",
+          background: "#f9fafb",
+          fontWeight: 600,
+          cursor: canPick ? "pointer" : "not-allowed",
+          fontSize: 13,
+          opacity: canPick ? 1 : 0.6,
+        }}
+      >
+        + הוסף מוביל מלקוחות משלמים
+      </button>
+      {pickerOpen ? (
+        <div
+          style={{
+            marginTop: 10,
+            padding: 12,
+            borderRadius: 10,
+            border: "1px solid #e5e7eb",
+            background: "#fafafa",
+          }}
+        >
+          <input
+            value={pickerQ}
+            onChange={(e) => onPickerQ(e.target.value)}
+            placeholder="סינון לפי שם / טלפון (רשימה נטענת מהשרת)…"
+            style={{
+              width: "100%",
+              maxWidth: 420,
+              padding: "8px 10px",
+              borderRadius: 8,
+              border: "1px solid #d1d5db",
+            }}
+          />
+          <p style={{ fontSize: 12, color: "#6b7280", margin: "8px 0 0", lineHeight: 1.4 }}>
+            בחירה מאנשי קשר בפייפליין לקוחות משלמים שאינם מסומנים כלא־מוביל. הרשימה נטענת אוטומטית — השדה מצמצם חיפוש
+            בלבד.
+          </p>
+          <ul style={{ listStyle: "none", padding: 0, margin: "10px 0 0", maxHeight: 220, overflow: "auto" }}>
+            {pickerLoading ? (
+              <li style={{ color: "#6b7280", padding: "6px 0" }}>טוען מובילים…</li>
+            ) : pickerRows.length === 0 ? (
+              <li style={{ color: "#6b7280", padding: "6px 0" }}>
+                לא נמצאו אנשי קשר — נסו חיפוש אחר או ודאו שיש רשומות בפייפליין «לקוחות משלמים».
+              </li>
+            ) : (
+              pickerRows.map((c) => (
+                <li key={c.id}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => onPickContact(c)}
+                      style={{
+                        flex: 1,
+                        textAlign: "right",
+                        padding: "8px 6px",
+                        border: "none",
+                        background: "transparent",
+                        cursor: "pointer",
+                        fontSize: 14,
+                      }}
+                    >
+                      {c.name || c.id} {c.phone ? `· ${c.phone}` : ""}
+                    </button>
+                    {c.phone?.trim() ? <WhatsAppIconLink phone={c.phone} size={18} /> : null}
+                  </div>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function MatchOrderCard({
   order,
   drivers,
@@ -67,6 +169,7 @@ export function MatchOrderCard({
   onSendMatch,
   onCancelMatch,
   onAddManual,
+  onRematchDrivers,
   statusLabel,
 }: {
   order: MovingOrderRecord;
@@ -78,22 +181,25 @@ export function MatchOrderCard({
   onSendMatch: () => void;
   onCancelMatch: (reason: string) => void;
   onAddManual: (contact: { id: string; name: string; phone: string; email: string }) => void;
+  onRematchDrivers?: () => void | Promise<void>;
   statusLabel: (s: MovingOrderStatus) => string;
 }) {
   const [pickerQ, setPickerQ] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerRows, setPickerRows] = useState<Array<{ id: string; name: string; phone: string; email: string }>>([]);
+  const [pickerLoading, setPickerLoading] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
 
   useEffect(() => {
     if (!pickerOpen) return;
+    setPickerLoading(true);
     const t = window.setTimeout(() => {
       void (async () => {
         try {
           const res = await fetch(
-            `/api/moving-orders/customers?q=${encodeURIComponent(pickerQ)}`,
+            `/api/moving-orders/customers?q=${encodeURIComponent(pickerQ)}&moversOnly=1`,
             { credentials: "include", cache: "no-store" }
           );
           const j = (await res.json()) as {
@@ -101,13 +207,22 @@ export function MatchOrderCard({
             contacts?: Array<{ id: string; name: string; phone: string; email: string }>;
           };
           if (j.ok && j.contacts) setPickerRows(j.contacts);
+          else setPickerRows([]);
         } catch {
           setPickerRows([]);
+        } finally {
+          setPickerLoading(false);
         }
       })();
     }, 200);
     return () => window.clearTimeout(t);
   }, [pickerOpen, pickerQ]);
+
+  function pickManualContact(c: { id: string; name: string; phone: string; email: string }) {
+    onAddManual(c);
+    setPickerOpen(false);
+    setPickerQ("");
+  }
 
   const p = order.payload;
   const driverIds = allMatchDriverIds(order);
@@ -215,6 +330,26 @@ export function MatchOrderCard({
         </div>
 
         <div style={{ fontWeight: 700, fontSize: 14, margin: "14px 0 8px" }}>מובילים מתאימים</div>
+        {onRematchDrivers && canAct ? (
+          <div style={{ marginBottom: 10 }}>
+            <button
+              type="button"
+              onClick={() => void onRematchDrivers()}
+              style={{
+                padding: "6px 12px",
+                borderRadius: 8,
+                border: "1px solid #c4b5fd",
+                background: "#f5f3ff",
+                color: "#5b21b6",
+                fontWeight: 600,
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              חשב מובילים מחדש (אחרי עדכון ב-CRM)
+            </button>
+          </div>
+        ) : null}
         <ul style={{ listStyle: "none", padding: 0, margin: "0 0 12px", display: "grid", gap: 6 }}>
           {driverIds.map((id) => {
             const driverPhone = drivers[id]?.phone?.trim();
@@ -429,6 +564,26 @@ export function MatchOrderCard({
             </div>
 
             <h3 style={{ fontSize: 15, margin: "0 0 8px" }}>מובילים</h3>
+            {onRematchDrivers && canAct ? (
+              <div style={{ marginBottom: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => void onRematchDrivers()}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    border: "1px solid #c4b5fd",
+                    background: "#f5f3ff",
+                    color: "#5b21b6",
+                    fontWeight: 600,
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  חשב מובילים מחדש
+                </button>
+              </div>
+            ) : null}
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
@@ -450,47 +605,70 @@ export function MatchOrderCard({
                   </tr>
                 </thead>
                 <tbody>
-                  {driverIds.map((id) => {
-                    const en = enrichment[id];
-                    const flag = order.driverMatchFlags?.[id];
-                    return (
-                      <tr
-                        key={id}
-                        style={{
-                          background: flag === "red" ? "#fff5f5" : flag === "orange" ? "#fffbeb" : "#fff",
-                        }}
+                  {driverIds.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={14}
+                        style={{ padding: 16, textAlign: "center", color: "#4b5563", background: "#fafafa" }}
                       >
-                        <td style={{ padding: 6, border: "1px solid #e5e7eb", textAlign: "center" }}>
-                          <input
-                            type="checkbox"
-                            checked={isChecked(id)}
-                            disabled={!canAct}
-                            onChange={(e) => onToggleCheck(id, e.target.checked)}
-                          />
-                        </td>
-                        <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{rowLabel(id)}</td>
-                        <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.regions ?? "—"}</td>
-                        <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.workAvailability ?? "—"}</td>
-                        <td style={{ padding: 6, border: "1px solid #e5e7eb", whiteSpace: "pre-wrap" }}>
-                          {en?.activityDays ?? "—"}
-                        </td>
-                        <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.apartmentMover ?? "—"}</td>
-                        <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.smallMover ?? "—"}</td>
-                        <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.sos ?? "—"}</td>
-                        <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.crane ?? "—"}</td>
-                        <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.leadCount ?? "—"}</td>
-                        <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>
-                          {en?.lastLeadAt ? en.lastLeadAt.slice(0, 16).replace("T", " ") : "—"}
-                        </td>
-                        <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.flexibleHours ?? "—"}</td>
-                        <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.hourStart ?? "—"}</td>
-                        <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.hourEnd ?? "—"}</td>
-                      </tr>
-                    );
-                  })}
+                        אין מובילים בהתאמה אוטומטית. השתמשו ב־«הוסף מוביל» מתחת לטבלה — או עדכנו אזורי פעילות אצל
+                        המובילים ורעננו את הדף.
+                      </td>
+                    </tr>
+                  ) : (
+                    driverIds.map((id) => {
+                      const en = enrichment[id];
+                      const flag = order.driverMatchFlags?.[id];
+                      return (
+                        <tr
+                          key={id}
+                          style={{
+                            background: flag === "red" ? "#fff5f5" : flag === "orange" ? "#fffbeb" : "#fff",
+                          }}
+                        >
+                          <td style={{ padding: 6, border: "1px solid #e5e7eb", textAlign: "center" }}>
+                            <input
+                              type="checkbox"
+                              checked={isChecked(id)}
+                              disabled={!canAct}
+                              onChange={(e) => onToggleCheck(id, e.target.checked)}
+                            />
+                          </td>
+                          <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{rowLabel(id)}</td>
+                          <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.regions ?? "—"}</td>
+                          <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.workAvailability ?? "—"}</td>
+                          <td style={{ padding: 6, border: "1px solid #e5e7eb", whiteSpace: "pre-wrap" }}>
+                            {en?.activityDays ?? "—"}
+                          </td>
+                          <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.apartmentMover ?? "—"}</td>
+                          <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.smallMover ?? "—"}</td>
+                          <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.sos ?? "—"}</td>
+                          <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.crane ?? "—"}</td>
+                          <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.leadCount ?? "—"}</td>
+                          <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>
+                            {en?.lastLeadAt ? en.lastLeadAt.slice(0, 16).replace("T", " ") : "—"}
+                          </td>
+                          <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.flexibleHours ?? "—"}</td>
+                          <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.hourStart ?? "—"}</td>
+                          <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.hourEnd ?? "—"}</td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
+
+            <ManualMoverPickerBlock
+              canPick={canAct}
+              pickerOpen={pickerOpen}
+              onToggleOpen={() => setPickerOpen((v) => !v)}
+              pickerQ={pickerQ}
+              onPickerQ={setPickerQ}
+              pickerRows={pickerRows}
+              pickerLoading={pickerLoading}
+              onPickContact={pickManualContact}
+            />
 
             <div style={{ marginTop: 16 }}>{actionBar}</div>
           </div>

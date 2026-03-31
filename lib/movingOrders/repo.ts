@@ -313,6 +313,8 @@ export async function updateMovingOrder(
     manualDriverIds?: string[];
     dispatchedAt?: string | null;
     matchRejectionReason?: string | null;
+    /** חישוב מחדש של matchedDriverIds לפי כללים עדכניים (ללא שינוי payload) */
+    rematch?: boolean;
   },
   db?: Firestore
 ): Promise<MovingOrderRecord> {
@@ -393,7 +395,8 @@ export async function updateMovingOrder(
   const rematchNeeded =
     input.payload !== undefined ||
     input.customValues !== undefined ||
-    input.manualDriverIds !== undefined;
+    input.manualDriverIds !== undefined ||
+    input.rematch === true;
 
   if (rematchNeeded) {
     const r = await rematchMovingOrderDrivers({

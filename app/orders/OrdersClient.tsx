@@ -93,6 +93,28 @@ export default function OrdersClient() {
     }
   }
 
+  async function rematchDrivers(order: MovingOrderRecord) {
+    try {
+      const res = await fetch(`/api/moving-orders/${encodeURIComponent(order.id)}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rematch: true }),
+      });
+      const j = (await res.json()) as { ok?: boolean; order?: MovingOrderRecord; error?: string };
+      if (!res.ok || !j.ok) {
+        alert(j.error ?? "רענון התאמה נכשל");
+        return;
+      }
+      if (j.order) {
+        setOrders((prev) => prev.map((o) => (o.id === order.id ? j.order! : o)));
+      }
+      void load();
+    } catch {
+      alert("שגיאת רשת");
+    }
+  }
+
   async function addManualDriver(
     order: MovingOrderRecord,
     contact: { id: string; name: string; phone: string; email: string }
@@ -277,6 +299,7 @@ export default function OrdersClient() {
                 onSendMatch={() => void sendMatch(order)}
                 onCancelMatch={(reason) => void cancelMatch(order, reason)}
                 onAddManual={(cid) => void addManualDriver(order, cid)}
+                onRematchDrivers={() => void rematchDrivers(order)}
                 statusLabel={statusLabel}
               />
             ))}

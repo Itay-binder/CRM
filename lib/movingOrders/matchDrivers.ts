@@ -1,6 +1,7 @@
 import type { LeadRecord } from "@/lib/leads/repo";
 import { extractCityHints } from "@/lib/movingOrders/israelCities";
-import { MOVER_FIELD_IDS, PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
+import { MOVER_FIELD_IDS } from "@/lib/movingOrders/fieldIds";
+import { leadIsPayingPipelineMoverCandidate } from "@/lib/movingOrders/moverFieldReaders";
 import type { MovingOrderPayload } from "@/lib/movingOrders/types";
 
 function readBool(cf: Record<string, unknown> | undefined, key: string): boolean {
@@ -175,11 +176,7 @@ export function matchDriversForOrder(
   const caps = deriveOrderCapabilities(order);
   const orderDate = order.date?.trim();
 
-  const movers = leads.filter(
-    (l) =>
-      (l.pipelineId ?? "").trim() === PAYING_CUSTOMERS_PIPELINE_ID &&
-      readBool(l.customFields, MOVER_FIELD_IDS.isMover)
-  );
+  const movers = leads.filter(leadIsPayingPipelineMoverCandidate);
 
   const matched: LeadRecord[] = [];
   const optional: LeadRecord[] = [];

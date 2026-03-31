@@ -3,6 +3,7 @@ import { requireApprovedUser } from "@/lib/auth/guard";
 import { listLeadsFiltered } from "@/lib/leads/repo";
 import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
 import { PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
+import { leadIsPayingPipelineMoverCandidate } from "@/lib/movingOrders/moverFieldReaders";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      contacts: filtered.slice(0, 80).map((l) => ({
+      contacts: filtered.slice(0, 200).map((l) => ({
         id: l.id,
         name: l.name ?? "",
         phone: l.phone ?? "",

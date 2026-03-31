@@ -28,14 +28,48 @@ export function readBoolYes(cf: Record<string, unknown> | undefined, keys: strin
   if (!cf) return false;
   for (const key of keys) {
     const v = cf[key];
-    if (v === true) return true;
-    if (v === false) continue;
-    const s = String(v ?? "")
-      .trim()
-      .toLowerCase();
-    if (s === "true" || s === "1" || s === "כן" || s === "yes") return true;
+    if (triStateYesNo(v) === true) return true;
   }
   return false;
+}
+
+/** ערך truthy ראשון לפי סדר המפתחות — כולל boolean ומספר */
+export function readFirstTruthyField(
+  merged: Record<string, unknown> | undefined,
+  keys: string[]
+): unknown {
+  if (!merged) return undefined;
+  for (const key of keys) {
+    const v = merged[key];
+    if (v === undefined || v === null) continue;
+    if (typeof v === "boolean") return v;
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string") {
+      const t = v.trim();
+      if (!t) continue;
+      return t;
+    }
+    if (Array.isArray(v) && v.length) return v;
+  }
+  return undefined;
+}
+
+/**
+ * נירמול בוליאני: Firestore/טפסים שולחים לעיתים true/false, לפעמים "כן"/"לא".
+ * null = חסר או לא מזוהה ככן/לא.
+ */
+export function triStateYesNo(v: unknown): boolean | null {
+  if (v === undefined || v === null) return null;
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number" && Number.isFinite(v)) {
+    if (v === 1) return true;
+    if (v === 0) return false;
+  }
+  const s = String(v).trim().toLowerCase();
+  if (!s) return null;
+  if (s === "true" || s === "1" || s === "כן" || s === "yes" || s === "y") return true;
+  if (s === "false" || s === "0" || s === "לא" || s === "no" || s === "n") return false;
+  return null;
 }
 
 export function readStrFirst(cf: Record<string, unknown> | undefined, keys: string[]): string {
@@ -127,34 +161,76 @@ export function readActivityDaysText(merged: Record<string, unknown> | undefined
 }
 
 export function readWorkAvailabilityDisplay(merged: Record<string, unknown> | undefined): string {
-  const v = readStrFirst(merged, [MOVER_OPPORTUNITY_FIELD_IDS.workAvailabilityStatus]);
-  return v || "—";
+  const raw = readFirstTruthyField(merged, [MOVER_OPPORTUNITY_FIELD_IDS.workAvailabilityStatus]);
+  const t = triStateYesNo(raw);
+  if (t === true) return "כן";
+  if (t === false) return "לא";
+  if (typeof raw === "string" && raw.trim()) return raw.trim();
+  return "—";
 }
 
 export function readImmediateSos(merged: Record<string, unknown> | undefined): string {
-  const v = readStrFirst(merged, [
+  const raw = readFirstTruthyField(merged, [
     MOVER_OPPORTUNITY_FIELD_IDS.immediateAvailability,
     MOVER_WELCOME_OPPORTUNITY_FIELD_IDS.immediateAvailability,
   ]);
-  if (v) return v;
+  const t = triStateYesNo(raw);
+  if (t === true) return "כן";
+  if (t === false) return "לא";
+  if (typeof raw === "string" && raw.trim()) return raw.trim();
   return readBoolYes(merged, [MOVER_FIELD_IDS.sameDay]) ? "כן" : "לא";
 }
 
+/** SOS / זמינות מיידית — כן גם כשמגיע כ-boolean */
+export function immediateSosIndicatesYes(merged: Record<string, unknown> | undefined): boolean {
+  const raw = readFirstTruthyField(merged, [
+    MOVER_OPPORTUNITY_FIELD_IDS.immediateAvailability,
+    MOVER_WELCOME_OPPORTUNITY_FIELD_IDS.immediateAvailability,
+  ]);
+  const t = triStateYesNo(raw);
+  if (t !== null) return t;
+  return readBoolYes(merged, [MOVER_FIELD_IDS.sameDay]);
+}
+
 export function readSmallMoverAnswer(merged: Record<string, unknown> | undefined): string {
-  const o = readStrFirst(merged, [MOVER_OPPORTUNITY_FIELD_IDS.smallMover]);
-  if (o) return o;
+  const raw = readFirstTruthyField(merged, [
+    MOVER_OPPORTUNITY_FIELD_IDS.smallMover,
+    MOVER_FIELD_IDS.small,
+  ]);
+  const t = triStateYesNo(raw);
+  if (t === true) return "כן";
+  if (t === false) return "לא";
+  if (typeof raw === "string" && String(raw).trim()) return String(raw).trim();
   return readBoolYes(merged, [MOVER_FIELD_IDS.small]) ? "כן" : "לא";
 }
 
 export function readApartmentMoverAnswer(merged: Record<string, unknown> | undefined): string {
-  const o = readStrFirst(merged, [MOVER_OPPORTUNITY_FIELD_IDS.apartmentMover]);
-  if (o) return o;
+  const rawOpp = readFirstTruthyField(merged, [MOVER_OPPORTUNITY_FIELD_IDS.apartmentMover]);
+  let t = triStateYesNo(rawOpp);
+  if (t === true) return "כן";
+  if (t === false) return "לא";
+  if (typeof rawOpp === "string" && rawOpp.trim()) return rawOpp.trim();
+
+  const rawApt = readFirstTruthyField(merged, [MOVER_FIELD_IDS.apartment]);
+  t = triStateYesNo(rawApt);
+  if (t === true) return "כן";
+  if (t === false) return "לא";
+
+  const rawLarge = readFirstTruthyField(merged, [MOVER_FIELD_IDS.large]);
+  t = triStateYesNo(rawLarge);
+  if (t === true) return "כן";
+  if (t === false) return "לא";
+
   const apt = readBoolYes(merged, [MOVER_FIELD_IDS.apartment]);
   const large = readBoolYes(merged, [MOVER_FIELD_IDS.large]);
   return apt || large ? "כן" : "לא";
 }
 
 export function readCrane(merged: Record<string, unknown> | undefined): string {
+  const raw = readFirstTruthyField(merged, [MOVER_FIELD_IDS.crane]);
+  const t = triStateYesNo(raw);
+  if (t === true) return "כן";
+  if (t === false) return "לא";
   return readBoolYes(merged, [MOVER_FIELD_IDS.crane]) ? "כן" : "לא";
 }
 

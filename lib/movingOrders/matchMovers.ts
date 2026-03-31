@@ -5,6 +5,7 @@ import { deriveOrderCapabilities, driverWorksOnDay, orderDateToJerusalemWeekdayM
 import { MOVER_OPPORTUNITY_FIELD_IDS, PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
 import type { DriverMatchFlag, MovingOrderPayload } from "@/lib/movingOrders/types";
 import {
+  immediateSosIndicatesYes,
   leadIsPayingPipelineMoverCandidate,
   mergeLeadAndOpportunity,
   moverIsNationwide,
@@ -12,10 +13,10 @@ import {
   normSettlementLookupKey,
   readActivityDaysText,
   readApartmentMoverAnswer,
-  readImmediateSos,
+  readFirstTruthyField,
   readMoverRegionsText,
   readSmallMoverAnswer,
-  readStrFirst,
+  triStateYesNo,
 } from "@/lib/movingOrders/moverFieldReaders";
 
 function combineFlags(a: DriverMatchFlag, b: DriverMatchFlag): DriverMatchFlag {
@@ -217,8 +218,8 @@ function resolveMoveKind(
   cv: Record<string, unknown> | undefined
 ): "small" | "large" | "unknown" {
   const mt = String(cv?.moving_order_move_type ?? payload.move_type ?? "").trim();
-  if (/בקטנה|קטנה/i.test(mt)) return "small";
-  if (/גדולה|דירה/i.test(mt)) return "large";
+  if (/הובל[הת]\s*קטנ|הובלה\s*קטנה|בקטנה|קטנה(?!\s*דיר)/i.test(mt)) return "small";
+  if (/הובל[הת]\s*דיר|הובלת\s*דירה|הובלה\s*דירתית|גדולה/i.test(mt)) return "large";
   const caps = deriveOrderCapabilities(payload);
   if (caps.needsSmall && !caps.needsApartment) return "small";
   if (caps.needsApartment || caps.needsLarge) return "large";
@@ -226,15 +227,18 @@ function resolveMoveKind(
 }
 
 function orderIsUrgent(payload: MovingOrderPayload, cv: Record<string, unknown> | undefined): boolean {
-  const u = String(cv?.moving_order_is_urgent ?? payload.is_urgent ?? "")
+  const raw = cv?.moving_order_is_urgent ?? payload.is_urgent;
+  if (triStateYesNo(raw) === true) return true;
+  const u = String(raw ?? "")
     .trim()
     .toLowerCase();
   return u === "כן" || u === "yes" || u === "true" || u === "1";
 }
 
+/** רק ערך שלילי מפורש נחשב לא זמין; חסר / לא מזוהה — לא מסמנים אדום */
 function workAvailabilityOk(merged: Record<string, unknown> | undefined): boolean {
-  const v = readStrFirst(merged, [MOVER_OPPORTUNITY_FIELD_IDS.workAvailabilityStatus]);
-  return normHe(v) === normHe("כן");
+  const raw = readFirstTruthyField(merged, [MOVER_OPPORTUNITY_FIELD_IDS.workAvailabilityStatus]);
+  return triStateYesNo(raw) !== false;
 }
 
 export type MatchMoversDetailedResult = {
@@ -307,7 +311,7 @@ export function matchMoversForOrderDetailed(
       /* לא מסמנים כתום לפי סוג — חסר מידע */
     }
 
-    if (urgent && normHe(readImmediateSos(merged)) !== normHe("כן")) {
+    if (urgent && !immediateSosIndicatesYes(merged)) {
       flag = combineFlags(flag, "orange");
     }
 

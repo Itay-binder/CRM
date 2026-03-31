@@ -20,10 +20,23 @@ export async function GET(req: NextRequest) {
   }
 
   const q = req.nextUrl.searchParams.get("q")?.trim().toLowerCase() ?? "";
+  const moversOnly =
+    req.nextUrl.searchParams.get("moversOnly") === "1" ||
+    req.nextUrl.searchParams.get("moversOnly") === "true";
+  const forManualPick =
+    req.nextUrl.searchParams.get("forManualPick") === "1" ||
+    req.nextUrl.searchParams.get("forManualPick") === "true";
 
   try {
     const leads = await listLeadsFiltered();
-    const customers = leads.filter((l) => (l.pipelineId ?? "").trim() === PAYING_CUSTOMERS_PIPELINE_ID);
+    let customers = leads.filter((l) => (l.pipelineId ?? "").trim() === PAYING_CUSTOMERS_PIPELINE_ID);
+
+    if (forManualPick) {
+      /* כל אנשי הקשר בפייפליין — לבחירה ידנית בהזמנה */
+    } else if (moversOnly) {
+      customers = customers.filter(leadIsPayingPipelineMoverCandidate);
+    }
+
     const filtered = q
       ? customers.filter((l) => {
           const hay = `${l.name ?? ""} ${l.phone ?? ""} ${l.email ?? ""}`.toLowerCase();
@@ -31,9 +44,15 @@ export async function GET(req: NextRequest) {
         })
       : customers;
 
+    const sorted = [...filtered].sort((a, b) =>
+      (a.name ?? a.id).localeCompare(b.name ?? b.id, "he")
+    );
+
+    const limit = forManualPick ? 900 : 200;
+
     return NextResponse.json({
       ok: true,
-      contacts: filtered.slice(0, 200).map((l) => ({
+      contacts: sorted.slice(0, limit).map((l) => ({
         id: l.id,
         name: l.name ?? "",
         phone: l.phone ?? "",

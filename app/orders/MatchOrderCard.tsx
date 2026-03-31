@@ -61,21 +61,30 @@ function ManualMoverPickerBlock({
   canPick,
   pickerOpen,
   onToggleOpen,
-  pickerQ,
-  onPickerQ,
   pickerRows,
   pickerLoading,
   onPickContact,
+  filterLocal,
+  onFilterLocal,
+  selectKey,
 }: {
   canPick: boolean;
   pickerOpen: boolean;
   onToggleOpen: () => void;
-  pickerQ: string;
-  onPickerQ: (v: string) => void;
   pickerRows: Array<{ id: string; name: string; phone: string; email: string }>;
   pickerLoading: boolean;
   onPickContact: (c: { id: string; name: string; phone: string; email: string }) => void;
+  filterLocal: string;
+  onFilterLocal: (v: string) => void;
+  selectKey: number;
 }) {
+  const q = filterLocal.trim().toLowerCase();
+  const displayRows = q
+    ? pickerRows.filter((c) =>
+        `${c.name ?? ""} ${c.phone ?? ""} ${c.email ?? ""}`.toLowerCase().includes(q)
+      )
+    : pickerRows;
+
   return (
     <div style={{ marginBottom: 12 }}>
       <button
@@ -105,54 +114,63 @@ function ManualMoverPickerBlock({
             background: "#fafafa",
           }}
         >
-          <input
-            value={pickerQ}
-            onChange={(e) => onPickerQ(e.target.value)}
-            placeholder="סינון לפי שם / טלפון (רשימה נטענת מהשרת)…"
-            style={{
-              width: "100%",
-              maxWidth: 420,
-              padding: "8px 10px",
-              borderRadius: 8,
-              border: "1px solid #d1d5db",
-            }}
-          />
-          <p style={{ fontSize: 12, color: "#6b7280", margin: "8px 0 0", lineHeight: 1.4 }}>
-            בחירה מאנשי קשר בפייפליין לקוחות משלמים שאינם מסומנים כלא־מוביל. הרשימה נטענת אוטומטית — השדה מצמצם חיפוש
-            בלבד.
-          </p>
-          <ul style={{ listStyle: "none", padding: 0, margin: "10px 0 0", maxHeight: 220, overflow: "auto" }}>
-            {pickerLoading ? (
-              <li style={{ color: "#6b7280", padding: "6px 0" }}>טוען מובילים…</li>
-            ) : pickerRows.length === 0 ? (
-              <li style={{ color: "#6b7280", padding: "6px 0" }}>
-                לא נמצאו אנשי קשר — נסו חיפוש אחר או ודאו שיש רשומות בפייפליין «לקוחות משלמים».
-              </li>
-            ) : (
-              pickerRows.map((c) => (
-                <li key={c.id}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <button
-                      type="button"
-                      onClick={() => onPickContact(c)}
-                      style={{
-                        flex: 1,
-                        textAlign: "right",
-                        padding: "8px 6px",
-                        border: "none",
-                        background: "transparent",
-                        cursor: "pointer",
-                        fontSize: 14,
-                      }}
-                    >
-                      {c.name || c.id} {c.phone ? `· ${c.phone}` : ""}
-                    </button>
-                    {c.phone?.trim() ? <WhatsAppIconLink phone={c.phone} size={18} /> : null}
-                  </div>
-                </li>
-              ))
-            )}
-          </ul>
+          <label style={{ display: "block", fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
+            בחירת איש קשר מהפייפליין «לקוחות משלמים»
+          </label>
+          {pickerLoading ? (
+            <p style={{ color: "#6b7280", margin: 0 }}>טוען רשימה…</p>
+          ) : pickerRows.length === 0 ? (
+            <p style={{ color: "#6b7280", margin: 0 }}>
+              אין רשומות בפייפליין לקוחות משלמים לפי המזהה <code>customers</code> ב־CRM.
+            </p>
+          ) : (
+            <>
+              <input
+                value={filterLocal}
+                onChange={(e) => onFilterLocal(e.target.value)}
+                placeholder="צמצום מקומי לפי שם / טלפון (אופציונלי)"
+                style={{
+                  width: "100%",
+                  maxWidth: 480,
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  marginBottom: 10,
+                }}
+              />
+              <select
+                key={selectKey}
+                dir="rtl"
+                aria-label="בחירת מוביל מהרשימה"
+                disabled={!canPick}
+                defaultValue=""
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (!id) return;
+                  const c = displayRows.find((x) => x.id === id) ?? pickerRows.find((x) => x.id === id);
+                  if (c) onPickContact(c);
+                }}
+                style={{
+                  width: "100%",
+                  maxWidth: 480,
+                  padding: "10px 8px",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  fontSize: 14,
+                  background: "#fff",
+                }}
+                size={Math.min(14, Math.max(4, displayRows.length + 1))}
+              >
+                <option value="">— בחר מוביל מהרשימה ({displayRows.length}) —</option>
+                {displayRows.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {(c.name || c.id).trim()}
+                    {c.phone ? ` · ${c.phone}` : ""}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
         </div>
       ) : null}
     </div>
@@ -184,10 +202,11 @@ export function MatchOrderCard({
   onRematchDrivers?: () => void | Promise<void>;
   statusLabel: (s: MovingOrderStatus) => string;
 }) {
-  const [pickerQ, setPickerQ] = useState("");
+  const [pickerFilterLocal, setPickerFilterLocal] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerRows, setPickerRows] = useState<Array<{ id: string; name: string; phone: string; email: string }>>([]);
   const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerSelectKey, setPickerSelectKey] = useState(0);
   const [detailOpen, setDetailOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
@@ -195,33 +214,31 @@ export function MatchOrderCard({
   useEffect(() => {
     if (!pickerOpen) return;
     setPickerLoading(true);
-    const t = window.setTimeout(() => {
-      void (async () => {
-        try {
-          const res = await fetch(
-            `/api/moving-orders/customers?q=${encodeURIComponent(pickerQ)}&moversOnly=1`,
-            { credentials: "include", cache: "no-store" }
-          );
-          const j = (await res.json()) as {
-            ok?: boolean;
-            contacts?: Array<{ id: string; name: string; phone: string; email: string }>;
-          };
-          if (j.ok && j.contacts) setPickerRows(j.contacts);
-          else setPickerRows([]);
-        } catch {
-          setPickerRows([]);
-        } finally {
-          setPickerLoading(false);
-        }
-      })();
-    }, 200);
-    return () => window.clearTimeout(t);
-  }, [pickerOpen, pickerQ]);
+    void (async () => {
+      try {
+        const res = await fetch(`/api/moving-orders/customers?forManualPick=1`, {
+          credentials: "include",
+          cache: "no-store",
+        });
+        const j = (await res.json()) as {
+          ok?: boolean;
+          contacts?: Array<{ id: string; name: string; phone: string; email: string }>;
+        };
+        if (j.ok && j.contacts) setPickerRows(j.contacts);
+        else setPickerRows([]);
+      } catch {
+        setPickerRows([]);
+      } finally {
+        setPickerLoading(false);
+      }
+    })();
+  }, [pickerOpen]);
 
   function pickManualContact(c: { id: string; name: string; phone: string; email: string }) {
     onAddManual(c);
     setPickerOpen(false);
-    setPickerQ("");
+    setPickerFilterLocal("");
+    setPickerSelectKey((k) => k + 1);
   }
 
   const p = order.payload;
@@ -385,75 +402,17 @@ export function MatchOrderCard({
           ) : null}
         </ul>
 
-        <div style={{ marginBottom: 12 }}>
-          <button
-            type="button"
-            onClick={() => setPickerOpen((v) => !v)}
-            style={{
-              padding: "8px 12px",
-              borderRadius: 8,
-              border: "1px solid #d1d5db",
-              background: "#f9fafb",
-              fontWeight: 600,
-              cursor: "pointer",
-              fontSize: 13,
-            }}
-          >
-            + הוסף מוביל מלקוחות משלמים
-          </button>
-          {pickerOpen ? (
-            <div
-              style={{
-                marginTop: 10,
-                padding: 12,
-                borderRadius: 10,
-                border: "1px solid #e5e7eb",
-                background: "#fafafa",
-              }}
-            >
-              <input
-                value={pickerQ}
-                onChange={(e) => setPickerQ(e.target.value)}
-                placeholder="חיפוש לפי שם / טלפון…"
-                style={{
-                  width: "100%",
-                  maxWidth: 360,
-                  padding: "8px 10px",
-                  borderRadius: 8,
-                  border: "1px solid #d1d5db",
-                }}
-              />
-              <ul style={{ listStyle: "none", padding: 0, margin: "10px 0 0", maxHeight: 200, overflow: "auto" }}>
-                {pickerRows.map((c) => (
-                  <li key={c.id}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onAddManual(c);
-                          setPickerOpen(false);
-                          setPickerQ("");
-                        }}
-                        style={{
-                          flex: 1,
-                          textAlign: "right",
-                          padding: "8px 6px",
-                          border: "none",
-                          background: "transparent",
-                          cursor: "pointer",
-                          fontSize: 14,
-                        }}
-                      >
-                        {c.name || c.id} {c.phone ? `· ${c.phone}` : ""}
-                      </button>
-                      {c.phone?.trim() ? <WhatsAppIconLink phone={c.phone} size={18} /> : null}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </div>
+        <ManualMoverPickerBlock
+          canPick={canAct}
+          pickerOpen={pickerOpen}
+          onToggleOpen={() => setPickerOpen((v) => !v)}
+          pickerRows={pickerRows}
+          pickerLoading={pickerLoading}
+          onPickContact={pickManualContact}
+          filterLocal={pickerFilterLocal}
+          onFilterLocal={setPickerFilterLocal}
+          selectKey={pickerSelectKey}
+        />
 
         {actionBar}
       </article>
@@ -663,11 +622,12 @@ export function MatchOrderCard({
               canPick={canAct}
               pickerOpen={pickerOpen}
               onToggleOpen={() => setPickerOpen((v) => !v)}
-              pickerQ={pickerQ}
-              onPickerQ={setPickerQ}
               pickerRows={pickerRows}
               pickerLoading={pickerLoading}
               onPickContact={pickManualContact}
+              filterLocal={pickerFilterLocal}
+              onFilterLocal={setPickerFilterLocal}
+              selectKey={pickerSelectKey}
             />
 
             <div style={{ marginTop: 16 }}>{actionBar}</div>

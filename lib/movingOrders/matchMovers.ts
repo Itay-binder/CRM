@@ -99,6 +99,26 @@ function buildRegionRuleGroups(
   return groups;
 }
 
+/**
+ * כשמספר כללי עיר חלים (למשל רמת גן + תל אביב), AND בין קבוצות מתפסק מובילים עם «תל אביב» בלבד.
+ * במקרה המטרופוליני מאחדים לאיחוד טוקנים — מספיק התאמה לאחד מהם (כמו קבוצה אחת).
+ */
+function coalesceMetroRegionGroups(groups: string[][]): string[][] {
+  if (groups.length <= 1) return groups;
+  const seen = new Set<string>();
+  const union: string[] = [];
+  for (const g of groups) {
+    for (const t of g) {
+      const nk = normHe(t);
+      if (nk.length < 2) continue;
+      if (seen.has(nk)) continue;
+      seen.add(nk);
+      union.push(t);
+    }
+  }
+  return union.length ? [union] : groups;
+}
+
 function moverMatchesRegionTokens(
   moverNorm: string,
   tokens: string[],
@@ -212,7 +232,9 @@ export function matchMoversForOrderDetailed(
   );
 
   const { pickupCity, dropCity } = resolveOrderCities(payload, cv);
-  const regionGroups = buildRegionRuleGroups(pickupCity, dropCity, settlementRegionMap);
+  const regionGroups = coalesceMetroRegionGroups(
+    buildRegionRuleGroups(pickupCity, dropCity, settlementRegionMap)
+  );
   const moveKind = resolveMoveKind(payload, cv);
   const urgent = orderIsUrgent(payload, cv);
   const dayMarkers = dayMarkersFromOrder(cv, payload);

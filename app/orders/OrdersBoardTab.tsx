@@ -69,6 +69,16 @@ const BASE_ORDER_COLS = [
   "updatedAt",
 ];
 
+/** אותו ערך כמו עמודות ה-baseline למעלה — מוצג רק שם, לא כעמודת moving_order_* כפולה */
+const MOVING_ORDER_FIELD_IDS_REDUNDANT_WITH_BASE = new Set([
+  "moving_order_order_id",
+  "moving_order_name",
+  "moving_order_phone",
+  "moving_order_pickup",
+  "moving_order_dropoff",
+  "moving_order_date",
+]);
+
 function orderTitle(o: MovingOrderRecord): string {
   const cv = o.customValues ?? {};
   const n = cv.moving_order_name ?? cv.moving_order_order_id;
@@ -189,16 +199,19 @@ export default function OrdersBoardTab() {
       setCustomFieldIds(fIds);
 
       const fromData = Array.from(new Set(list.flatMap((o) => Object.keys(o.customValues ?? {}))));
-      const allCols = Array.from(new Set([...BASE_ORDER_COLS, ...fIds, ...fromData]));
+      const fIdsNoDup = fIds.filter((id) => !MOVING_ORDER_FIELD_IDS_REDUNDANT_WITH_BASE.has(id));
+      const fromDataNoDup = fromData.filter((id) => !MOVING_ORDER_FIELD_IDS_REDUNDANT_WITH_BASE.has(id));
+      const allCols = Array.from(new Set([...BASE_ORDER_COLS, ...fIdsNoDup, ...fromDataNoDup]));
       setOrderColumnOrder((prev) => {
-        if (!prev.length) return [...BASE_ORDER_COLS, ...fIds, ...fromData.filter((x) => !BASE_ORDER_COLS.includes(x))];
-        const next = [...prev];
+        if (!prev.length)
+          return [...BASE_ORDER_COLS, ...fIdsNoDup, ...fromDataNoDup.filter((x) => !BASE_ORDER_COLS.includes(x))];
+        const next = [...prev].filter((c) => !MOVING_ORDER_FIELD_IDS_REDUNDANT_WITH_BASE.has(c));
         for (const c of allCols) if (!next.includes(c)) next.push(c);
         return next;
       });
       setOrderVisibleCols((prev) => {
         if (!prev.length) return allCols;
-        const next = [...prev];
+        const next = [...prev.filter((c) => !MOVING_ORDER_FIELD_IDS_REDUNDANT_WITH_BASE.has(c))];
         for (const c of allCols) if (!next.includes(c)) next.push(c);
         return next;
       });
@@ -250,12 +263,13 @@ export default function OrdersBoardTab() {
 
   function orderCell(o: MovingOrderRecord, col: string): string {
     const p = o.payload;
+    const cv = o.customValues ?? {};
     if (col === "orderId") return o.orderId || p.order_id || o.id;
-    if (col === "name") return String(p.name ?? "");
-    if (col === "phone") return String(p.phone ?? "");
-    if (col === "pickup") return String(p.pickup ?? "");
-    if (col === "dropoff") return String(p.dropoff ?? "");
-    if (col === "date") return String(p.date ?? "");
+    if (col === "name") return String(p.name ?? cv.moving_order_name ?? "");
+    if (col === "phone") return String(p.phone ?? cv.moving_order_phone ?? "");
+    if (col === "pickup") return String(p.pickup ?? cv.moving_order_pickup ?? "");
+    if (col === "dropoff") return String(p.dropoff ?? cv.moving_order_dropoff ?? "");
+    if (col === "date") return String(p.date ?? cv.moving_order_date ?? "");
     if (col === "pipelineId") return pipelines.find((x) => x.id === o.pipelineId)?.name || o.pipelineId;
     if (col === "stage") return String(o.stage ?? "");
     if (col === "status") return String(o.status ?? "");
@@ -535,7 +549,12 @@ export default function OrdersBoardTab() {
     return <span style={{ color: "#6b7280", wordBreak: "break-word" }}>{text}</span>;
   }
 
-  const columnOrderFull = orderColumnOrder.length ? orderColumnOrder : [...BASE_ORDER_COLS, ...customFieldIds];
+  const columnOrderFull = orderColumnOrder.length
+    ? orderColumnOrder
+    : [
+        ...BASE_ORDER_COLS,
+        ...customFieldIds.filter((id) => !MOVING_ORDER_FIELD_IDS_REDUNDANT_WITH_BASE.has(id)),
+      ];
 
   return (
     <div style={{ width: "100%", maxWidth: "100%", minWidth: 0 }}>

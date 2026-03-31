@@ -30,6 +30,7 @@ function moveDateLabel(order: MovingOrderRecord): string {
   const cv = order.customValues ?? {};
   const d = cv.moving_order_date;
   if (typeof d === "string" && d.trim()) return d.trim();
+  if (typeof d === "number" && Number.isFinite(d)) return String(d);
   return order.payload.date?.trim() || "—";
 }
 

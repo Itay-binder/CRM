@@ -7,6 +7,7 @@ import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
 import {
   applyMatchSendSideEffects,
   buildMatchWebhookMovers,
+  flatMatchSendOpportunityFields,
 } from "@/lib/movingOrders/matchOrderActions";
 import { opportunitiesByContactId } from "@/lib/movingOrders/matchMovers";
 import { getMovingOrder, updateMovingOrder } from "@/lib/movingOrders/repo";
@@ -90,6 +91,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       customValues: order.customValues ?? {},
     },
     movers,
+    ...flatMatchSendOpportunityFields(movers),
   });
 
   const on = orderCustomerName(order);

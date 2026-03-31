@@ -23,6 +23,8 @@ export type MatchWebhookMover = {
   opportunity: null | {
     id: string;
     name: string;
+    phone: string;
+    email: string;
     stage: string;
     pipelineId: string;
     contactId: string;
@@ -51,12 +53,37 @@ function serializeOpportunity(opp: OpportunityRecord): NonNullable<MatchWebhookM
   return {
     id: opp.id,
     name: opp.name ?? "",
+    phone: (opp.phone ?? opp.contactPhone ?? "").trim(),
+    email: (opp.email ?? opp.contactEmail ?? "").trim(),
     stage: opp.stage ?? "",
     pipelineId: opp.pipelineId ?? "",
     contactId: opp.contactId ?? "",
     customValues: opp.customValues,
     lastLeadAt: opp.lastLeadAt ? opp.lastLeadAt.toISOString() : null,
   };
+}
+
+/** שדות שטוחים לזיפייר/מייק — בנוסף למערך movers */
+export function flatMatchSendOpportunityFields(movers: MatchWebhookMover[]): Record<string, string | number> {
+  const count = movers.length;
+  const flat: Record<string, string | number> = {
+    opportunities_sent_count: count,
+    "כמות הזדמנויות": count,
+  };
+  movers.forEach((m, idx) => {
+    const i = idx + 1;
+    const opp = m.opportunity;
+    const name = (opp?.name?.trim() || m.lead.name?.trim() || "").trim();
+    const phone = (opp?.phone?.trim() || m.lead.phone?.trim() || "").trim();
+    const id = opp?.id?.trim() || "";
+    flat[`opportunity_name_${i}`] = name;
+    flat[`opportunity_phone_${i}`] = phone;
+    flat[`opportunity_id_${i}`] = id;
+    flat[`שם הזדמנות ${i}`] = name;
+    flat[`מספר פלאפון הזדמנות ${i}`] = phone;
+    flat[`מזהה הזדמנות ${i}`] = id;
+  });
+  return flat;
 }
 
 export async function buildMatchWebhookMovers(

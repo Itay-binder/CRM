@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUserOrIngestApiKey } from "@/lib/auth/guard";
 import { enrichOpportunitiesForApi, listLabels } from "@/lib/labels/repo";
+import { attachContactLastLeadAt } from "@/lib/opportunities/attachContactLastLeadAt";
 import { createOpportunity, listOpportunities } from "@/lib/opportunities/repo";
 import { phoneSearchMatches } from "@/lib/phoneSearch";
 import { validateCustomValues } from "@/lib/customFields/repo";
@@ -30,7 +31,8 @@ export async function GET(req: NextRequest) {
       );
     }
     const catalog = await listLabels();
-    const enriched = enrichOpportunitiesForApi(opportunities, catalog);
+    const withContactLead = await attachContactLastLeadAt(opportunities);
+    const enriched = enrichOpportunitiesForApi(withContactLead, catalog);
     return NextResponse.json({ ok: true, opportunities: enriched });
   } catch (e) {
     return NextResponse.json(
@@ -97,7 +99,8 @@ export async function POST(req: NextRequest) {
       assignedRep: body.assignedRep,
     });
     const catalog = await listLabels();
-    const [enriched] = enrichOpportunitiesForApi([created], catalog);
+    const [withContact] = await attachContactLastLeadAt([created]);
+    const [enriched] = enrichOpportunitiesForApi([withContact], catalog);
     return NextResponse.json({ ok: true, opportunity: enriched });
   } catch (e) {
     return NextResponse.json(

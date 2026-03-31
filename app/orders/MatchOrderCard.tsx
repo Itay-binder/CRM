@@ -67,6 +67,43 @@ function matchRowAccent(flag: "ok" | "orange" | "red" | undefined): string {
   return "transparent";
 }
 
+function orderItemsBlock(order: MovingOrderRecord): string {
+  const p = order.payload;
+  const cv = order.customValues ?? {};
+  const chunks: string[] = [];
+  const fromCv = cv.moving_order_items_text;
+  if (typeof fromCv === "string" && fromCv.trim()) chunks.push(fromCv.trim());
+  const txt = p.items_text?.trim();
+  if (txt) chunks.push(txt);
+  const what = p.what_moving?.trim();
+  if (what) chunks.push(what);
+  const rawList = p.items_list?.trim();
+  if (rawList) {
+    try {
+      const parsed = JSON.parse(rawList) as unknown;
+      if (Array.isArray(parsed)) {
+        chunks.push(
+          parsed
+            .map((x) => String(x).trim())
+            .filter(Boolean)
+            .join("\n")
+        );
+      } else {
+        chunks.push(rawList);
+      }
+    } catch {
+      chunks.push(rawList);
+    }
+  }
+  return [...new Set(chunks)].join("\n\n").trim();
+}
+
+function flagLabelHe(flag: "ok" | "orange" | "red" | undefined): string {
+  if (flag === "red") return "לא מתאים (אדום)";
+  if (flag === "orange") return "התאמה חלקית (כתום)";
+  return "מתאים (ירוק)";
+}
+
 export function MatchOrderCard({
   order,
   matchUi,
@@ -300,15 +337,146 @@ export function MatchOrderCard({
             <div style={{ fontSize: 14, color: "#4b5563", lineHeight: 1.6 }}>
               <div><strong>תאריך יצירה:</strong> {createdShort}</div>
               <div><strong>תאריך הובלה:</strong> {moveDateLabel(order, matchUi)}</div>
-              {matchUi?.transportRegionsLine ? (
-                <div><strong>אזורי פעילות להובלה:</strong> {matchUi.transportRegionsLine}</div>
+            </div>
+            <h3 style={{ fontSize: 15, margin: "18px 0 6px" }}>ערים ואזורי פעילות (לפי מפת הערים)</h3>
+            <div
+              style={{
+                fontSize: 14,
+                display: "grid",
+                gap: 6,
+                background: "#f0fdf4",
+                padding: 12,
+                borderRadius: 10,
+                border: "1px solid #bbf7d0",
+              }}
+            >
+              {matchUi?.pickupCity ? (
+                <div>
+                  <strong>עיר איסוף (מזוהה):</strong> {matchUi.pickupCity}
+                </div>
+              ) : p.pickup_city ? (
+                <div>
+                  <strong>עיר איסוף:</strong> {p.pickup_city}
+                </div>
               ) : null}
+              {matchUi?.dropCity ? (
+                <div>
+                  <strong>עיר פריקה (מזוהה):</strong> {matchUi.dropCity}
+                </div>
+              ) : p.dropoff_city ? (
+                <div>
+                  <strong>עיר פריקה:</strong> {p.dropoff_city}
+                </div>
+              ) : null}
+              {matchUi?.transportRegionsLine ? (
+                <div>
+                  <strong>אזורי פעילות במפה להובלה זו:</strong> {matchUi.transportRegionsLine}
+                </div>
+              ) : (
+                <div style={{ color: "#6b7280" }}>לא זוהו אזורים — הוזן כתובת חופשית בלבד.</div>
+              )}
+            </div>
+            <h3 style={{ fontSize: 15, margin: "18px 0 6px" }}>מה מובילים (רשימת פריטים / תכולה)</h3>
+            <div
+              style={{
+                fontSize: 14,
+                whiteSpace: "pre-wrap",
+                lineHeight: 1.55,
+                background: "#fafafa",
+                padding: 12,
+                borderRadius: 10,
+                border: "1px solid #e5e7eb",
+              }}
+            >
+              {orderItemsBlock(order) || "—"}
             </div>
             <h3 style={{ fontSize: 15, margin: "18px 0 8px" }}>פרטי הזמנה</h3>
             <div style={{ fontSize: 14, display: "grid", gap: 6, background: "#fafafa", padding: 12, borderRadius: 10 }}>
               {p.pickup ? <div><strong>איסוף:</strong> {p.pickup}</div> : null}
               {p.dropoff ? <div><strong>פריקה:</strong> {p.dropoff}</div> : null}
               {p.move_type ? <div><strong>סוג הובלה:</strong> {p.move_type}</div> : null}
+              {p.phone ? <div><strong>טלפון לקוח:</strong> {p.phone}</div> : null}
+            </div>
+            <h3 style={{ fontSize: 15, margin: "18px 0 8px" }}>מובילים — פירוט התאמה</h3>
+            <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 10 }}>
+              {driverIds.map((id) => {
+                const rowPhone = drivers[id]?.phone?.trim();
+                const flag = order.driverMatchFlags?.[id];
+                const en = enrichment[id];
+                const issues = issueList(id);
+                const oppId = en?.opportunityId?.trim();
+                return (
+                  <li
+                    key={id}
+                    style={{
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 10,
+                      padding: 12,
+                      background: "#fff",
+                      borderRight: `4px solid ${matchRowAccent(flag)}`,
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, marginBottom: 6 }}>{rowLabel(id)}</div>
+                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>{flagLabelHe(flag)}</div>
+                    {issues.length ? (
+                      <div style={{ fontSize: 12, color: "#92400e", marginBottom: 8 }}>{issues.join(" · ")}</div>
+                    ) : null}
+                    {en ? (
+                      <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.5, display: "grid", gap: 4 }}>
+                        <div>
+                          <strong>אזורי פעילות (מוביל):</strong> {en.regions?.trim() || "—"}
+                        </div>
+                        <div>
+                          <strong>זמינות לעבודה:</strong> {en.workAvailability?.trim() || "—"}
+                        </div>
+                        <div>
+                          <strong>ימי פעילות:</strong> {en.activityDays?.trim() || "—"}
+                        </div>
+                        <div>
+                          <strong>דירות / קטן / חירום / מנוף:</strong>{" "}
+                          {en.apartmentMover?.trim() || "—"} · {en.smallMover?.trim() || "—"} ·{" "}
+                          {en.sos?.trim() || "—"} · {en.crane?.trim() || "—"}
+                        </div>
+                        <div>
+                          <strong>מספר פניות (לידים):</strong> {en.leadCount ?? "—"}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 13, color: "#9ca3af" }}>אין נתוני התאמה נטענים.</div>
+                    )}
+                    {oppId ? (
+                      <div style={{ marginTop: 10 }}>
+                        <a
+                          href={`/pipeline?openOpportunityId=${encodeURIComponent(oppId)}`}
+                          style={{
+                            display: "inline-block",
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color: "#6d28d9",
+                            textDecoration: "underline",
+                          }}
+                        >
+                          פתח הזדמנות במסך הפייפליין
+                        </a>
+                      </div>
+                    ) : null}
+                    {rowPhone ? (
+                      <div style={{ marginTop: 8 }}>
+                        <WhatsAppIconLink phone={rowPhone} size={18} />
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+            <div style={{ marginTop: 16, textAlign: "left" }}>
+              <button
+                type="button"
+                onClick={() => setDetailOpen(false)}
+                style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff" }}
+              >
+                סגור
+              </button>
             </div>
           </div>
         </div>

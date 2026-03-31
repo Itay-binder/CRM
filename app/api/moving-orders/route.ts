@@ -48,6 +48,8 @@ export async function GET(req: NextRequest) {
       orderMatchUi[o.id] = {
         moveWeekdayHe: hebrewWeekdayMovingOrder(o.payload, cv),
         transportRegionsLine: tokens.length ? tokens.join(", ") : "",
+        pickupCity: pickupCity.trim() || undefined,
+        dropCity: dropCity.trim() || undefined,
       };
     }
 

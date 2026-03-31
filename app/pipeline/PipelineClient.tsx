@@ -44,6 +44,8 @@ type Opportunity = {
   labels?: Array<{ id: string; name: string; color: string }>;
   tags?: string[];
   lastLeadAt?: string | null;
+  /** תאריך פעילות אחרונה במסמך הליד של איש הקשר (לא lastLeadAt של ההזדמנות) */
+  contactLastLeadAt?: string | null;
   customValues?: Record<string, unknown>;
   createdAt: string | null;
   updatedAt?: string | null;
@@ -146,7 +148,7 @@ const BASE_OPP_COLS = [
   "assignedRep",
   "createdAt",
   "updatedAt",
-  "lastLeadAt",
+  "contactLastLeadAt",
 ];
 
 export default function PipelineClient() {
@@ -379,16 +381,18 @@ export default function PipelineClient() {
         Array.from(new Set([...customFromSettings, ...keysFromOpps])).sort()
       );
       setOppColumnOrder((prev) => {
+        const migrateKey = (k: string) => (k === "lastLeadAt" ? "contactLastLeadAt" : k);
         if (!prev.length) return allOppColKeys;
-        const next = [...prev];
+        const next = [...new Set(prev.map(migrateKey))];
         for (const k of allOppColKeys) {
           if (!next.includes(k)) next.push(k);
         }
         return next;
       });
       setOppVisibleCols((prev) => {
+        const migrateKey = (k: string) => (k === "lastLeadAt" ? "contactLastLeadAt" : k);
         if (!prev.length) return [...allOppColKeys];
-        return Array.from(new Set([...prev, ...allOppColKeys]));
+        return Array.from(new Set([...prev.map(migrateKey), ...allOppColKeys]));
       });
       setBoardPreviewFields((prev) => {
         if (prev.length) return prev;
@@ -740,7 +744,7 @@ export default function PipelineClient() {
     }
     if (col === "createdAt") return formatJerusalemDate(o.createdAt);
     if (col === "updatedAt") return formatJerusalemDate(o.updatedAt);
-    if (col === "lastLeadAt") return formatJerusalemDate(o.lastLeadAt);
+    if (col === "contactLastLeadAt") return formatJerusalemDate(o.contactLastLeadAt);
     if (col in o) return String((o as Record<string, unknown>)[col] ?? "");
     return String((o.customValues ?? {})[col] ?? "");
   }
@@ -764,7 +768,7 @@ export default function PipelineClient() {
       assignedRep: "משויך",
       createdAt: "נוצר",
       updatedAt: "עודכן",
-      lastLeadAt: "ליד אחרון",
+      contactLastLeadAt: "ליד אחרון (איש קשר)",
     };
     return labels[col] ?? oppCustomFieldLabelById[col] ?? col;
   }
@@ -783,7 +787,12 @@ export default function PipelineClient() {
         out[col] = "select";
         continue;
       }
-      if (key === "createdat" || key === "updatedat" || key === "lastleadat") {
+      if (
+        key === "createdat" ||
+        key === "updatedat" ||
+        key === "lastleadat" ||
+        key === "contactlastleadat"
+      ) {
         out[col] = "date";
         continue;
       }
@@ -858,7 +867,7 @@ export default function PipelineClient() {
     "opportunityCode",
     "createdAt",
     "updatedAt",
-    "lastLeadAt",
+    "contactLastLeadAt",
     "pipelineName",
     "contactName",
     "contactEmail",

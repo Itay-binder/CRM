@@ -6,6 +6,10 @@ export type DriverMatchFlag = "ok" | "orange" | "red";
 export type OrderMatchUiHints = {
   moveWeekdayHe: string;
   transportRegionsLine: string;
+  /** עיר איסוף מקורבת (לאחר resolve) */
+  pickupCity?: string;
+  /** עיר פריקה מקורבת */
+  dropCity?: string;
 };
 
 /** גוף הזמנה כפי שנכנס מ-webhook חיצוני */

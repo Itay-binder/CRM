@@ -226,54 +226,45 @@ function pipelineNameSignalsPayingCustomers(name: string): boolean {
   return /לקוחות[\s_-]*משלמים/i.test(name);
 }
 
+/** כמה פייפליינים תואמים — עדיפות ל«לקוחות משלמים» המלא */
+function payingCustomersPipelineSortKey(name: string): number {
+  const c = name.trim().toLowerCase().replace(/\s+/g, "");
+  if (c.includes("לקוחות") && c.includes("משלמים")) return 0;
+  if (c.includes("משלמים")) return 1;
+  return 2;
+}
+
 /**
- * מזהה פייפליין «לקוחות משלמים» בפועל במסד (לעומת מזהה קשיח).
- * ברירות: משתנה סביבה → התאמת שם פייפליין → customers → פייפליין עם הכי הרבה לידים → יצירה.
+ * פייפליין ניהול ההזדמנויות «לקוחות משלמים» (כמו במסך הפייפליין אצלך).
+ * סדר: CRM_PAYING_CUSTOMERS_PIPELINE_ID → שם פייפליין תואם → מסמך customers → יצירה.
  */
 export async function getPayingCustomersPipelineId(): Promise<string> {
   const envId = process.env.CRM_PAYING_CUSTOMERS_PIPELINE_ID?.trim();
   if (envId) return envId;
 
   const db = await getAdminDb();
-  const [pipelinesSnap, leadsSnap] = await Promise.all([
-    db.collection("pipelines").get(),
-    db.collection("leads").get(),
-  ]);
+  const pipelinesSnap = await db.collection("pipelines").get();
 
-  const opportunityPipelineIds = new Set<string>();
-  const pipelineNameById = new Map<string, string>();
+  const matches: Array<{ id: string; name: string }> = [];
   for (const doc of pipelinesSnap.docs) {
     const d = (doc.data() ?? {}) as Record<string, unknown>;
     if (readPipelineScope(d) !== "opportunity") continue;
-    opportunityPipelineIds.add(doc.id);
-    pipelineNameById.set(doc.id, String(d.name ?? ""));
+    const name = String(d.name ?? "");
+    if (!pipelineNameSignalsPayingCustomers(name)) continue;
+    matches.push({ id: doc.id, name });
   }
 
-  const leadCountByPid = new Map<string, number>();
-  for (const doc of leadsSnap.docs) {
-    const pid = String((doc.data() as Record<string, unknown>).pipelineId ?? "").trim();
-    if (!pid || !opportunityPipelineIds.has(pid)) continue;
-    leadCountByPid.set(pid, (leadCountByPid.get(pid) ?? 0) + 1);
-  }
-
-  type Scored = { id: string; count: number; nameMatch: boolean };
-  const scored: Scored[] = [];
-  for (const id of opportunityPipelineIds) {
-    const name = pipelineNameById.get(id) ?? "";
-    scored.push({
-      id,
-      count: leadCountByPid.get(id) ?? 0,
-      nameMatch: pipelineNameSignalsPayingCustomers(name),
+  if (matches.length >= 1) {
+    matches.sort((a, b) => {
+      const k = payingCustomersPipelineSortKey(a.name) - payingCustomersPipelineSortKey(b.name);
+      if (k !== 0) return k;
+      return a.name.localeCompare(b.name, "he");
     });
+    return matches[0].id;
   }
 
-  const nameMatched = scored.filter((s) => s.nameMatch).sort((a, b) => b.count - a.count);
-  if (nameMatched.length) return nameMatched[0].id;
-
-  if (pipelineNameById.has(CUSTOMERS_PIPELINE_ID)) return CUSTOMERS_PIPELINE_ID;
-
-  const withLeads = scored.filter((s) => s.count > 0).sort((a, b) => b.count - a.count);
-  if (withLeads.length) return withLeads[0].id;
+  const customersSnap = await db.collection("pipelines").doc(CUSTOMERS_PIPELINE_ID).get();
+  if (customersSnap.exists) return CUSTOMERS_PIPELINE_ID;
 
   return (await ensureCustomersPipeline()).id;
 }

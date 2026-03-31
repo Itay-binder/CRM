@@ -121,17 +121,15 @@ function ManualMoverPickerBlock({
           </label>
           {resolvedPayingPipeline ? (
             <p style={{ fontSize: 11, color: "#6b7280", margin: "0 0 8px", lineHeight: 1.4 }} dir="ltr">
-              מזהה במסד: <code>{resolvedPayingPipeline.id}</code>
-              {" — "}
-              ניתן לקבע ב־Vercel: <code>CRM_PAYING_CUSTOMERS_PIPELINE_ID</code>
+              פייפליין זהה למסך ניהול הזדמנויות (מזהה: <code>{resolvedPayingPipeline.id}</code>).
             </p>
           ) : null}
           {pickerLoading ? (
             <p style={{ color: "#6b7280", margin: 0 }}>טוען רשימה…</p>
           ) : pickerRows.length === 0 ? (
             <p style={{ color: "#6b7280", margin: 0, lineHeight: 1.5 }}>
-              אין אנשי קשר בפייפליין הזה. אם המערכת בחרה פייפליין שגוי, הגדרו את המזהה הנכון במשתנה הסביבה
-              לעיל או ודאו ששם הפייפליין מכיל משלמים / לקוחות משלמים.
+              אין אנשי קשר משויכים לפייפליין הזה במסד. ודאו שלידים מסומנים לאותו פייפליין כמו ב«לקוחות משלמים».
+              אם צריך לקבע מזהה אחר — <code dir="ltr">CRM_PAYING_CUSTOMERS_PIPELINE_ID</code> ב־Vercel.
             </p>
           ) : (
             <>

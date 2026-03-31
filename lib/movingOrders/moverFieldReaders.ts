@@ -90,10 +90,18 @@ export function mergeLeadAndOpportunity(
   lead: LeadRecord,
   opp: OpportunityRecord | undefined
 ): Record<string, unknown> {
-  return {
+  const out: Record<string, unknown> = {
     ...(lead.customFields as Record<string, unknown> | undefined),
-    ...(opp?.customValues as Record<string, unknown> | undefined),
   };
+  const ov = opp?.customValues as Record<string, unknown> | undefined;
+  if (!ov) return out;
+  for (const [k, v] of Object.entries(ov)) {
+    if (v === undefined || v === null) continue;
+    if (typeof v === "string" && !v.trim()) continue;
+    if (Array.isArray(v) && v.length === 0) continue;
+    out[k] = v;
+  }
+  return out;
 }
 
 export function readActivityDaysText(merged: Record<string, unknown> | undefined): string {

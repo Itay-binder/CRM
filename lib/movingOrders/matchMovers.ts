@@ -85,8 +85,24 @@ function buildRegionRuleGroups(
   const hasRG = cities.some(cityIsRamatGanOrGiva);
   const hasTLV = cities.some(cityIsTlv);
   const groups: string[][] = [];
-  if (hasRG) groups.push(["רמת גן / גבעתיים", "גוש דן", "כל הארץ"]);
-  if (hasTLV) groups.push(["תל אביב", "גוש דן", "כל הארץ"]);
+  if (hasRG) {
+    groups.push([
+      "רמת גן / גבעתיים",
+      "רמת גן",
+      "גבעתיים",
+      "גוש דן",
+      "כל הארץ",
+    ]);
+  }
+  if (hasTLV) {
+    groups.push([
+      "תל אביב",
+      "תל אביב-יפו",
+      "תל אביב יפו",
+      "גוש דן",
+      "כל הארץ",
+    ]);
+  }
   if (groups.length === 0) {
     const regs = new Set<string>();
     for (const c of cities) {
@@ -119,6 +135,10 @@ function coalesceMetroRegionGroups(groups: string[][]): string[][] {
   return union.length ? [union] : groups;
 }
 
+function normHeNoSpaces(s: string): string {
+  return normHe(s).replace(/\s+/g, "");
+}
+
 function moverMatchesRegionTokens(
   moverNorm: string,
   tokens: string[],
@@ -126,9 +146,12 @@ function moverMatchesRegionTokens(
 ): boolean {
   if (nationwide) return true;
   if (tokens.length === 0) return false;
+  const moverCollapsed = normHeNoSpaces(moverNorm);
   for (const t of tokens) {
     const nt = normHe(t);
     if (nt.length >= 2 && moverNorm.includes(nt)) return true;
+    const ntCol = normHeNoSpaces(t);
+    if (ntCol.length >= 2 && moverCollapsed.includes(ntCol)) return true;
   }
   return false;
 }

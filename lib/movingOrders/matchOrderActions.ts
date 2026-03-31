@@ -129,8 +129,12 @@ export async function applyMatchSendSideEffects(params: {
   contactIds: string[];
   orderCustomerName: string;
   orderId: string;
+  /** שורות נוספות לפתקית (פרטי הובלה וכו׳) */
+  transportNoteLines?: string[];
 }): Promise<void> {
-  const note = `הזמנה: ${params.orderCustomerName} · מזהה הזמנה: ${params.orderId}`;
+  const head = `הזמנה: ${params.orderCustomerName} · מזהה הזמנה: ${params.orderId}`;
+  const extra = (params.transportNoteLines ?? []).map((x) => String(x).trim()).filter(Boolean);
+  const note = extra.length ? [head, ...extra].join("\n") : head;
   const opps = await listOpportunities(PAYING_CUSTOMERS_PIPELINE_ID);
   const idx = opportunitiesByContactId(opps);
 

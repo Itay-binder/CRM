@@ -99,10 +99,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
 
   const on = orderCustomerName(order);
+  const pl = order.payload;
+  const cv = order.customValues ?? {};
+  const moveDate = String(cv.moving_order_date ?? pl.date ?? "").trim();
+  const transportNoteLines = [
+    pl.pickup?.trim() ? `איסוף: ${pl.pickup.trim()}` : "",
+    pl.dropoff?.trim() ? `פריקה: ${pl.dropoff.trim()}` : "",
+    moveDate ? `תאריך הובלה: ${moveDate}` : "",
+    pl.move_type?.trim() ? `סוג הובלה: ${pl.move_type.trim()}` : "",
+    pl.phone?.trim() ? `טלפון מזמין: ${pl.phone.trim()}` : "",
+  ];
   await applyMatchSendSideEffects({
     contactIds: driverIds,
     orderCustomerName: on,
     orderId: order.orderId,
+    transportNoteLines,
   });
 
   const dispatchedAt = new Date().toISOString();

@@ -100,6 +100,7 @@ export type MoverMatchEnrichment = {
   sos: string;
   crane: string;
   leadCount: string;
+  /** lastLeadAt של ההזדמנות (ליד אחרון שקיבל המוביל) */
   lastLeadAt: string | null;
   flexibleHours: string;
   hourStart: string;

@@ -31,6 +31,32 @@ export function buildSettlementRegionMap(rows: CityRegionRow[]): Map<string, str
   return m;
 }
 
+function normSettlementCollapsed(s: string): string {
+  return normSettlementKey(s).replace(/\s+/g, "");
+}
+
+/**
+ * מציאת אזור במפת יישוב→אזור: מפתח ישיר ואם חסר — התאמה לפי שם ללא רווחים (פערי נרמול/הקלדה).
+ */
+export function lookupRegionForSettlement(
+  settlementRegionMap: Map<string, string>,
+  cityRaw: string
+): string | undefined {
+  const c = cityRaw.trim();
+  if (!c) return undefined;
+  const direct = settlementRegionMap.get(normSettlementKey(c));
+  if (direct?.trim()) return direct.trim();
+
+  const collapsed = normSettlementCollapsed(c);
+  if (collapsed.length >= 2) {
+    for (const [settlementKey, region] of settlementRegionMap) {
+      if (!region.trim()) continue;
+      if (normSettlementCollapsed(settlementKey) === collapsed) return region.trim();
+    }
+  }
+  return undefined;
+}
+
 function cleanRows(stored: unknown): CityRegionRow[] {
   if (!Array.isArray(stored)) return [];
   return stored.map((r) => ({

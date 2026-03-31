@@ -194,7 +194,7 @@ function MoverMatchTable({
             <th style={thStyle}>חירום</th>
             <th style={thStyle}>מנוף</th>
             <th style={thStyle}>פניות</th>
-            <th style={thStyle}>ליד אחרון</th>
+            <th style={thStyle}>ליד אחרון שקיבל (תאריך)</th>
             <th style={thStyle}>שעות / גמישות</th>
             <th style={thStyle}>וואטסאפ</th>
             {showOpportunityLinks ? <th style={thStyle}>הזדמנות</th> : null}

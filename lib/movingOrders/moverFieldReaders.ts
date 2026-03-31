@@ -244,10 +244,10 @@ export function readLeadsCount(merged: Record<string, unknown> | undefined): str
   return "0";
 }
 
-/** פעילות אחרונה ברשומת הליד (איש קשר) — לא lastLeadAt של ההזדמנות */
-export function contactLeadActivityIso(lead: LeadRecord): string | null {
-  const d = lead.updatedAt ?? lead.createdAt;
-  return d ? d.toISOString() : null;
+/** תאריך ליד אחרון שההזדמנות קיבלה (שדה lastLeadAt על ההזדמנות) */
+export function opportunityLastLeadReceivedIso(opp: OpportunityRecord | undefined): string | null {
+  if (!opp?.lastLeadAt) return null;
+  return opp.lastLeadAt.toISOString();
 }
 
 export function buildMoverEnrichment(
@@ -266,7 +266,7 @@ export function buildMoverEnrichment(
     sos: readImmediateSos(merged) || "—",
     crane: readCrane(merged),
     leadCount: readLeadsCount(merged),
-    lastLeadAt: contactLeadActivityIso(lead),
+    lastLeadAt: opportunityLastLeadReceivedIso(opp),
     flexibleHours: readStrFirst(merged, [
       MOVER_WELCOME_OPPORTUNITY_FIELD_IDS.activityFlexible,
       MOVER_FIELD_IDS.flexibleHours,

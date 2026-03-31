@@ -1,4 +1,5 @@
 import type { LeadRecord } from "@/lib/leads/repo";
+import { lookupRegionForSettlement } from "@/lib/movingOrders/cityRegionSettingsRepo";
 import { extractCityHints } from "@/lib/movingOrders/israelCities";
 import { MOVER_FIELD_IDS, PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
 import { parseMovingOrderDateToNoon } from "@/lib/movingOrders/orderMoveDate";
@@ -84,15 +85,6 @@ export function driverWorksOnDay(daysStr: string, markers: string[]): boolean {
   return false;
 }
 
-/** מפתח לטבלת יישוב→אזור (זהה לנרמול טקסט באזורי מוביל) */
-function normSettlementLookupKey(s: string): string {
-  return s
-    .trim()
-    .replace(/\s+/g, " ")
-    .replace(/[\u0591-\u05C7]/g, "")
-    .toLowerCase();
-}
-
 function expandRegionCandidates(
   cityHints: string[],
   settlementRegionMap: Map<string, string> | undefined
@@ -109,7 +101,10 @@ function expandRegionCandidates(
   };
   for (const hint of cityHints) {
     add(hint);
-    const reg = settlementRegionMap?.get(normSettlementLookupKey(hint));
+    const reg =
+      settlementRegionMap && hint.trim()
+        ? lookupRegionForSettlement(settlementRegionMap, hint)
+        : undefined;
     if (reg) add(reg);
   }
   return out;

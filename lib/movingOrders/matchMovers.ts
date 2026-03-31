@@ -1,5 +1,6 @@
 import type { LeadRecord } from "@/lib/leads/repo";
 import type { OpportunityRecord } from "@/lib/opportunities/repo";
+import { lookupRegionForSettlement } from "@/lib/movingOrders/cityRegionSettingsRepo";
 import { extractCityHints } from "@/lib/movingOrders/israelCities";
 import { deriveOrderCapabilities, driverWorksOnDay, orderDateToJerusalemWeekdayMarkers } from "@/lib/movingOrders/matchDrivers";
 import { movingOrderDateYmdIsrael } from "@/lib/movingOrders/orderMoveDate";
@@ -11,7 +12,6 @@ import {
   mergeLeadAndOpportunity,
   moverIsNationwide,
   normHe,
-  normSettlementLookupKey,
   readActivityDaysText,
   readApartmentMoverAnswer,
   readFirstTruthyField,
@@ -99,7 +99,7 @@ function buildRegionRuleGroups(
   if (groups.length === 0) {
     const regs = new Set<string>();
     for (const c of cities) {
-      const r = settlementRegionMap.get(normSettlementLookupKey(c));
+      const r = lookupRegionForSettlement(settlementRegionMap, c);
       if (r?.trim()) regs.add(r.trim());
       else if (c.trim()) regs.add(c.trim());
     }

@@ -7,6 +7,7 @@ import type {
   MoverMatchEnrichment,
   MovingOrderRecord,
   MovingOrderStatus,
+  OrderMatchUiHints,
 } from "@/lib/movingOrders/types";
 
 function cardTitle(order: MovingOrderRecord): string {
@@ -26,12 +27,22 @@ function orderDisplayName(order: MovingOrderRecord): string {
   return order.payload.name?.trim() || cardTitle(order);
 }
 
-function moveDateLabel(order: MovingOrderRecord): string {
+function moveDateRaw(order: MovingOrderRecord): string {
   const cv = order.customValues ?? {};
   const d = cv.moving_order_date;
   if (typeof d === "string" && d.trim()) return d.trim();
   if (typeof d === "number" && Number.isFinite(d)) return String(d);
-  return order.payload.date?.trim() || "—";
+  return order.payload.date?.trim() || "";
+}
+
+/** תאריך גולמי מהמקור + יום בשבוע (מ־API) */
+function moveDateLabel(order: MovingOrderRecord, matchUi: OrderMatchUiHints | null | undefined): string {
+  const raw = moveDateRaw(order);
+  const base = raw || "—";
+  const wd = matchUi?.moveWeekdayHe?.trim();
+  if (!wd || base === "—") return wd && base === "—" ? `— · ${wd}` : base;
+  if (base.includes(wd)) return base;
+  return `${base} · ${wd}`;
 }
 
 function sortDriverIdsForMatch(order: MovingOrderRecord, ids: string[]): string[] {
@@ -186,6 +197,7 @@ function ManualMoverPickerBlock({
 
 export function MatchOrderCard({
   order,
+  matchUi,
   drivers,
   enrichment,
   dispatching,
@@ -198,6 +210,7 @@ export function MatchOrderCard({
   statusLabel,
 }: {
   order: MovingOrderRecord;
+  matchUi?: OrderMatchUiHints | null;
   drivers: Record<string, DriverSummary>;
   enrichment: Record<string, MoverMatchEnrichment>;
   dispatching: boolean;
@@ -353,7 +366,7 @@ export function MatchOrderCard({
           <strong>תאריך יצירת ההזמנה:</strong> {createdShort}
         </div>
         <div style={{ fontSize: 14, color: "#374151", marginBottom: 4 }}>
-          <strong>תאריך הובלה:</strong> {moveDateLabel(order)}
+          <strong>תאריך הובלה:</strong> {moveDateLabel(order, matchUi)}
         </div>
         <div style={{ fontSize: 14, color: "#374151", marginBottom: 4 }}>
           <strong>סטטוס:</strong> {statusLabel(order.status)}
@@ -490,7 +503,7 @@ export function MatchOrderCard({
                     <strong>תאריך יצירה:</strong> {createdShort}
                   </div>
                   <div>
-                    <strong>תאריך הובלה:</strong> {moveDateLabel(order)}
+                    <strong>תאריך הובלה:</strong> {moveDateLabel(order, matchUi)}
                   </div>
                   <div>
                     <strong>סטטוס:</strong> {statusLabel(order.status)}
@@ -533,6 +546,16 @@ export function MatchOrderCard({
               {p.dropoff ? (
                 <div>
                   <strong>פריקה:</strong> {p.dropoff}
+                </div>
+              ) : null}
+              {moveDateRaw(order) || matchUi?.moveWeekdayHe ? (
+                <div>
+                  <strong>תאריך ויום הובלה:</strong> {moveDateLabel(order, matchUi)}
+                </div>
+              ) : null}
+              {matchUi?.transportRegionsLine ? (
+                <div style={{ lineHeight: 1.45 }}>
+                  <strong>אזורי פעילות להובלה:</strong> {matchUi.transportRegionsLine}
                 </div>
               ) : null}
               {p.name ? (
@@ -590,7 +613,9 @@ export function MatchOrderCard({
                     <th style={{ padding: 8, border: "1px solid #e5e7eb" }}>SOS</th>
                     <th style={{ padding: 8, border: "1px solid #e5e7eb" }}>מנוף</th>
                     <th style={{ padding: 8, border: "1px solid #e5e7eb" }}>לידים</th>
-                    <th style={{ padding: 8, border: "1px solid #e5e7eb" }}>ליד אחרון</th>
+                    <th style={{ padding: 8, border: "1px solid #e5e7eb" }} title="מתעדכן אחרי שליחת התאמה">
+                      ליד אחרון
+                    </th>
                     <th style={{ padding: 8, border: "1px solid #e5e7eb" }}>גמישות</th>
                     <th style={{ padding: 8, border: "1px solid #e5e7eb" }}>התחלה</th>
                     <th style={{ padding: 8, border: "1px solid #e5e7eb" }}>סיום</th>
@@ -616,6 +641,7 @@ export function MatchOrderCard({
                           key={id}
                           style={{
                             background: flag === "red" ? "#fff5f5" : flag === "orange" ? "#fffbeb" : "#fff",
+                            borderRight: `4px solid ${matchRowAccent(flag)}`,
                           }}
                         >
                           <td style={{ padding: 6, border: "1px solid #e5e7eb", textAlign: "center" }}>

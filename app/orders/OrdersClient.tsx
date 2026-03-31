@@ -9,6 +9,7 @@ import type {
   MoverMatchEnrichment,
   MovingOrderRecord,
   MovingOrderStatus,
+  OrderMatchUiHints,
 } from "@/lib/movingOrders/types";
 
 type TabId = "orders" | "pipelines" | "match";
@@ -23,6 +24,7 @@ type ApiListOk = {
   orders: MovingOrderRecord[];
   drivers: Record<string, DriverSummary>;
   moverEnrichment?: Record<string, MoverMatchEnrichment>;
+  orderMatchUi?: Record<string, OrderMatchUiHints>;
 };
 type ApiListErr = { ok: false; error?: string };
 type ApiListResponse = ApiListOk | ApiListErr;
@@ -51,6 +53,7 @@ export default function OrdersClient() {
   const [orders, setOrders] = useState<MovingOrderRecord[]>([]);
   const [drivers, setDrivers] = useState<Record<string, DriverSummary>>({});
   const [moverEnrichment, setMoverEnrichment] = useState<Record<string, MoverMatchEnrichment>>({});
+  const [orderMatchUi, setOrderMatchUi] = useState<Record<string, OrderMatchUiHints>>({});
   const [dispatching, setDispatching] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -66,6 +69,7 @@ export default function OrdersClient() {
       setOrders(j.orders);
       setDrivers(j.drivers);
       setMoverEnrichment(j.moverEnrichment ?? {});
+      setOrderMatchUi(j.orderMatchUi ?? {});
     } catch {
       setErr("שגיאה בטעינה");
     } finally {
@@ -194,6 +198,7 @@ export default function OrdersClient() {
       if (j.order) {
         setOrders((prev) => prev.map((o) => (o.id === order.id ? j.order! : o)));
       }
+      void load();
     } catch {
       alert("שגיאת רשת");
     } finally {
@@ -315,6 +320,7 @@ export default function OrdersClient() {
               <MatchOrderCard
                 key={order.id}
                 order={order}
+                matchUi={orderMatchUi[order.id] ?? null}
                 drivers={drivers}
                 enrichment={moverEnrichment}
                 dispatching={dispatching === order.id}

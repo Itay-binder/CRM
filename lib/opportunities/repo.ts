@@ -858,6 +858,8 @@ export async function updateOpportunity(
     stage?: string;
     status?: "פתוח" | "זכיה" | "הפסד";
     value?: number | null;
+    /** עדכון «ליד אחרון» (למשל אחרי שליחת התאמת הזמנה) */
+    lastLeadAt?: Date | null;
     email?: string;
     phone?: string;
     utmSource?: string;
@@ -941,6 +943,9 @@ export async function updateOpportunity(
     payload.tags = FieldValue.delete();
   }
   if (input.assignedRep !== undefined) payload.assignedRep = input.assignedRep.trim();
+  if (input.lastLeadAt !== undefined) {
+    payload.lastLeadAt = input.lastLeadAt === null ? FieldValue.delete() : input.lastLeadAt;
+  }
   if (input.customValues !== undefined) payload.customValues = input.customValues;
   if (input.notes !== undefined) payload.notes = input.notes;
   if (input.tasks !== undefined) {

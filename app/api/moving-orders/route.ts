@@ -4,10 +4,17 @@ import { getLeadById } from "@/lib/leads/repo";
 import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
 import { createMovingOrderManual, listMovingOrders } from "@/lib/movingOrders/repo";
 import { listOpportunities } from "@/lib/opportunities/repo";
+import { getCityRegionMap } from "@/lib/movingOrders/cityRegionSettingsRepo";
 import { PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
-import { opportunitiesByContactId } from "@/lib/movingOrders/matchMovers";
+import {
+  opportunitiesByContactId,
+  orderTransportRegionDisplayTokens,
+  resolveOrderCities,
+  syntheticLeadFromOpportunity,
+} from "@/lib/movingOrders/matchMovers";
 import { buildMoverEnrichment } from "@/lib/movingOrders/moverFieldReaders";
-import type { DriverSummary, MoverMatchEnrichment } from "@/lib/movingOrders/types";
+import { hebrewWeekdayMovingOrder } from "@/lib/movingOrders/orderMoveDate";
+import type { DriverSummary, MoverMatchEnrichment, OrderMatchUiHints } from "@/lib/movingOrders/types";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -32,33 +39,39 @@ export async function GET(req: NextRequest) {
       for (const id of o.optionalDriverIds) idSet.add(id);
       for (const id of o.manualDriverIds) idSet.add(id);
     }
-    const drivers: Record<string, DriverSummary> = {};
-    await Promise.all(
-      [...idSet].map(async (id) => {
-        const l = await getLeadById(id);
-        if (l) {
-          drivers[id] = {
-            id: l.id,
-            name: l.name,
-            phone: l.phone,
-            email: l.email,
-          };
-        }
-      })
-    );
+    const regionMap = await getCityRegionMap();
+    const orderMatchUi: Record<string, OrderMatchUiHints> = {};
+    for (const o of orders) {
+      const cv = o.customValues ?? {};
+      const { pickupCity, dropCity } = resolveOrderCities(o.payload, cv);
+      const tokens = orderTransportRegionDisplayTokens(pickupCity, dropCity, regionMap);
+      orderMatchUi[o.id] = {
+        moveWeekdayHe: hebrewWeekdayMovingOrder(o.payload, cv),
+        transportRegionsLine: tokens.length ? tokens.join(", ") : "",
+      };
+    }
 
     const opps = await listOpportunities(PAYING_CUSTOMERS_PIPELINE_ID);
     const oppByContact = opportunitiesByContactId(opps);
+    const drivers: Record<string, DriverSummary> = {};
     const moverEnrichment: Record<string, MoverMatchEnrichment> = {};
     await Promise.all(
       [...idSet].map(async (cid) => {
-        const lead = await getLeadById(cid);
+        const opp = oppByContact.get(cid);
+        let lead = await getLeadById(cid);
+        if (!lead && opp) lead = syntheticLeadFromOpportunity(opp);
         if (!lead) return;
-        moverEnrichment[cid] = buildMoverEnrichment(lead, oppByContact.get(cid));
+        drivers[cid] = {
+          id: lead.id,
+          name: lead.name,
+          phone: lead.phone,
+          email: lead.email,
+        };
+        moverEnrichment[cid] = buildMoverEnrichment(lead, opp);
       })
     );
 
-    return NextResponse.json({ ok: true, orders, drivers, moverEnrichment });
+    return NextResponse.json({ ok: true, orders, drivers, moverEnrichment, orderMatchUi });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "Unknown error" },

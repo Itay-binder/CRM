@@ -2,6 +2,7 @@ import type { LeadRecord } from "@/lib/leads/repo";
 import type { OpportunityRecord } from "@/lib/opportunities/repo";
 import { extractCityHints } from "@/lib/movingOrders/israelCities";
 import { deriveOrderCapabilities, driverWorksOnDay, orderDateToJerusalemWeekdayMarkers } from "@/lib/movingOrders/matchDrivers";
+import { movingOrderDateYmdIsrael } from "@/lib/movingOrders/orderMoveDate";
 import { MOVER_OPPORTUNITY_FIELD_IDS, PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
 import type { DriverMatchFlag, MovingOrderPayload } from "@/lib/movingOrders/types";
 import {
@@ -240,8 +241,9 @@ function orderIsTodayOrTomorrowIsrael(
   payload: MovingOrderPayload,
   cv: Record<string, unknown> | undefined
 ): boolean {
-  const ds = String(cv?.moving_order_date ?? payload.date ?? "").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(ds)) return false;
+  const raw = String(cv?.moving_order_date ?? payload.date ?? "").trim();
+  const ds = movingOrderDateYmdIsrael(raw);
+  if (!ds) return false;
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" });
   const tomorrow = new Date(Date.now() + 864e5).toLocaleDateString("en-CA", {
     timeZone: "Asia/Jerusalem",
@@ -253,7 +255,7 @@ function orderIsUrgent(payload: MovingOrderPayload, cv: Record<string, unknown> 
   return orderIsUrgentByField(payload, cv) || orderIsTodayOrTomorrowIsrael(payload, cv);
 }
 
-function syntheticLeadFromOpportunity(opp: OpportunityRecord): LeadRecord {
+export function syntheticLeadFromOpportunity(opp: OpportunityRecord): LeadRecord {
   const cid = (opp.contactId ?? "").trim();
   return {
     id: cid,
@@ -418,4 +420,26 @@ export function matchMoversForOrderDetailed(
     driverMatchFlags,
     driverMatchIssues,
   };
+}
+
+/** טוקני אזורים לתצוגה בהזמנה (כמו חישוב ההתאמה — איחוד מטרופוליני ומפת יישובים) */
+export function orderTransportRegionDisplayTokens(
+  pickupCity: string,
+  dropCity: string,
+  settlementRegionMap: Map<string, string>
+): string[] {
+  const groups = coalesceMetroRegionGroups(
+    buildRegionRuleGroups(pickupCity, dropCity, settlementRegionMap)
+  );
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const g of groups) {
+    for (const token of g) {
+      const k = normHe(token);
+      if (k.length < 2 || seen.has(k)) continue;
+      seen.add(k);
+      out.push(token.trim());
+    }
+  }
+  return out;
 }

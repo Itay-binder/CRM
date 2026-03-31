@@ -102,7 +102,7 @@ export async function applyMatchSendSideEffects(params: {
     const k = MOVER_OPPORTUNITY_FIELD_IDS.leadsCount;
     cv[k] = (Number(cv[k]) || 0) + 1;
     try {
-      await updateOpportunity(opp.id, { customValues: cv });
+      await updateOpportunity(opp.id, { customValues: cv, lastLeadAt: new Date() });
     } catch {
       /* ignore */
     }

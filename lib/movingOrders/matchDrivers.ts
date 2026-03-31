@@ -1,6 +1,7 @@
 import type { LeadRecord } from "@/lib/leads/repo";
 import { extractCityHints } from "@/lib/movingOrders/israelCities";
 import { MOVER_FIELD_IDS, PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
+import { parseMovingOrderDateToNoon } from "@/lib/movingOrders/orderMoveDate";
 import { leadIsPayingPipelineMoverCandidate } from "@/lib/movingOrders/moverFieldReaders";
 import type { MovingOrderPayload } from "@/lib/movingOrders/types";
 
@@ -18,20 +19,15 @@ function readStr(cf: Record<string, unknown> | undefined, key: string): string {
   return String(cf?.[key] ?? "").trim();
 }
 
-function jerusalemWeekdayIndex(ymd: string): number | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd.trim());
-  if (!m) return null;
-  const d = new Date(`${m[1]}-${m[2]}-${m[3]}T12:00:00+03:00`);
-  const wd = d.toLocaleDateString("en-US", { weekday: "short", timeZone: "Asia/Jerusalem" });
-  const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-  const idx = map[wd];
-  return idx === undefined ? null : idx;
-}
-
 /** סימנים לחיפוש בשדה ימי הפעילות של המוביל (א׳–ש׳) */
-export function orderDateToJerusalemWeekdayMarkers(ymd: string): string[] {
-  const dow = jerusalemWeekdayIndex(ymd);
-  if (dow === null) return [];
+export function orderDateToJerusalemWeekdayMarkers(rawDate: string): string[] {
+  const d = parseMovingOrderDateToNoon(rawDate.trim());
+  if (!d || Number.isNaN(d.getTime())) return [];
+  const wd = d.toLocaleDateString("en-US", { weekday: "short", timeZone: "Asia/Jerusalem" });
+  const dow = (
+    { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 } as Record<string, number>
+  )[wd];
+  if (dow === undefined) return [];
   const map: Record<number, string[]> = {
     0: ["א", "א׳", "ראשון", "יום א", "יום ראשון"],
     1: ["ב", "ב׳", "שני", "יום ב", "יום שני"],

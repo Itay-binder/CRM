@@ -2,6 +2,12 @@ export type MovingOrderStatus = "pending" | "dispatched" | "completed" | "cancel
 
 export type DriverMatchFlag = "ok" | "orange" | "red";
 
+/** רמזי תצוגה לטאב התאמה (מחושבים ב־API) */
+export type OrderMatchUiHints = {
+  moveWeekdayHe: string;
+  transportRegionsLine: string;
+};
+
 /** גוף הזמנה כפי שנכנס מ-webhook חיצוני */
 export type MovingOrderPayload = {
   order_id: string;

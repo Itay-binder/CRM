@@ -63,6 +63,8 @@ export type MovingOrderRecord = {
   excludedDriverIds: string[];
   /** סטטוס התאמה לכל מזהה איש קשר (מוביל) */
   driverMatchFlags?: Record<string, DriverMatchFlag>;
+  /** סיבות קצרות (עברית) לכל מוביל — למה כתום/אדום */
+  driverMatchIssues?: Record<string, string[]>;
   /** סיבת דחייה (שליחה ל-webhook ביטול התאמה) */
   matchRejectionReason?: string;
   dispatchedAt: string | null;

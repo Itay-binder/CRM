@@ -1,6 +1,5 @@
 /**
- * מזהה ברירת מחדל לפייפליין «לקוחות» בזריעה (מסמך pipelines/customers).
- * בזמן ריצה: השתמשו ב־getPayingCustomersPipelineId() או CRM_PAYING_CUSTOMERS_PIPELINE_ID.
+ * פייפליין הזדמנויות «לקוחות» — כאן יושבות ההזדמנויות למאגר מובילים בהתאמה להזמנות.
  */
 export const PAYING_CUSTOMERS_PIPELINE_ID = "customers";
 

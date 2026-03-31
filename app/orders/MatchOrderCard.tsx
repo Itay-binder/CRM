@@ -120,16 +120,15 @@ function ManualMoverPickerBlock({
             בחירת איש קשר — פייפליין «{resolvedPayingPipeline?.name ?? "…"}»
           </label>
           {resolvedPayingPipeline ? (
-            <p style={{ fontSize: 11, color: "#6b7280", margin: "0 0 8px", lineHeight: 1.4 }} dir="ltr">
-              פייפליין זהה למסך ניהול הזדמנויות (מזהה: <code>{resolvedPayingPipeline.id}</code>).
+            <p style={{ fontSize: 11, color: "#6b7280", margin: "0 0 8px", lineHeight: 1.4 }}>
+              רשימה ממזהה <code dir="ltr">{resolvedPayingPipeline.id}</code> — הזדמנויות «לקוחות».
             </p>
           ) : null}
           {pickerLoading ? (
             <p style={{ color: "#6b7280", margin: 0 }}>טוען רשימה…</p>
           ) : pickerRows.length === 0 ? (
             <p style={{ color: "#6b7280", margin: 0, lineHeight: 1.5 }}>
-              אין אנשי קשר שמקושרים להזדמנות בפייפליין הזה (ניהול הזדמנויות). ודאו שלכל הזדמנות יש איש קשר תקין.
-              אם צריך לקבע מזהה פייפליין אחר — <code dir="ltr">CRM_PAYING_CUSTOMERS_PIPELINE_ID</code> ב־Vercel.
+              אין אנשי קשר שמקושרים להזדמנות בפייפליין «לקוחות». ודאו שלכל הזדמנות יש איש קשר תקין.
             </p>
           ) : (
             <>
@@ -366,7 +365,11 @@ export function MatchOrderCard({
           ) : null}
         </div>
 
-        <div style={{ fontWeight: 700, fontSize: 14, margin: "14px 0 8px" }}>מובילים מתאימים</div>
+        <div style={{ fontWeight: 700, fontSize: 14, margin: "14px 0 8px" }}>מובילים (הזדמנויות · פייפליין לקוחות)</div>
+        <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 10px", lineHeight: 1.5 }}>
+          מוצגים <strong>כל</strong> המובילים מההזדמנויות בפייפליין «לקוחות». רקע וימין: <span style={{ color: "#b45309" }}>כתום</span> — חריגה
+          קלה; <span style={{ color: "#b91c1c" }}>אדום</span> — חריגה חמורה (למשל אזור או לא פעיל). מתחת לשם מופיע פירוט קצר.
+        </p>
         {onRematchDrivers && canAct ? (
           <div style={{ marginBottom: 10 }}>
             <button
@@ -391,12 +394,13 @@ export function MatchOrderCard({
           {driverIds.map((id) => {
             const driverPhone = drivers[id]?.phone?.trim();
             const flag = order.driverMatchFlags?.[id];
+            const issues = order.driverMatchIssues?.[id];
             return (
               <li
                 key={id}
                 style={{
                   display: "flex",
-                  alignItems: "center",
+                  alignItems: "flex-start",
                   gap: 8,
                   padding: "6px 8px",
                   borderRadius: 8,
@@ -409,15 +413,23 @@ export function MatchOrderCard({
                   checked={isChecked(id)}
                   disabled={!canAct}
                   onChange={(e) => onToggleCheck(id, e.target.checked)}
+                  style={{ marginTop: 3 }}
                 />
-                <span style={{ flex: 1 }}>{rowLabel(id)}</span>
+                <span style={{ flex: 1 }}>
+                  <span style={{ display: "block" }}>{rowLabel(id)}</span>
+                  {issues?.length ? (
+                    <span style={{ display: "block", fontSize: 11, color: "#92400e", marginTop: 3, lineHeight: 1.35 }}>
+                      {issues.join(" · ")}
+                    </span>
+                  ) : null}
+                </span>
                 {driverPhone ? <WhatsAppIconLink phone={driverPhone} size={18} /> : null}
               </li>
             );
           })}
           {driverIds.length === 0 ? (
             <li style={{ color: "#6b7280" }}>
-              לא נמצאו מובילים (מאגר: הזדמנויות «לקוחות משלמים» + התאמת אזורים). לחץ «חשב מובילים מחדש».
+              אין מובילים מהפייפליין «לקוחות». ודאו שיש הזדמנויות עם איש קשר, ולחצו «חשב מובילים מחדש».
             </li>
           ) : null}
         </ul>
@@ -591,14 +603,14 @@ export function MatchOrderCard({
                         colSpan={14}
                         style={{ padding: 16, textAlign: "center", color: "#4b5563", background: "#fafafa" }}
                       >
-                        אין מובילים בהתאמה אוטומטית. השתמשו ב־«הוסף מוביל» מתחת לטבלה — או עדכנו אזורי פעילות אצל
-                        המובילים ורעננו את הדף.
+                        אין מובילים מהפייפליין «לקוחות». השתמשו ב־«הוסף מוביל» או לחצו «חשב מובילים מחדש».
                       </td>
                     </tr>
                   ) : (
                     driverIds.map((id) => {
                       const en = enrichment[id];
                       const flag = order.driverMatchFlags?.[id];
+                      const issues = order.driverMatchIssues?.[id];
                       return (
                         <tr
                           key={id}
@@ -614,7 +626,14 @@ export function MatchOrderCard({
                               onChange={(e) => onToggleCheck(id, e.target.checked)}
                             />
                           </td>
-                          <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{rowLabel(id)}</td>
+                          <td style={{ padding: 6, border: "1px solid #e5e7eb", maxWidth: 220 }}>
+                            <div>{rowLabel(id)}</div>
+                            {issues?.length ? (
+                              <div style={{ fontSize: 11, color: "#92400e", marginTop: 4, lineHeight: 1.35 }}>
+                                {issues.join(" · ")}
+                              </div>
+                            ) : null}
+                          </td>
                           <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.regions ?? "—"}</td>
                           <td style={{ padding: 6, border: "1px solid #e5e7eb" }}>{en?.workAvailability ?? "—"}</td>
                           <td style={{ padding: 6, border: "1px solid #e5e7eb", whiteSpace: "pre-wrap" }}>

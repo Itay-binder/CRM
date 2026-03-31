@@ -3,7 +3,8 @@ import { requireApprovedUser } from "@/lib/auth/guard";
 import { listLeadsFiltered } from "@/lib/leads/repo";
 import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
 import { leadIsMoverPoolMember } from "@/lib/movingOrders/moverFieldReaders";
-import { getPayingCustomersPipelineMeta, listOpportunities } from "@/lib/opportunities/repo";
+import { ensureCustomersPipeline, listOpportunities } from "@/lib/opportunities/repo";
+import { PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -28,8 +29,8 @@ export async function GET(req: NextRequest) {
     req.nextUrl.searchParams.get("forManualPick") === "true";
 
   try {
-    const payingMeta = await getPayingCustomersPipelineMeta();
-    const payingPipelineId = payingMeta.id;
+    const payingMeta = await ensureCustomersPipeline();
+    const payingPipelineId = PAYING_CUSTOMERS_PIPELINE_ID;
     const [leads, opps] = await Promise.all([
       listLeadsFiltered(),
       listOpportunities(payingPipelineId),
@@ -63,7 +64,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       payingPipelineId: payingMeta.id,
-      payingPipelineName: payingMeta.name,
+      payingPipelineName: payingMeta.name || "לקוחות",
       contacts: sorted.slice(0, limit).map((l) => ({
         id: l.id,
         name: l.name ?? "",

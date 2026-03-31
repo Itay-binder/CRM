@@ -3,7 +3,8 @@ import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { validateCustomValues } from "@/lib/customFields/repo";
 import { listLeadsFiltered } from "@/lib/leads/repo";
-import { getPayingCustomersPipelineId, listOpportunities } from "@/lib/opportunities/repo";
+import { listOpportunities } from "@/lib/opportunities/repo";
+import { PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
 import { rawCustomValuesFromPayload } from "@/lib/movingOrders/customValuesFromPayload";
 import { ensureMovingOrdersIntakePipeline } from "@/lib/movingOrders/ensureIntakePipeline";
 import { getCityRegionMap } from "@/lib/movingOrders/cityRegionSettingsRepo";
@@ -48,6 +49,18 @@ function coerceDriverMatchFlags(raw: unknown): Record<string, DriverMatchFlag> |
   return Object.keys(out).length ? out : undefined;
 }
 
+function coerceDriverMatchIssues(raw: unknown): Record<string, string[]> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const o = raw as Record<string, unknown>;
+  const out: Record<string, string[]> = {};
+  for (const [k, v] of Object.entries(o)) {
+    if (!Array.isArray(v)) continue;
+    const arr = v.map((x) => String(x)).filter(Boolean);
+    if (arr.length) out[k] = arr;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 async function rematchMovingOrderDrivers(input: {
   payload: MovingOrderPayload;
   customValues: Record<string, unknown>;
@@ -57,25 +70,26 @@ async function rematchMovingOrderDrivers(input: {
   matchedDriverIds: string[];
   optionalDriverIds: string[];
   driverMatchFlags: Record<string, DriverMatchFlag>;
+  driverMatchIssues: Record<string, string[]>;
   excludedDriverIds: string[];
 }> {
   const leads = await listLeadsFiltered();
-  const payingPipelineId = await getPayingCustomersPipelineId();
-  const opportunities = await listOpportunities(payingPipelineId);
+  const opportunities = await listOpportunities(PAYING_CUSTOMERS_PIPELINE_ID);
   const settlementRegionMap = await getCityRegionMap();
   const manualSet = new Set(input.prevManual.map((x) => String(x).trim()).filter(Boolean));
-  const { matchedDriverIds, optionalDriverIds, driverMatchFlags } = matchMoversForOrderDetailed(
-    payingPipelineId,
-    leads,
-    opportunities,
-    input.payload,
-    input.customValues,
-    settlementRegionMap,
-    manualSet
-  );
+  const { matchedDriverIds, optionalDriverIds, driverMatchFlags, driverMatchIssues } =
+    matchMoversForOrderDetailed(
+      PAYING_CUSTOMERS_PIPELINE_ID,
+      leads,
+      opportunities,
+      input.payload,
+      input.customValues,
+      settlementRegionMap,
+      manualSet
+    );
   const knownIds = new Set<string>([...matchedDriverIds, ...optionalDriverIds, ...manualSet]);
   const excludedDriverIds = input.prevExcluded.map(String).filter((x) => knownIds.has(x));
-  return { matchedDriverIds, optionalDriverIds, driverMatchFlags, excludedDriverIds };
+  return { matchedDriverIds, optionalDriverIds, driverMatchFlags, driverMatchIssues, excludedDriverIds };
 }
 
 function normalizeOrderStage(
@@ -117,6 +131,8 @@ function mapDoc(id: string, data: Record<string, unknown>): MovingOrderRecord {
     excludedDriverIds: Array.isArray(data.excludedDriverIds)
       ? (data.excludedDriverIds as unknown[]).map((x) => String(x))
       : [],
+    driverMatchFlags: coerceDriverMatchFlags(data.driverMatchFlags),
+    driverMatchIssues: coerceDriverMatchIssues(data.driverMatchIssues),
     dispatchedAt: typeof data.dispatchedAt === "string" ? data.dispatchedAt : mapTs(data.dispatchedAt),
     createdAt: mapTs(data.createdAt),
     updatedAt: mapTs(data.updatedAt),
@@ -204,6 +220,7 @@ export async function upsertMovingOrderFromIngest(
         matchedDriverIds: match.matchedDriverIds,
         optionalDriverIds: match.optionalDriverIds,
         driverMatchFlags: match.driverMatchFlags,
+        driverMatchIssues: match.driverMatchIssues,
         excludedDriverIds: match.excludedDriverIds,
         updatedAt: now,
         ...(prevStage.trim() ? {} : { stage: MOVING_ORDER_STAGES[0], status: "pending" }),
@@ -221,6 +238,7 @@ export async function upsertMovingOrderFromIngest(
         matchedDriverIds: match.matchedDriverIds,
         optionalDriverIds: match.optionalDriverIds,
         driverMatchFlags: match.driverMatchFlags,
+        driverMatchIssues: match.driverMatchIssues,
         manualDriverIds: [],
         excludedDriverIds: match.excludedDriverIds,
         createdAt: now,
@@ -291,6 +309,7 @@ export async function createMovingOrderManual(
     matchedDriverIds: match.matchedDriverIds,
     optionalDriverIds: match.optionalDriverIds,
     driverMatchFlags: match.driverMatchFlags,
+    driverMatchIssues: match.driverMatchIssues,
     manualDriverIds: [],
     excludedDriverIds: match.excludedDriverIds,
     createdAt: now,
@@ -409,6 +428,7 @@ export async function updateMovingOrder(
     payload.matchedDriverIds = r.matchedDriverIds;
     payload.optionalDriverIds = r.optionalDriverIds;
     payload.driverMatchFlags = r.driverMatchFlags;
+    payload.driverMatchIssues = r.driverMatchIssues;
     if (input.excludedDriverIds === undefined) {
       payload.excludedDriverIds = r.excludedDriverIds;
     }

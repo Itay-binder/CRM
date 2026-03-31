@@ -2,7 +2,7 @@ import type { LeadRecord } from "@/lib/leads/repo";
 import type { OpportunityRecord } from "@/lib/opportunities/repo";
 import { extractCityHints } from "@/lib/movingOrders/israelCities";
 import { deriveOrderCapabilities, driverWorksOnDay, orderDateToJerusalemWeekdayMarkers } from "@/lib/movingOrders/matchDrivers";
-import { MOVER_OPPORTUNITY_FIELD_IDS } from "@/lib/movingOrders/fieldIds";
+import { MOVER_OPPORTUNITY_FIELD_IDS, PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
 import type { DriverMatchFlag, MovingOrderPayload } from "@/lib/movingOrders/types";
 import {
   immediateSosIndicatesYes,
@@ -226,13 +226,46 @@ function resolveMoveKind(
   return "unknown";
 }
 
-function orderIsUrgent(payload: MovingOrderPayload, cv: Record<string, unknown> | undefined): boolean {
+function orderIsUrgentByField(payload: MovingOrderPayload, cv: Record<string, unknown> | undefined): boolean {
   const raw = cv?.moving_order_is_urgent ?? payload.is_urgent;
   if (triStateYesNo(raw) === true) return true;
   const u = String(raw ?? "")
     .trim()
     .toLowerCase();
   return u === "כן" || u === "yes" || u === "true" || u === "1";
+}
+
+/** דחיפות גם כשתאריךი הובלה הוא היום או מחר (לוח שנה — Asia/Jerusalem) */
+function orderIsTodayOrTomorrowIsrael(
+  payload: MovingOrderPayload,
+  cv: Record<string, unknown> | undefined
+): boolean {
+  const ds = String(cv?.moving_order_date ?? payload.date ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ds)) return false;
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" });
+  const tomorrow = new Date(Date.now() + 864e5).toLocaleDateString("en-CA", {
+    timeZone: "Asia/Jerusalem",
+  });
+  return ds === today || ds === tomorrow;
+}
+
+function orderIsUrgent(payload: MovingOrderPayload, cv: Record<string, unknown> | undefined): boolean {
+  return orderIsUrgentByField(payload, cv) || orderIsTodayOrTomorrowIsrael(payload, cv);
+}
+
+function syntheticLeadFromOpportunity(opp: OpportunityRecord): LeadRecord {
+  const cid = (opp.contactId ?? "").trim();
+  return {
+    id: cid,
+    name: opp.contactName ?? opp.name,
+    phone: opp.contactPhone ?? opp.phone,
+    email: opp.contactEmail ?? opp.email,
+    stage: "",
+    pipelineId: "",
+    customFields: {},
+    createdAt: null,
+    updatedAt: null,
+  };
 }
 
 /** רק ערך שלילי מפורש נחשב לא זמין; חסר / לא מזוהה — לא מסמנים אדום */
@@ -245,13 +278,15 @@ export type MatchMoversDetailedResult = {
   matchedDriverIds: string[];
   optionalDriverIds: string[];
   driverMatchFlags: Record<string, DriverMatchFlag>;
+  driverMatchIssues: Record<string, string[]>;
 };
 
 /**
- * התאמת מובילים: סינון אזור חובה, שאר הקריטריונים מסומנים כתום/אדום yet נשארים ברשימה.
+ * כל אנשי הקשר עם הזדמנות בפייפליין customers — ללא סינון הסרה;
+ * כשל בקריטריון מסומן באדום/כתום + רשימת סיבות בעברית.
  */
 export function matchMoversForOrderDetailed(
-  payingPipelineId: string,
+  _payingPipelineId: string,
   leads: LeadRecord[],
   opportunities: OpportunityRecord[],
   payload: MovingOrderPayload,
@@ -259,7 +294,7 @@ export function matchMoversForOrderDetailed(
   settlementRegionMap: Map<string, string>,
   manualContactIds: Set<string>
 ): MatchMoversDetailedResult {
-  const pipe = payingPipelineId.trim();
+  const pipe = PAYING_CUSTOMERS_PIPELINE_ID.trim();
   const cv = orderCustomValues;
   const oppsInPipe = opportunities.filter((o) => (o.pipelineId ?? "").trim() === pipe);
   const oppByContact = opportunitiesByContactId(oppsInPipe);
@@ -271,21 +306,23 @@ export function matchMoversForOrderDetailed(
   }
 
   const leadById = new Map(leads.map((l) => [l.id, l]));
-  const moverLeads: LeadRecord[] = [];
-  const seenMover = new Set<string>();
+  const toProcess: LeadRecord[] = [];
+  const seen = new Set<string>();
   for (const cid of contactIdsFromPayingOpps) {
+    const opp = oppByContact.get(cid);
+    if (!opp) continue;
     const lead = leadById.get(cid);
-    if (!lead || !leadIsMoverPoolMember(lead)) continue;
-    if (seenMover.has(lead.id)) continue;
-    seenMover.add(lead.id);
-    moverLeads.push(lead);
+    const eff = lead ?? syntheticLeadFromOpportunity(opp);
+    if (seen.has(eff.id)) continue;
+    toProcess.push(eff);
+    seen.add(eff.id);
   }
   for (const mid of manualContactIds) {
-    if (seenMover.has(mid)) continue;
+    if (seen.has(mid)) continue;
     const lead = leadById.get(mid);
     if (!lead) continue;
-    moverLeads.push(lead);
-    seenMover.add(mid);
+    toProcess.push(lead);
+    seen.add(mid);
   }
 
   const { pickupCity, dropCity } = resolveOrderCities(payload, cv);
@@ -297,8 +334,9 @@ export function matchMoversForOrderDetailed(
   const dayMarkers = dayMarkersFromOrder(cv, payload);
 
   const rows: Array<{ id: string; flag: DriverMatchFlag; name: string }> = [];
+  const driverMatchIssues: Record<string, string[]> = {};
 
-  for (const lead of moverLeads) {
+  for (const lead of toProcess) {
     const opp = oppByContact.get(lead.id);
     const merged = mergeLeadAndOpportunity(lead, opp);
     const regionsText = readMoverRegionsText(merged);
@@ -310,38 +348,49 @@ export function matchMoversForOrderDetailed(
 
     const manual = manualContactIds.has(lead.id);
     const regionStrictOk = moverPassesAllRegionGroups(moverNorm, regionGroups, nationwide);
-    const regionOk = manual || regionStrictOk || regionsDataMissing;
-    if (!regionOk) continue;
 
+    const issuesHe: string[] = [];
     let flag: DriverMatchFlag = "ok";
 
-    if (regionsDataMissing && !manual) {
-      flag = combineFlags(flag, "orange");
+    if (!leadIsMoverPoolMember(lead)) {
+      flag = combineFlags(flag, "red");
+      issuesHe.push("לא מסומן כמוביל");
+    }
+
+    if (!manual) {
+      if (regionsDataMissing) {
+        flag = combineFlags(flag, "orange");
+        issuesHe.push("אזור פעילות חסר");
+      } else if (!regionStrictOk) {
+        flag = combineFlags(flag, "red");
+        issuesHe.push("אזור פעילות");
+      }
     }
 
     if (!workAvailabilityOk(merged)) {
       flag = combineFlags(flag, "red");
+      issuesHe.push("זמינות (לא פעיל)");
     }
 
     if (moveKind === "small" && normHe(readSmallMoverAnswer(merged)) === normHe("לא")) {
       flag = combineFlags(flag, "orange");
+      issuesHe.push("סוג הובלה (קטנה)");
     }
     if (moveKind === "large" && normHe(readApartmentMoverAnswer(merged)) === normHe("לא")) {
       flag = combineFlags(flag, "orange");
-    }
-
-    if (moveKind === "unknown") {
-      /* לא מסמנים כתום לפי סוג — חסר מידע */
+      issuesHe.push("סוג הובלה (דירה)");
     }
 
     if (urgent && !immediateSosIndicatesYes(merged)) {
       flag = combineFlags(flag, "orange");
+      issuesHe.push("דחיפות · SOS");
     }
 
     if (dayMarkers.length > 0) {
       const daysStr = readActivityDaysText(merged);
       if (!driverWorksOnDay(daysStr, dayMarkers)) {
         flag = combineFlags(flag, "orange");
+        issuesHe.push("ימי פעילות");
       }
     }
 
@@ -350,6 +399,7 @@ export function matchMoversForOrderDetailed(
       flag,
       name: (lead.name ?? "").trim(),
     });
+    if (issuesHe.length) driverMatchIssues[lead.id] = issuesHe;
   }
 
   rows.sort((a, b) => {
@@ -366,5 +416,6 @@ export function matchMoversForOrderDetailed(
     matchedDriverIds,
     optionalDriverIds: [],
     driverMatchFlags,
+    driverMatchIssues,
   };
 }

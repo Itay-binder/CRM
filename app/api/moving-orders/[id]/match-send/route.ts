@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { getLeadById } from "@/lib/leads/repo";
-import { getPayingCustomersPipelineId, listOpportunities } from "@/lib/opportunities/repo";
+import { listOpportunities } from "@/lib/opportunities/repo";
+import { PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
 import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
 import {
   applyMatchSendSideEffects,
@@ -74,10 +75,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     })
   );
 
-  const payingPid = await getPayingCustomersPipelineId();
-  const opps = await listOpportunities(payingPid);
+  const opps = await listOpportunities(PAYING_CUSTOMERS_PIPELINE_ID);
   const oppByContact = opportunitiesByContactId(
-    opps.filter((o) => (o.pipelineId ?? "").trim() === payingPid)
+    opps.filter((o) => (o.pipelineId ?? "").trim() === PAYING_CUSTOMERS_PIPELINE_ID)
   );
 
   const movers = await buildMatchWebhookMovers(driverIds, order.driverMatchFlags, leadById, oppByContact);

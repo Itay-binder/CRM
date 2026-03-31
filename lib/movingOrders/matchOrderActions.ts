@@ -1,6 +1,6 @@
 import { appendLeadNote } from "@/lib/leads/repo";
 import type { LeadRecord } from "@/lib/leads/repo";
-import { getPayingCustomersPipelineId, listOpportunities, updateOpportunity } from "@/lib/opportunities/repo";
+import { listOpportunities, updateOpportunity } from "@/lib/opportunities/repo";
 import type { OpportunityRecord } from "@/lib/opportunities/repo";
 import { MOVER_OPPORTUNITY_FIELD_IDS, PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
 import { opportunitiesByContactId } from "@/lib/movingOrders/matchMovers";
@@ -87,8 +87,7 @@ export async function applyMatchSendSideEffects(params: {
   orderId: string;
 }): Promise<void> {
   const note = `הזמנה: ${params.orderCustomerName} · מזהה הזמנה: ${params.orderId}`;
-  const payingPid = await getPayingCustomersPipelineId();
-  const opps = await listOpportunities(payingPid);
+  const opps = await listOpportunities(PAYING_CUSTOMERS_PIPELINE_ID);
   const idx = opportunitiesByContactId(opps);
 
   for (const contactId of params.contactIds) {

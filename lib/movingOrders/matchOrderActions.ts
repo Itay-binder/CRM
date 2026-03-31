@@ -87,8 +87,7 @@ export function flatMatchSendOpportunityFields(movers: MatchWebhookMover[]): Rec
 }
 
 /**
- * טקסט אחד למזמין — בלוק לכל הזדמנות/מוביל שנשלח, מופרד בשורה ריקה (שני \n).
- * מותאם לוואטסאפ: כותרות עם כוכביות.
+ * טקסט אחד למזמין — שורה לכל מוביל: *שם:* טלפון (בלי תוויות «שם הזדמנות»), מופרד בשורה ריקה.
  */
 export function customerFacingMoversMessageText(movers: MatchWebhookMover[]): string {
   const blocks = movers
@@ -97,7 +96,9 @@ export function customerFacingMoversMessageText(movers: MatchWebhookMover[]): st
       const name = (opp?.name?.trim() || m.lead.name?.trim() || "").trim();
       const phone = (opp?.phone?.trim() || m.lead.phone?.trim() || "").trim();
       if (!name && !phone) return "";
-      return `*שם ההזדמנות:* ${name}\n*מספר פלאפון:* ${phone}`.trim();
+      if (!name) return phone;
+      if (!phone) return `*${name}:*`;
+      return `*${name}:* ${phone}`;
     })
     .filter(Boolean);
   return blocks.join("\n\n");

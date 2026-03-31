@@ -2,6 +2,7 @@
 
 import { useState, type CSSProperties } from "react";
 import { WhatsAppIconLink } from "@/app/components/InlineFieldShell";
+import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 import type {
   DriverSummary,
   MoverMatchEnrichment,
@@ -234,7 +235,7 @@ function MoverMatchTable({
                 <td style={tdStyle}>{en?.crane?.trim() || "—"}</td>
                 <td style={tdStyle}>{en?.leadCount?.trim() || "—"}</td>
                 <td style={{ ...tdStyle, fontSize: 11 }}>
-                  {en?.lastLeadAt ? en.lastLeadAt.slice(0, 16).replace("T", " ") : "—"}
+                  {en?.lastLeadAt ? formatIsraelDateTime(en.lastLeadAt) : "—"}
                 </td>
                 <td style={{ ...tdStyle, fontSize: 11 }}>{hoursCell(en)}</td>
                 <td style={tdStyle}>{driverPhone ? <WhatsAppIconLink phone={driverPhone} size={18} /> : "—"}</td>
@@ -297,7 +298,7 @@ export function MatchOrderCard({
   const p = order.payload;
   const driverIds = allMatchDriverIds(order);
   const canAct = order.status !== "cancelled" && order.status !== "completed" && order.status !== "rejected";
-  const createdShort = order.createdAt ? order.createdAt.slice(0, 16).replace("T", " ") : "—";
+  const createdShort = order.createdAt ? formatIsraelDateTime(order.createdAt) : "—";
 
   function rowLabel(id: string): string {
     const d = drivers[id];
@@ -360,7 +361,7 @@ export function MatchOrderCard({
           {order.dispatchedAt ? (
             <span style={{ color: "#6b7280", fontWeight: 400 }}>
               {" "}
-              · נשלח ב־{order.dispatchedAt.slice(0, 16).replace("T", " ")}
+              · נשלח ב־{formatIsraelDateTime(order.dispatchedAt)}
             </span>
           ) : null}
         </div>

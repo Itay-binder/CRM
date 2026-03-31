@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { WhatsAppIconLink } from "@/app/components/InlineFieldShell";
 import type {
   DriverSummary,
@@ -102,6 +102,163 @@ function flagLabelHe(flag: "ok" | "orange" | "red" | undefined): string {
   if (flag === "red") return "לא מתאים (אדום)";
   if (flag === "orange") return "התאמה חלקית (כתום)";
   return "מתאים (ירוק)";
+}
+
+function rowBackground(
+  flag: "ok" | "orange" | "red" | undefined,
+  issuesLen: number
+): string {
+  if (flag === "red") return "#fef2f2";
+  if (flag === "orange") return "#fffbeb";
+  if (issuesLen > 0) return "#fff7ed";
+  return "#ffffff";
+}
+
+function hoursCell(en: MoverMatchEnrichment | undefined): string {
+  if (!en) return "—";
+  const parts = [
+    en.flexibleHours?.trim(),
+    en.hourStart?.trim() && en.hourEnd?.trim() ? `${en.hourStart}–${en.hourEnd}` : en.hourStart?.trim() || en.hourEnd?.trim(),
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "—";
+}
+
+type MoverMatchTableProps = {
+  order: MovingOrderRecord;
+  driverIds: string[];
+  drivers: Record<string, DriverSummary>;
+  enrichment: Record<string, MoverMatchEnrichment>;
+  canAct: boolean;
+  isChecked: (id: string) => boolean;
+  onToggleCheck: (id: string, checked: boolean) => void;
+  rowLabel: (id: string) => string;
+  issueList: (id: string) => string[];
+  availabilityBlocked: (id: string) => boolean;
+  showOpportunityLinks?: boolean;
+};
+
+function MoverMatchTable({
+  order,
+  driverIds,
+  drivers,
+  enrichment,
+  canAct,
+  isChecked,
+  onToggleCheck,
+  rowLabel,
+  issueList,
+  availabilityBlocked,
+  showOpportunityLinks,
+}: MoverMatchTableProps) {
+  const thStyle: CSSProperties = {
+    textAlign: "right",
+    padding: "8px 10px",
+    fontSize: 11,
+    fontWeight: 800,
+    color: "#374151",
+    borderBottom: "2px solid #e5e7eb",
+    background: "#f8fafc",
+    whiteSpace: "nowrap",
+  };
+  const tdStyle: CSSProperties = {
+    textAlign: "right",
+    padding: "8px 10px",
+    fontSize: 12,
+    color: "#374151",
+    borderBottom: "1px solid #f3f4f6",
+    verticalAlign: "top",
+    lineHeight: 1.4,
+    maxWidth: 220,
+    wordBreak: "break-word",
+  };
+
+  if (driverIds.length === 0) {
+    return <div style={{ color: "#6b7280", fontSize: 14 }}>אין מובילים מהפייפליין «לקוחות».</div>;
+  }
+
+  return (
+    <div style={{ width: "100%", overflowX: "auto", WebkitOverflowScrolling: "touch", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+      <table style={{ width: "100%", minWidth: showOpportunityLinks ? 1100 : 960, borderCollapse: "collapse", background: "#fff" }}>
+        <thead>
+          <tr>
+            <th style={{ ...thStyle, width: 36 }} aria-label="בחירה" />
+            <th style={thStyle}>מוביל</th>
+            <th style={thStyle}>התאמה</th>
+            <th style={{ ...thStyle, minWidth: 140 }}>הערות</th>
+            <th style={thStyle}>אזורי פעילות</th>
+            <th style={thStyle}>זמינות לעבודה</th>
+            <th style={thStyle}>ימי פעילות</th>
+            <th style={thStyle}>דירות</th>
+            <th style={thStyle}>קטן</th>
+            <th style={thStyle}>חירום</th>
+            <th style={thStyle}>מנוף</th>
+            <th style={thStyle}>פניות</th>
+            <th style={thStyle}>ליד אחרון</th>
+            <th style={thStyle}>שעות / גמישות</th>
+            <th style={thStyle}>וואטסאפ</th>
+            {showOpportunityLinks ? <th style={thStyle}>הזדמנות</th> : null}
+          </tr>
+        </thead>
+        <tbody>
+          {driverIds.map((id) => {
+            const flag = order.driverMatchFlags?.[id];
+            const issues = issueList(id);
+            const blocked = availabilityBlocked(id);
+            const en = enrichment[id];
+            const driverPhone = drivers[id]?.phone?.trim();
+            const oppId = en?.opportunityId?.trim();
+            const bg = rowBackground(flag, issues.length);
+            const accent = matchRowAccent(flag);
+            return (
+              <tr key={id} style={{ background: bg, borderRight: `4px solid ${accent}` }}>
+                <td style={{ ...tdStyle, width: 36 }}>
+                  <input
+                    type="checkbox"
+                    checked={!blocked && isChecked(id)}
+                    disabled={!canAct || blocked}
+                    onChange={(e) => onToggleCheck(id, e.target.checked)}
+                    style={{ marginTop: 4 }}
+                  />
+                </td>
+                <td style={{ ...tdStyle, fontWeight: 700 }}>{rowLabel(id)}</td>
+                <td style={tdStyle}>{flagLabelHe(flag)}</td>
+                <td style={{ ...tdStyle, color: issues.length ? "#9a3412" : "#6b7280", fontSize: 11 }}>
+                  {issues.length ? issues.join(" · ") : "—"}
+                </td>
+                <td style={tdStyle}>{en?.regions?.trim() || "—"}</td>
+                <td style={tdStyle}>{en?.workAvailability?.trim() || "—"}</td>
+                <td style={tdStyle}>{en?.activityDays?.trim() || "—"}</td>
+                <td style={tdStyle}>{en?.apartmentMover?.trim() || "—"}</td>
+                <td style={tdStyle}>{en?.smallMover?.trim() || "—"}</td>
+                <td style={tdStyle}>{en?.sos?.trim() || "—"}</td>
+                <td style={tdStyle}>{en?.crane?.trim() || "—"}</td>
+                <td style={tdStyle}>{en?.leadCount?.trim() || "—"}</td>
+                <td style={{ ...tdStyle, fontSize: 11 }}>
+                  {en?.lastLeadAt ? en.lastLeadAt.slice(0, 16).replace("T", " ") : "—"}
+                </td>
+                <td style={{ ...tdStyle, fontSize: 11 }}>{hoursCell(en)}</td>
+                <td style={tdStyle}>{driverPhone ? <WhatsAppIconLink phone={driverPhone} size={18} /> : "—"}</td>
+                {showOpportunityLinks ? (
+                  <td style={tdStyle}>
+                    {oppId ? (
+                      <a
+                        href={`/pipeline?openOpportunityId=${encodeURIComponent(oppId)}`}
+                        style={{ fontSize: 12, fontWeight: 700, color: "#6d28d9", textDecoration: "underline" }}
+                      >
+                        פתח
+                      </a>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                ) : null}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 export function MatchOrderCard({
@@ -225,47 +382,19 @@ export function MatchOrderCard({
           </div>
         ) : null}
 
-        <div style={{ fontWeight: 700, fontSize: 14, margin: "14px 0 8px" }}>מובילים (הזדמנויות · פייפליין לקוחות)</div>
-        <ul style={{ listStyle: "none", padding: 0, margin: "0 0 12px", display: "grid", gap: 6 }}>
-          {driverIds.map((id) => {
-            const driverPhone = drivers[id]?.phone?.trim();
-            const flag = order.driverMatchFlags?.[id];
-            const issues = issueList(id);
-            const blocked = availabilityBlocked(id);
-            return (
-              <li
-                key={id}
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 8,
-                  padding: "6px 8px",
-                  borderRadius: 8,
-                  borderRight: `4px solid ${matchRowAccent(flag)}`,
-                  background: flag === "red" ? "#fff5f5" : flag === "orange" ? "#fffbeb" : "transparent",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={!blocked && isChecked(id)}
-                  disabled={!canAct || blocked}
-                  onChange={(e) => onToggleCheck(id, e.target.checked)}
-                  style={{ marginTop: 3 }}
-                />
-                <span style={{ flex: 1 }}>
-                  <span style={{ display: "block" }}>{rowLabel(id)}</span>
-                  {issues.length ? (
-                    <span style={{ display: "block", fontSize: 11, color: "#92400e", marginTop: 3, lineHeight: 1.35 }}>
-                      {issues.join(" · ")}
-                    </span>
-                  ) : null}
-                </span>
-                {driverPhone ? <WhatsAppIconLink phone={driverPhone} size={18} /> : null}
-              </li>
-            );
-          })}
-          {driverIds.length === 0 ? <li style={{ color: "#6b7280" }}>אין מובילים מהפייפליין «לקוחות».</li> : null}
-        </ul>
+        <div style={{ fontWeight: 700, fontSize: 14, margin: "14px 0 8px" }}>מובילים — בחירה וקריטריוני התאמה</div>
+        <MoverMatchTable
+          order={order}
+          driverIds={driverIds}
+          drivers={drivers}
+          enrichment={enrichment}
+          canAct={canAct}
+          isChecked={isChecked}
+          onToggleCheck={onToggleCheck}
+          rowLabel={rowLabel}
+          issueList={issueList}
+          availabilityBlocked={availabilityBlocked}
+        />
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
           <button
@@ -420,78 +549,23 @@ export function MatchOrderCard({
               {p.move_type ? <div><strong>סוג הובלה:</strong> {p.move_type}</div> : null}
               {p.phone ? <div><strong>טלפון לקוח:</strong> {p.phone}</div> : null}
             </div>
-            <h3 style={{ fontSize: 15, margin: "18px 0 8px" }}>מובילים — פירוט התאמה</h3>
-            <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 10 }}>
-              {driverIds.map((id) => {
-                const rowPhone = drivers[id]?.phone?.trim();
-                const flag = order.driverMatchFlags?.[id];
-                const en = enrichment[id];
-                const issues = issueList(id);
-                const oppId = en?.opportunityId?.trim();
-                return (
-                  <li
-                    key={id}
-                    style={{
-                      border: "1px solid #e5e7eb",
-                      borderRadius: 10,
-                      padding: 12,
-                      background: "#fff",
-                      borderRight: `4px solid ${matchRowAccent(flag)}`,
-                    }}
-                  >
-                    <div style={{ fontWeight: 800, marginBottom: 6 }}>{rowLabel(id)}</div>
-                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>{flagLabelHe(flag)}</div>
-                    {issues.length ? (
-                      <div style={{ fontSize: 12, color: "#92400e", marginBottom: 8 }}>{issues.join(" · ")}</div>
-                    ) : null}
-                    {en ? (
-                      <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.5, display: "grid", gap: 4 }}>
-                        <div>
-                          <strong>אזורי פעילות (מוביל):</strong> {en.regions?.trim() || "—"}
-                        </div>
-                        <div>
-                          <strong>זמינות לעבודה:</strong> {en.workAvailability?.trim() || "—"}
-                        </div>
-                        <div>
-                          <strong>ימי פעילות:</strong> {en.activityDays?.trim() || "—"}
-                        </div>
-                        <div>
-                          <strong>דירות / קטן / חירום / מנוף:</strong>{" "}
-                          {en.apartmentMover?.trim() || "—"} · {en.smallMover?.trim() || "—"} ·{" "}
-                          {en.sos?.trim() || "—"} · {en.crane?.trim() || "—"}
-                        </div>
-                        <div>
-                          <strong>מספר פניות (לידים):</strong> {en.leadCount ?? "—"}
-                        </div>
-                      </div>
-                    ) : (
-                      <div style={{ fontSize: 13, color: "#9ca3af" }}>אין נתוני התאמה נטענים.</div>
-                    )}
-                    {oppId ? (
-                      <div style={{ marginTop: 10 }}>
-                        <a
-                          href={`/pipeline?openOpportunityId=${encodeURIComponent(oppId)}`}
-                          style={{
-                            display: "inline-block",
-                            fontSize: 13,
-                            fontWeight: 700,
-                            color: "#6d28d9",
-                            textDecoration: "underline",
-                          }}
-                        >
-                          פתח הזדמנות במסך הפייפליין
-                        </a>
-                      </div>
-                    ) : null}
-                    {rowPhone ? (
-                      <div style={{ marginTop: 8 }}>
-                        <WhatsAppIconLink phone={rowPhone} size={18} />
-                      </div>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
+            <h3 style={{ fontSize: 15, margin: "18px 0 8px" }}>מובילים — טבלה ואישור משלוח</h3>
+            <p style={{ margin: "0 0 10px", fontSize: 13, color: "#6b7280" }}>
+              שורות אדומות/כתומות לפי דגל התאמה; רקע בהיר כשיש הערות התאמה.
+            </p>
+            <MoverMatchTable
+              order={order}
+              driverIds={driverIds}
+              drivers={drivers}
+              enrichment={enrichment}
+              canAct={canAct}
+              isChecked={isChecked}
+              onToggleCheck={onToggleCheck}
+              rowLabel={rowLabel}
+              issueList={issueList}
+              availabilityBlocked={availabilityBlocked}
+              showOpportunityLinks
+            />
             <div style={{ marginTop: 16, textAlign: "left" }}>
               <button
                 type="button"

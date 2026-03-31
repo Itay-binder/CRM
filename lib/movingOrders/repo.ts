@@ -3,10 +3,9 @@ import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { validateCustomValues } from "@/lib/customFields/repo";
 import { listLeadsFiltered } from "@/lib/leads/repo";
-import { listOpportunities } from "@/lib/opportunities/repo";
+import { getPayingCustomersPipelineId, listOpportunities } from "@/lib/opportunities/repo";
 import { rawCustomValuesFromPayload } from "@/lib/movingOrders/customValuesFromPayload";
 import { ensureMovingOrdersIntakePipeline } from "@/lib/movingOrders/ensureIntakePipeline";
-import { PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
 import { getCityRegionMap } from "@/lib/movingOrders/cityRegionSettingsRepo";
 import { matchMoversForOrderDetailed } from "@/lib/movingOrders/matchMovers";
 import { MOVING_ORDERS_INTAKE_PIPELINE_ID, MOVING_ORDER_STAGES } from "@/lib/movingOrders/pipelineConstants";
@@ -61,10 +60,12 @@ async function rematchMovingOrderDrivers(input: {
   excludedDriverIds: string[];
 }> {
   const leads = await listLeadsFiltered();
-  const opportunities = await listOpportunities(PAYING_CUSTOMERS_PIPELINE_ID);
+  const payingPipelineId = await getPayingCustomersPipelineId();
+  const opportunities = await listOpportunities(payingPipelineId);
   const settlementRegionMap = await getCityRegionMap();
   const manualSet = new Set(input.prevManual.map((x) => String(x).trim()).filter(Boolean));
   const { matchedDriverIds, optionalDriverIds, driverMatchFlags } = matchMoversForOrderDetailed(
+    payingPipelineId,
     leads,
     opportunities,
     input.payload,

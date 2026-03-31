@@ -4,7 +4,7 @@ import { getTenantByDatabaseId } from "@/lib/tenant/config";
 import { getRequestTenantDatabaseId } from "@/lib/firebase/admin";
 import { isMovingOrdersTenant } from "@/lib/tenant/movingOrders";
 import { isValidIngestApiKeyAsync } from "@/lib/ingest/apiKey";
-import { MOVER_CONTACT_FIELD_IDS, PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
+import { MOVER_CONTACT_FIELD_IDS } from "@/lib/movingOrders/fieldIds";
 import { seedPayingCustomersMoverQuestionnaireFields } from "@/lib/movingOrders/seedPayingCustomersMoverQuestionnaire";
 import {
   buildMoverContactCustomPatchFromWelcome,
@@ -15,6 +15,7 @@ import {
 import {
   findCustomersPipelineOpportunityByNormalizedPhone,
   getOpportunityById,
+  getPayingCustomersPipelineId,
   updateOpportunity,
 } from "@/lib/opportunities/repo";
 import { getLeadById, updateLead } from "@/lib/leads/repo";
@@ -24,13 +25,16 @@ export const revalidate = 0;
 
 type ApiErr = { ok: false; error: string };
 
-async function resolveOpportunityId(item: MoverWelcomeWebhookItem): Promise<string | null> {
+async function resolveOpportunityId(
+  item: MoverWelcomeWebhookItem,
+  payingPipelineId: string
+): Promise<string | null> {
   const explicit = String(item.opportunity_id ?? "")
     .trim()
     .replace(/^"|"$/g, "");
   if (explicit) {
     const opp = await getOpportunityById(explicit);
-    if (!opp || opp.pipelineId !== PAYING_CUSTOMERS_PIPELINE_ID) return null;
+    if (!opp || opp.pipelineId !== payingPipelineId) return null;
     return explicit;
   }
   const phone = String(item.phone ?? "").trim();
@@ -70,8 +74,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  let payingPipelineId: string;
   try {
     await seedPayingCustomersMoverQuestionnaireFields();
+    payingPipelineId = await getPayingCustomersPipelineId();
   } catch (e) {
     return NextResponse.json(
       {
@@ -93,7 +99,7 @@ export async function POST(req: NextRequest) {
 
   for (const item of items) {
     try {
-      const oppId = await resolveOpportunityId(item);
+      const oppId = await resolveOpportunityId(item, payingPipelineId);
       if (!oppId) {
         results.push({
           opportunityId: "",
@@ -112,7 +118,7 @@ export async function POST(req: NextRequest) {
       const welcomeVals = buildWelcomeOpportunityCustomValues(item);
       const mergedOppCustom = { ...(existing.customValues ?? {}), ...welcomeVals };
       const customValues = await validateCustomValues("opportunity", mergedOppCustom, {
-        pipelineId: PAYING_CUSTOMERS_PIPELINE_ID,
+        pipelineId: payingPipelineId,
         previousValues: existing.customValues as Record<string, unknown> | undefined,
       });
 
@@ -132,7 +138,7 @@ export async function POST(req: NextRequest) {
           const prevCf = (lead.customFields ?? {}) as Record<string, unknown>;
           const mergedCf = { ...prevCf, ...patchRec };
           let customFields = await validateCustomValues("contact", mergedCf, {
-            pipelineId: PAYING_CUSTOMERS_PIPELINE_ID,
+            pipelineId: payingPipelineId,
             previousValues: prevCf,
           });
           for (const fid of moverFieldIdSet) {
@@ -141,7 +147,7 @@ export async function POST(req: NextRequest) {
             }
           }
           await updateLead(contactId, {
-            pipelineId: PAYING_CUSTOMERS_PIPELINE_ID,
+            pipelineId: payingPipelineId,
             ...(item.name?.trim() ? { name: item.name.trim() } : {}),
             ...(item.email?.trim() ? { email: item.email.trim() } : {}),
             ...(item.phone?.trim() ? { phone: item.phone.trim() } : {}),

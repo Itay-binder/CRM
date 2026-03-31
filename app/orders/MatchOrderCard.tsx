@@ -67,6 +67,7 @@ function ManualMoverPickerBlock({
   filterLocal,
   onFilterLocal,
   selectKey,
+  resolvedPayingPipeline,
 }: {
   canPick: boolean;
   pickerOpen: boolean;
@@ -77,6 +78,7 @@ function ManualMoverPickerBlock({
   filterLocal: string;
   onFilterLocal: (v: string) => void;
   selectKey: number;
+  resolvedPayingPipeline: { id: string; name: string } | null;
 }) {
   const q = filterLocal.trim().toLowerCase();
   const displayRows = q
@@ -115,13 +117,21 @@ function ManualMoverPickerBlock({
           }}
         >
           <label style={{ display: "block", fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
-            בחירת איש קשר מהפייפליין «לקוחות משלמים»
+            בחירת איש קשר — פייפליין «{resolvedPayingPipeline?.name ?? "…"}»
           </label>
+          {resolvedPayingPipeline ? (
+            <p style={{ fontSize: 11, color: "#6b7280", margin: "0 0 8px", lineHeight: 1.4 }} dir="ltr">
+              מזהה במסד: <code>{resolvedPayingPipeline.id}</code>
+              {" — "}
+              ניתן לקבע ב־Vercel: <code>CRM_PAYING_CUSTOMERS_PIPELINE_ID</code>
+            </p>
+          ) : null}
           {pickerLoading ? (
             <p style={{ color: "#6b7280", margin: 0 }}>טוען רשימה…</p>
           ) : pickerRows.length === 0 ? (
-            <p style={{ color: "#6b7280", margin: 0 }}>
-              אין רשומות בפייפליין לקוחות משלמים לפי המזהה <code>customers</code> ב־CRM.
+            <p style={{ color: "#6b7280", margin: 0, lineHeight: 1.5 }}>
+              אין אנשי קשר בפייפליין הזה. אם המערכת בחרה פייפליין שגוי, הגדרו את המזהה הנכון במשתנה הסביבה
+              לעיל או ודאו ששם הפייפליין מכיל משלמים / לקוחות משלמים.
             </p>
           ) : (
             <>
@@ -207,6 +217,7 @@ export function MatchOrderCard({
   const [pickerRows, setPickerRows] = useState<Array<{ id: string; name: string; phone: string; email: string }>>([]);
   const [pickerLoading, setPickerLoading] = useState(false);
   const [pickerSelectKey, setPickerSelectKey] = useState(0);
+  const [pickerPipelineMeta, setPickerPipelineMeta] = useState<{ id: string; name: string } | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
@@ -214,6 +225,7 @@ export function MatchOrderCard({
   useEffect(() => {
     if (!pickerOpen) return;
     setPickerLoading(true);
+    setPickerPipelineMeta(null);
     void (async () => {
       try {
         const res = await fetch(`/api/moving-orders/customers?forManualPick=1`, {
@@ -223,9 +235,19 @@ export function MatchOrderCard({
         const j = (await res.json()) as {
           ok?: boolean;
           contacts?: Array<{ id: string; name: string; phone: string; email: string }>;
+          payingPipelineId?: string;
+          payingPipelineName?: string;
         };
-        if (j.ok && j.contacts) setPickerRows(j.contacts);
-        else setPickerRows([]);
+        if (j.ok && j.contacts) {
+          setPickerRows(j.contacts);
+          if (j.payingPipelineId)
+            setPickerPipelineMeta({
+              id: j.payingPipelineId,
+              name: j.payingPipelineName ?? j.payingPipelineId,
+            });
+        } else {
+          setPickerRows([]);
+        }
       } catch {
         setPickerRows([]);
       } finally {
@@ -412,6 +434,7 @@ export function MatchOrderCard({
           filterLocal={pickerFilterLocal}
           onFilterLocal={setPickerFilterLocal}
           selectKey={pickerSelectKey}
+          resolvedPayingPipeline={pickerPipelineMeta}
         />
 
         {actionBar}
@@ -628,6 +651,7 @@ export function MatchOrderCard({
               filterLocal={pickerFilterLocal}
               onFilterLocal={setPickerFilterLocal}
               selectKey={pickerSelectKey}
+              resolvedPayingPipeline={pickerPipelineMeta}
             />
 
             <div style={{ marginTop: 16 }}>{actionBar}</div>

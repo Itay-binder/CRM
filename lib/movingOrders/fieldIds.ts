@@ -1,4 +1,7 @@
-/** פייפליין לקוחות משלמים במערכת */
+/**
+ * מזהה ברירת מחדל לפייפליין «לקוחות» בזריעה (מסמך pipelines/customers).
+ * בזמן ריצה: השתמשו ב־getPayingCustomersPipelineId() או CRM_PAYING_CUSTOMERS_PIPELINE_ID.
+ */
 export const PAYING_CUSTOMERS_PIPELINE_ID = "customers";
 
 /**

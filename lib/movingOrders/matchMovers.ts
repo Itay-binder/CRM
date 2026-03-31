@@ -2,7 +2,7 @@ import type { LeadRecord } from "@/lib/leads/repo";
 import type { OpportunityRecord } from "@/lib/opportunities/repo";
 import { extractCityHints } from "@/lib/movingOrders/israelCities";
 import { deriveOrderCapabilities, driverWorksOnDay, orderDateToJerusalemWeekdayMarkers } from "@/lib/movingOrders/matchDrivers";
-import { MOVER_OPPORTUNITY_FIELD_IDS, PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
+import { MOVER_OPPORTUNITY_FIELD_IDS } from "@/lib/movingOrders/fieldIds";
 import type { DriverMatchFlag, MovingOrderPayload } from "@/lib/movingOrders/types";
 import {
   immediateSosIndicatesYes,
@@ -251,6 +251,7 @@ export type MatchMoversDetailedResult = {
  * התאמת מובילים: סינון אזור חובה, שאר הקריטריונים מסומנים כתום/אדום yet נשארים ברשימה.
  */
 export function matchMoversForOrderDetailed(
+  payingPipelineId: string,
   leads: LeadRecord[],
   opportunities: OpportunityRecord[],
   payload: MovingOrderPayload,
@@ -258,9 +259,10 @@ export function matchMoversForOrderDetailed(
   settlementRegionMap: Map<string, string>,
   manualContactIds: Set<string>
 ): MatchMoversDetailedResult {
+  const pipe = payingPipelineId.trim();
   const cv = orderCustomValues;
   const oppByContact = opportunitiesByContactId(
-    opportunities.filter((o) => (o.pipelineId ?? "").trim() === PAYING_CUSTOMERS_PIPELINE_ID)
+    opportunities.filter((o) => (o.pipelineId ?? "").trim() === pipe)
   );
 
   const { pickupCity, dropCity } = resolveOrderCities(payload, cv);
@@ -271,7 +273,7 @@ export function matchMoversForOrderDetailed(
   const urgent = orderIsUrgent(payload, cv);
   const dayMarkers = dayMarkersFromOrder(cv, payload);
 
-  const movers = leads.filter(leadIsPayingPipelineMoverCandidate);
+  const movers = leads.filter((l) => leadIsPayingPipelineMoverCandidate(l, pipe));
 
   const rows: Array<{ id: string; flag: DriverMatchFlag; name: string }> = [];
 

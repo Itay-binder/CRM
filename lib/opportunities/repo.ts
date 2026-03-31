@@ -219,6 +219,75 @@ export async function ensureCustomersPipeline(): Promise<PipelineRecord> {
   };
 }
 
+function pipelineNameSignalsPayingCustomers(name: string): boolean {
+  const collapsed = name.trim().toLowerCase().replace(/\s+/g, "");
+  if (collapsed.includes("משלמים")) return true;
+  if (collapsed === "לקוחות") return true;
+  return /לקוחות[\s_-]*משלמים/i.test(name);
+}
+
+/**
+ * מזהה פייפליין «לקוחות משלמים» בפועל במסד (לעומת מזהה קשיח).
+ * ברירות: משתנה סביבה → התאמת שם פייפליין → customers → פייפליין עם הכי הרבה לידים → יצירה.
+ */
+export async function getPayingCustomersPipelineId(): Promise<string> {
+  const envId = process.env.CRM_PAYING_CUSTOMERS_PIPELINE_ID?.trim();
+  if (envId) return envId;
+
+  const db = await getAdminDb();
+  const [pipelinesSnap, leadsSnap] = await Promise.all([
+    db.collection("pipelines").get(),
+    db.collection("leads").get(),
+  ]);
+
+  const opportunityPipelineIds = new Set<string>();
+  const pipelineNameById = new Map<string, string>();
+  for (const doc of pipelinesSnap.docs) {
+    const d = (doc.data() ?? {}) as Record<string, unknown>;
+    if (readPipelineScope(d) !== "opportunity") continue;
+    opportunityPipelineIds.add(doc.id);
+    pipelineNameById.set(doc.id, String(d.name ?? ""));
+  }
+
+  const leadCountByPid = new Map<string, number>();
+  for (const doc of leadsSnap.docs) {
+    const pid = String((doc.data() as Record<string, unknown>).pipelineId ?? "").trim();
+    if (!pid || !opportunityPipelineIds.has(pid)) continue;
+    leadCountByPid.set(pid, (leadCountByPid.get(pid) ?? 0) + 1);
+  }
+
+  type Scored = { id: string; count: number; nameMatch: boolean };
+  const scored: Scored[] = [];
+  for (const id of opportunityPipelineIds) {
+    const name = pipelineNameById.get(id) ?? "";
+    scored.push({
+      id,
+      count: leadCountByPid.get(id) ?? 0,
+      nameMatch: pipelineNameSignalsPayingCustomers(name),
+    });
+  }
+
+  const nameMatched = scored.filter((s) => s.nameMatch).sort((a, b) => b.count - a.count);
+  if (nameMatched.length) return nameMatched[0].id;
+
+  if (pipelineNameById.has(CUSTOMERS_PIPELINE_ID)) return CUSTOMERS_PIPELINE_ID;
+
+  const withLeads = scored.filter((s) => s.count > 0).sort((a, b) => b.count - a.count);
+  if (withLeads.length) return withLeads[0].id;
+
+  return (await ensureCustomersPipeline()).id;
+}
+
+export async function getPayingCustomersPipelineMeta(): Promise<{ id: string; name: string }> {
+  const id = await getPayingCustomersPipelineId();
+  const db = await getAdminDb();
+  const snap = await db.collection("pipelines").doc(id).get();
+  const name = snap.exists
+    ? String((snap.data() as Record<string, unknown>).name ?? id)
+    : id;
+  return { id, name };
+}
+
 function normalizeOpportunityStageByPipeline(
   pipelineStagesById: Map<string, string[]>,
   pipelineId: string,
@@ -708,10 +777,11 @@ export async function findCustomersPipelineOpportunityByNormalizedPhone(
 ): Promise<string | null> {
   const target = normalizePhone(phoneRaw);
   if (!target) return null;
+  const pipelineId = await getPayingCustomersPipelineId();
   const db = await getAdminDb();
   const snap = await db
     .collection("opportunities")
-    .where("pipelineId", "==", CUSTOMERS_PIPELINE_ID)
+    .where("pipelineId", "==", pipelineId)
     .get();
   let bestId: string | null = null;
   let bestTime = -1;

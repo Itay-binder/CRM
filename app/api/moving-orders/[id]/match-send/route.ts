@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { getLeadById } from "@/lib/leads/repo";
-import { listOpportunities } from "@/lib/opportunities/repo";
+import { getPayingCustomersPipelineId, listOpportunities } from "@/lib/opportunities/repo";
 import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
 import {
   applyMatchSendSideEffects,
   buildMatchWebhookMovers,
 } from "@/lib/movingOrders/matchOrderActions";
 import { opportunitiesByContactId } from "@/lib/movingOrders/matchMovers";
-import { PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
 import { getMovingOrder, updateMovingOrder } from "@/lib/movingOrders/repo";
 import { MOVING_ORDER_STAGES } from "@/lib/movingOrders/pipelineConstants";
 import type { MovingOrderRecord } from "@/lib/movingOrders/types";
@@ -75,9 +74,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     })
   );
 
-  const opps = await listOpportunities(PAYING_CUSTOMERS_PIPELINE_ID);
+  const payingPid = await getPayingCustomersPipelineId();
+  const opps = await listOpportunities(payingPid);
   const oppByContact = opportunitiesByContactId(
-    opps.filter((o) => (o.pipelineId ?? "").trim() === PAYING_CUSTOMERS_PIPELINE_ID)
+    opps.filter((o) => (o.pipelineId ?? "").trim() === payingPid)
   );
 
   const movers = await buildMatchWebhookMovers(driverIds, order.driverMatchFlags, leadById, oppByContact);

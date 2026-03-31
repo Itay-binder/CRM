@@ -1,6 +1,6 @@
 import type { LeadRecord } from "@/lib/leads/repo";
 import { extractCityHints } from "@/lib/movingOrders/israelCities";
-import { MOVER_FIELD_IDS } from "@/lib/movingOrders/fieldIds";
+import { MOVER_FIELD_IDS, PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
 import { leadIsPayingPipelineMoverCandidate } from "@/lib/movingOrders/moverFieldReaders";
 import type { MovingOrderPayload } from "@/lib/movingOrders/types";
 
@@ -169,14 +169,15 @@ export type MatchDriversResult = {
 export function matchDriversForOrder(
   leads: LeadRecord[],
   order: MovingOrderPayload,
-  settlementRegionMap?: Map<string, string>
+  settlementRegionMap?: Map<string, string>,
+  payingPipelineId: string = PAYING_CUSTOMERS_PIPELINE_ID
 ): MatchDriversResult {
   const cityHints = extractCityHints(order.pickup ?? "", order.dropoff ?? "");
   const regionCandidates = expandRegionCandidates(cityHints, settlementRegionMap);
   const caps = deriveOrderCapabilities(order);
   const orderDate = order.date?.trim();
 
-  const movers = leads.filter(leadIsPayingPipelineMoverCandidate);
+  const movers = leads.filter((l) => leadIsPayingPipelineMoverCandidate(l, payingPipelineId));
 
   const matched: LeadRecord[] = [];
   const optional: LeadRecord[] = [];

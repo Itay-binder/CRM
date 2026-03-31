@@ -3,10 +3,9 @@ import { requireApprovedUser } from "@/lib/auth/guard";
 import { getLeadById } from "@/lib/leads/repo";
 import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
 import { createMovingOrderManual, listMovingOrders } from "@/lib/movingOrders/repo";
-import { listOpportunities } from "@/lib/opportunities/repo";
+import { getPayingCustomersPipelineId, listOpportunities } from "@/lib/opportunities/repo";
 import { opportunitiesByContactId } from "@/lib/movingOrders/matchMovers";
 import { buildMoverEnrichment } from "@/lib/movingOrders/moverFieldReaders";
-import { PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
 import type { DriverSummary, MoverMatchEnrichment } from "@/lib/movingOrders/types";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +46,8 @@ export async function GET(req: NextRequest) {
       })
     );
 
-    const opps = await listOpportunities(PAYING_CUSTOMERS_PIPELINE_ID);
+    const payingPid = await getPayingCustomersPipelineId();
+    const opps = await listOpportunities(payingPid);
     const oppByContact = opportunitiesByContactId(opps);
     const moverEnrichment: Record<string, MoverMatchEnrichment> = {};
     await Promise.all(

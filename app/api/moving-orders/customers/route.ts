@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { listLeadsFiltered } from "@/lib/leads/repo";
 import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
-import { PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
 import { leadIsPayingPipelineMoverCandidate } from "@/lib/movingOrders/moverFieldReaders";
+import { getPayingCustomersPipelineMeta } from "@/lib/opportunities/repo";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -28,13 +28,15 @@ export async function GET(req: NextRequest) {
     req.nextUrl.searchParams.get("forManualPick") === "true";
 
   try {
+    const payingMeta = await getPayingCustomersPipelineMeta();
+    const payingPipelineId = payingMeta.id;
     const leads = await listLeadsFiltered();
-    let customers = leads.filter((l) => (l.pipelineId ?? "").trim() === PAYING_CUSTOMERS_PIPELINE_ID);
+    let customers = leads.filter((l) => (l.pipelineId ?? "").trim() === payingPipelineId);
 
     if (forManualPick) {
       /* כל אנשי הקשר בפייפליין — לבחירה ידנית בהזמנה */
     } else if (moversOnly) {
-      customers = customers.filter(leadIsPayingPipelineMoverCandidate);
+      customers = customers.filter((l) => leadIsPayingPipelineMoverCandidate(l, payingPipelineId));
     }
 
     const filtered = q
@@ -52,6 +54,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
+      payingPipelineId: payingMeta.id,
+      payingPipelineName: payingMeta.name,
       contacts: sorted.slice(0, limit).map((l) => ({
         id: l.id,
         name: l.name ?? "",

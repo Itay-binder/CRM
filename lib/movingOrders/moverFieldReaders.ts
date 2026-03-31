@@ -4,7 +4,6 @@ import {
   MOVER_FIELD_IDS,
   MOVER_OPPORTUNITY_FIELD_IDS,
   MOVER_WELCOME_OPPORTUNITY_FIELD_IDS,
-  PAYING_CUSTOMERS_PIPELINE_ID,
 } from "@/lib/movingOrders/fieldIds";
 
 export function normHe(s: string): string {
@@ -125,8 +124,8 @@ export function moverIsNationwide(merged: Record<string, unknown> | undefined, r
  * איש קשר בפייפליין לקוחות משלמים שאינו מסומן במפורש כלא־מוביל.
  * (ברירת מחדל: כל אנשי הקשר בפייפליין הזה נחשבים מועמדים, עד שמסמנים «לא».)
  */
-export function leadIsPayingPipelineMoverCandidate(lead: LeadRecord): boolean {
-  if ((lead.pipelineId ?? "").trim() !== PAYING_CUSTOMERS_PIPELINE_ID) return false;
+export function leadIsPayingPipelineMoverCandidate(lead: LeadRecord, payingPipelineId: string): boolean {
+  if ((lead.pipelineId ?? "").trim() !== payingPipelineId) return false;
   const v = lead.customFields?.[MOVER_FIELD_IDS.isMover];
   if (v === false) return false;
   const s = String(v ?? "").trim().toLowerCase();

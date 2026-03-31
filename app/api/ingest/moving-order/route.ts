@@ -27,6 +27,10 @@ function normalizeItems(body: unknown): MovingOrderPayload[] {
     if (typeof o.order_id === "string" || typeof (o as MovingOrderPayload).order_id === "string") {
       return [o as MovingOrderPayload];
     }
+    const fromMoving = o.moving_order_order_id;
+    if (typeof fromMoving === "string" && fromMoving.trim()) {
+      return [{ ...(o as unknown as MovingOrderPayload), order_id: fromMoving.trim() }];
+    }
   }
   return [];
 }

@@ -276,6 +276,8 @@ export function MatchOrderCard({
   deleting,
   statusLabel,
   sentNow,
+  notifyCustomer,
+  onNotifyCustomerChange,
 }: {
   order: MovingOrderRecord;
   matchUi?: OrderMatchUiHints | null;
@@ -290,6 +292,8 @@ export function MatchOrderCard({
   onDelete?: () => void;
   statusLabel: (s: MovingOrderStatus) => string;
   sentNow?: boolean;
+  notifyCustomer: boolean;
+  onNotifyCustomerChange: (checked: boolean) => void;
 }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -382,6 +386,28 @@ export function MatchOrderCard({
             ההזמנה נשלחה בהצלחה
           </div>
         ) : null}
+
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            margin: "10px 0 4px",
+            fontSize: 14,
+            color: "#374151",
+            cursor: canAct ? "pointer" : "not-allowed",
+            opacity: canAct ? 1 : 0.6,
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={notifyCustomer}
+            disabled={!canAct}
+            onChange={(e) => onNotifyCustomerChange(e.target.checked)}
+            style={{ width: 18, height: 18, margin: 0 }}
+          />
+          <span style={{ fontWeight: 600 }}>שלח הודעה למזמין</span>
+        </label>
 
         <div style={{ fontWeight: 700, fontSize: 14, margin: "14px 0 8px" }}>מובילים — בחירה וקריטריוני התאמה</div>
         <MoverMatchTable
@@ -550,6 +576,27 @@ export function MatchOrderCard({
               {p.move_type ? <div><strong>סוג הובלה:</strong> {p.move_type}</div> : null}
               {p.phone ? <div><strong>טלפון לקוח:</strong> {p.phone}</div> : null}
             </div>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                margin: "12px 0 10px",
+                fontSize: 14,
+                color: "#374151",
+                cursor: canAct ? "pointer" : "not-allowed",
+                opacity: canAct ? 1 : 0.6,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={notifyCustomer}
+                disabled={!canAct}
+                onChange={(e) => onNotifyCustomerChange(e.target.checked)}
+                style={{ width: 18, height: 18, margin: 0 }}
+              />
+              <span style={{ fontWeight: 600 }}>שלח הודעה למזמין</span>
+            </label>
             <h3 style={{ fontSize: 15, margin: "18px 0 8px" }}>מובילים — טבלה ואישור משלוח</h3>
             <p style={{ margin: "0 0 10px", fontSize: 13, color: "#6b7280" }}>
               שורות אדומות/כתומות לפי דגל התאמה; רקע בהיר כשיש הערות התאמה.

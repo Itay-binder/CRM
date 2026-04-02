@@ -56,11 +56,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   let driverIds: string[];
+  let notifyCustomer = false;
   try {
-    const body = (await req.json().catch(() => ({}))) as { driverIds?: unknown };
+    const body = (await req.json().catch(() => ({}))) as { driverIds?: unknown; notifyCustomer?: unknown };
     driverIds = Array.isArray(body.driverIds)
       ? body.driverIds.map((x) => String(x)).filter(Boolean)
       : defaultSelectedIds(order);
+    notifyCustomer = body.notifyCustomer === true;
   } catch {
     driverIds = defaultSelectedIds(order);
   }
@@ -85,6 +87,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const movers = await buildMatchWebhookMovers(driverIds, order.driverMatchFlags, leadById, oppByContact);
   const textForCustomer = customerFacingMoversMessageText(movers);
 
+  const notifyCustomerWebhook = notifyCustomer ? "כן" : "לא";
+
   const webhookOk = await postWebhookForEvent(g.db, "moving_order_match_send", {
     movingOrderId: order.id,
     orderId: order.orderId,
@@ -95,6 +99,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     movers,
     customer_message_text: textForCustomer,
     "הודעת טקסט למזמין": textForCustomer,
+    "שליחת הודעה למזמין": notifyCustomerWebhook,
     ...flatMatchSendOpportunityFields(movers),
   });
 

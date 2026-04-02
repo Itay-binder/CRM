@@ -57,6 +57,7 @@ export default function OrdersClient() {
   const [dispatching, setDispatching] = useState<string | null>(null);
   const [sentSuccessOrderId, setSentSuccessOrderId] = useState<string | null>(null);
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
+  const [notifyCustomerByOrderId, setNotifyCustomerByOrderId] = useState<Record<string, boolean>>({});
   const autoRematchedOnceRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -162,11 +163,12 @@ export default function OrdersClient() {
     });
     setDispatching(order.id);
     try {
+      const notifyCustomer = Boolean(notifyCustomerByOrderId[order.id]);
       const res = await fetch(`/api/moving-orders/${encodeURIComponent(order.id)}/match-send`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ driverIds }),
+        body: JSON.stringify({ driverIds, notifyCustomer }),
       });
       const j = (await res.json()) as { ok?: boolean; order?: MovingOrderRecord; error?: string };
       if (!res.ok || !j.ok) {
@@ -341,6 +343,10 @@ export default function OrdersClient() {
                 onDelete={() => void deleteOrder(order)}
                 statusLabel={statusLabel}
                 sentNow={sentSuccessOrderId === order.id}
+                notifyCustomer={Boolean(notifyCustomerByOrderId[order.id])}
+                onNotifyCustomerChange={(checked) =>
+                  setNotifyCustomerByOrderId((prev) => ({ ...prev, [order.id]: checked }))
+                }
               />
             ))}
           </div>

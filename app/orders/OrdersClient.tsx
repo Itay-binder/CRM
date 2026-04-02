@@ -58,6 +58,8 @@ export default function OrdersClient() {
   const [sentSuccessOrderId, setSentSuccessOrderId] = useState<string | null>(null);
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
   const [notifyCustomerByOrderId, setNotifyCustomerByOrderId] = useState<Record<string, boolean>>({});
+  /** `orderId:driverId` בזמן שליחת ליד בודד */
+  const [sendingLeadKey, setSendingLeadKey] = useState<string | null>(null);
   const autoRematchedOnceRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -217,6 +219,29 @@ export default function OrdersClient() {
     }
   }
 
+  async function sendLeadToDriver(order: MovingOrderRecord, driverId: string) {
+    const key = `${order.id}:${driverId}`;
+    setSendingLeadKey(key);
+    try {
+      const res = await fetch(`/api/moving-orders/${encodeURIComponent(order.id)}/match-send-lead`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ driverId }),
+      });
+      const j = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) {
+        alert(j.error ?? "שליחת הליד נכשלה");
+        return;
+      }
+      void load();
+    } catch {
+      alert("שגיאת רשת");
+    } finally {
+      setSendingLeadKey((cur) => (cur === key ? null : cur));
+    }
+  }
+
   async function cancelMatch(order: MovingOrderRecord, reason: string) {
     try {
       const res = await fetch(`/api/moving-orders/${encodeURIComponent(order.id)}/match-cancel`, {
@@ -347,6 +372,12 @@ export default function OrdersClient() {
                 onNotifyCustomerChange={(checked) =>
                   setNotifyCustomerByOrderId((prev) => ({ ...prev, [order.id]: checked }))
                 }
+                sendingLeadDriverId={
+                  sendingLeadKey?.startsWith(`${order.id}:`)
+                    ? sendingLeadKey.slice(order.id.length + 1)
+                    : null
+                }
+                onConfirmSendLead={(driverId) => void sendLeadToDriver(order, driverId)}
               />
             ))}
           </div>

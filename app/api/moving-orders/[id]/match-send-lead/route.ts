@@ -3,26 +3,26 @@ import { requireApprovedUser } from "@/lib/auth/guard";
 import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
 import { applyMatchSendSideEffects } from "@/lib/movingOrders/matchOrderActions";
 import { postMatchSendWebhookForDrivers } from "@/lib/movingOrders/postMatchSendWebhook";
-import { getMovingOrder, updateMovingOrder } from "@/lib/movingOrders/repo";
-import { MOVING_ORDER_STAGES } from "@/lib/movingOrders/pipelineConstants";
+import { getMovingOrder } from "@/lib/movingOrders/repo";
 import type { MovingOrderRecord } from "@/lib/movingOrders/types";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-function defaultSelectedIds(order: MovingOrderRecord): string[] {
-  const all = [
-    ...new Set([...order.matchedDriverIds, ...order.optionalDriverIds, ...order.manualDriverIds]),
-  ];
-  const ex = new Set(order.excludedDriverIds);
-  return all.filter((x) => !ex.has(x));
-}
 
 function orderCustomerName(order: MovingOrderRecord): string {
   const cv = order.customValues ?? {};
   const n = cv.moving_order_name;
   if (typeof n === "string" && n.trim()) return n.trim();
   return order.payload.name?.trim() || order.orderId;
+}
+
+function driverBelongsToOrder(order: MovingOrderRecord, driverId: string): boolean {
+  const allowed = new Set([
+    ...order.matchedDriverIds,
+    ...order.optionalDriverIds,
+    ...order.manualDriverIds,
+  ]);
+  return allowed.has(driverId);
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -46,23 +46,26 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: false, error: "הזמנה לא זמינה לשליחה" }, { status: 400 });
   }
 
-  let driverIds: string[];
-  let notifyCustomer = false;
+  let driverId = "";
   try {
-    const body = (await req.json().catch(() => ({}))) as { driverIds?: unknown; notifyCustomer?: unknown };
-    driverIds = Array.isArray(body.driverIds)
-      ? body.driverIds.map((x) => String(x)).filter(Boolean)
-      : defaultSelectedIds(order);
-    notifyCustomer = body.notifyCustomer === true;
+    const body = (await req.json().catch(() => ({}))) as { driverId?: unknown };
+    driverId = typeof body.driverId === "string" ? body.driverId.trim() : "";
   } catch {
-    driverIds = defaultSelectedIds(order);
+    driverId = "";
   }
 
-  if (driverIds.length === 0) {
-    return NextResponse.json({ ok: false, error: "לא נבחרו מובילים" }, { status: 400 });
+  if (!driverId) {
+    return NextResponse.json({ ok: false, error: "חסר מזהה מוביל" }, { status: 400 });
   }
 
-  const webhookOk = await postMatchSendWebhookForDrivers(g.db, order, driverIds, notifyCustomer);
+  if (!driverBelongsToOrder(order, driverId)) {
+    return NextResponse.json({ ok: false, error: "מוביל לא שייך להזמנה זו" }, { status: 400 });
+  }
+
+  const webhookOk = await postMatchSendWebhookForDrivers(g.db, order, [driverId], false);
+  if (!webhookOk) {
+    return NextResponse.json({ ok: false, error: "לא נמצא ליד למוביל או שליחת הוובהוק נכשלה" }, { status: 400 });
+  }
 
   const on = orderCustomerName(order);
   const pl = order.payload;
@@ -76,18 +79,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     pl.phone?.trim() ? `טלפון מזמין: ${pl.phone.trim()}` : "",
   ];
   await applyMatchSendSideEffects({
-    contactIds: driverIds,
+    contactIds: [driverId],
     orderCustomerName: on,
     orderId: order.orderId,
     transportNoteLines,
   });
 
-  const dispatchedAt = new Date().toISOString();
-  const updated = await updateMovingOrder(id, { stage: MOVING_ORDER_STAGES[1], dispatchedAt }, g.db);
-
   return NextResponse.json({
     ok: true,
     webhookPosted: webhookOk,
-    order: updated,
   });
 }

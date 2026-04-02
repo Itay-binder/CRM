@@ -136,6 +136,8 @@ type MoverMatchTableProps = {
   issueList: (id: string) => string[];
   availabilityBlocked: (id: string) => boolean;
   showOpportunityLinks?: boolean;
+  sendingLeadDriverId: string | null;
+  onSendLeadClick: (driverId: string) => void;
 };
 
 function MoverMatchTable({
@@ -150,6 +152,8 @@ function MoverMatchTable({
   issueList,
   availabilityBlocked,
   showOpportunityLinks,
+  sendingLeadDriverId,
+  onSendLeadClick,
 }: MoverMatchTableProps) {
   const thStyle: CSSProperties = {
     textAlign: "right",
@@ -179,10 +183,18 @@ function MoverMatchTable({
 
   return (
     <div style={{ width: "100%", overflowX: "auto", WebkitOverflowScrolling: "touch", borderRadius: 10, border: "1px solid #e5e7eb" }}>
-      <table style={{ width: "100%", minWidth: showOpportunityLinks ? 1100 : 960, borderCollapse: "collapse", background: "#fff" }}>
+      <table
+        style={{
+          width: "100%",
+          minWidth: showOpportunityLinks ? 1200 : 1060,
+          borderCollapse: "collapse",
+          background: "#fff",
+        }}
+      >
         <thead>
           <tr>
             <th style={{ ...thStyle, width: 36 }} aria-label="בחירה" />
+            <th style={{ ...thStyle, width: 96, whiteSpace: "normal" }}>שליחת ליד</th>
             <th style={thStyle}>מוביל</th>
             <th style={thStyle}>התאמה</th>
             <th style={{ ...thStyle, minWidth: 140 }}>הערות</th>
@@ -220,6 +232,26 @@ function MoverMatchTable({
                     onChange={(e) => onToggleCheck(id, e.target.checked)}
                     style={{ marginTop: 4 }}
                   />
+                </td>
+                <td style={{ ...tdStyle, width: 96, verticalAlign: "middle" }}>
+                  <button
+                    type="button"
+                    disabled={!canAct || Boolean(sendingLeadDriverId)}
+                    onClick={() => onSendLeadClick(id)}
+                    style={{
+                      padding: "6px 8px",
+                      borderRadius: 8,
+                      border: "1px solid #c4b5fd",
+                      background: canAct && !sendingLeadDriverId ? "#f5f3ff" : "#f3f4f6",
+                      color: "#5b21b6",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: canAct && !sendingLeadDriverId ? "pointer" : "not-allowed",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {sendingLeadDriverId === id ? "שולח…" : "שלח ליד"}
+                  </button>
                 </td>
                 <td style={{ ...tdStyle, fontWeight: 700 }}>{rowLabel(id)}</td>
                 <td style={tdStyle}>{flagLabelHe(flag)}</td>
@@ -278,6 +310,8 @@ export function MatchOrderCard({
   sentNow,
   notifyCustomer,
   onNotifyCustomerChange,
+  sendingLeadDriverId,
+  onConfirmSendLead,
 }: {
   order: MovingOrderRecord;
   matchUi?: OrderMatchUiHints | null;
@@ -294,10 +328,13 @@ export function MatchOrderCard({
   sentNow?: boolean;
   notifyCustomer: boolean;
   onNotifyCustomerChange: (checked: boolean) => void;
+  sendingLeadDriverId: string | null;
+  onConfirmSendLead: (driverId: string) => void;
 }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [sendLeadConfirmId, setSendLeadConfirmId] = useState<string | null>(null);
 
   const p = order.payload;
   const driverIds = allMatchDriverIds(order);
@@ -421,6 +458,8 @@ export function MatchOrderCard({
           rowLabel={rowLabel}
           issueList={issueList}
           availabilityBlocked={availabilityBlocked}
+          sendingLeadDriverId={sendingLeadDriverId}
+          onSendLeadClick={(id) => setSendLeadConfirmId(id)}
         />
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
@@ -613,6 +652,8 @@ export function MatchOrderCard({
               issueList={issueList}
               availabilityBlocked={availabilityBlocked}
               showOpportunityLinks
+              sendingLeadDriverId={sendingLeadDriverId}
+              onSendLeadClick={(id) => setSendLeadConfirmId(id)}
             />
             <div style={{ marginTop: 16, textAlign: "left" }}>
               <button
@@ -621,6 +662,66 @@ export function MatchOrderCard({
                 style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff" }}
               >
                 סגור
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {sendLeadConfirmId ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.45)",
+            zIndex: 70,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+          role="presentation"
+          onClick={() => setSendLeadConfirmId(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{ background: "#fff", borderRadius: 14, padding: 20, maxWidth: 440, width: "100%" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: "0 0 10px" }}>אישור שליחת ליד</h3>
+            <p style={{ margin: "0 0 16px", fontSize: 14, color: "#4b5563", lineHeight: 1.55 }}>
+              לשלוח ליד למוביל <strong>{rowLabel(sendLeadConfirmId)}</strong>? יישלח וובהוק עם פרטי מוביל זה בלבד, ושדה{' '}
+              <strong>שליחת הודעה למזמין</strong> יסומן כ־<strong>לא</strong>.
+            </p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => setSendLeadConfirmId(null)}
+                style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff" }}
+              >
+                ביטול
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(sendingLeadDriverId)}
+                onClick={() => {
+                  const id = sendLeadConfirmId;
+                  if (!id) return;
+                  onConfirmSendLead(id);
+                  setSendLeadConfirmId(null);
+                }}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: sendingLeadDriverId ? "#9ca3af" : "#5b21b6",
+                  color: "#fff",
+                  fontWeight: 700,
+                  cursor: sendingLeadDriverId ? "not-allowed" : "pointer",
+                }}
+              >
+                {sendingLeadDriverId ? "שולח…" : "אשר שליחה"}
               </button>
             </div>
           </div>

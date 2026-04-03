@@ -14,7 +14,13 @@ import {
 } from "@/lib/movingOrders/matchMovers";
 import { buildMoverEnrichment } from "@/lib/movingOrders/moverFieldReaders";
 import { hebrewWeekdayMovingOrder } from "@/lib/movingOrders/orderMoveDate";
-import type { DriverSummary, MoverMatchEnrichment, OrderMatchUiHints } from "@/lib/movingOrders/types";
+import type {
+  DriverSummary,
+  MoverMatchEnrichment,
+  MovingOrderRecord,
+  OrderMatchUiHints,
+  OrderMatchedOpportunitySummary,
+} from "@/lib/movingOrders/types";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -73,7 +79,46 @@ export async function GET(req: NextRequest) {
       })
     );
 
-    return NextResponse.json({ ok: true, orders, drivers, moverEnrichment, orderMatchUi });
+    function matchDriverSortRank(o: MovingOrderRecord, driverId: string): number {
+      const f = o.driverMatchFlags?.[driverId] ?? "ok";
+      if (f === "red") return 2;
+      if (f === "orange") return 1;
+      return 0;
+    }
+
+    function matchedDriverIdsForOrder(o: MovingOrderRecord): string[] {
+      const ids = [...new Set([...o.matchedDriverIds, ...o.optionalDriverIds, ...o.manualDriverIds])];
+      return ids.sort(
+        (a, b) => matchDriverSortRank(o, a) - matchDriverSortRank(o, b) || a.localeCompare(b)
+      );
+    }
+
+    const orderMatchedOpportunities: Record<string, OrderMatchedOpportunitySummary[]> = {};
+    for (const o of orders) {
+      const seen = new Set<string>();
+      const list: OrderMatchedOpportunitySummary[] = [];
+      for (const driverId of matchedDriverIdsForOrder(o)) {
+        const en = moverEnrichment[driverId];
+        const oid = en?.opportunityId?.trim();
+        if (!oid || seen.has(oid)) continue;
+        seen.add(oid);
+        const name =
+          en?.opportunityName?.trim() ||
+          drivers[driverId]?.name?.trim() ||
+          oid;
+        list.push({ id: oid, name });
+      }
+      orderMatchedOpportunities[o.id] = list;
+    }
+
+    return NextResponse.json({
+      ok: true,
+      orders,
+      drivers,
+      moverEnrichment,
+      orderMatchUi,
+      orderMatchedOpportunities,
+    });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "Unknown error" },

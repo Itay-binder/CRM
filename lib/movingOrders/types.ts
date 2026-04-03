@@ -12,6 +12,12 @@ export type OrderMatchUiHints = {
   dropCity?: string;
 };
 
+/** הזדמנות (מוביל) שמוצגת בטבלת הזמנות — לפי התאמה בטאב התאמה */
+export type OrderMatchedOpportunitySummary = {
+  id: string;
+  name: string;
+};
+
 /** גוף הזמנה כפי שנכנס מ-webhook חיצוני */
 export type MovingOrderPayload = {
   order_id: string;
@@ -92,6 +98,8 @@ export type DriverSummary = {
 /** פירוט מוביל לטאב התאמה — נטען מה-API */
 export type MoverMatchEnrichment = {
   opportunityId?: string;
+  /** שם ההזדמנות בפייפליין לקוחות (לתצוגה וקישורים) */
+  opportunityName?: string;
   regions: string;
   workAvailability: string;
   activityDays: string;

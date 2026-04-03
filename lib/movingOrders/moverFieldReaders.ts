@@ -258,6 +258,7 @@ export function buildMoverEnrichment(
   const regions = readMoverRegionsText(merged);
   return {
     opportunityId: opp?.id,
+    opportunityName: opp?.name?.trim() || undefined,
     regions,
     workAvailability: readWorkAvailabilityDisplay(merged),
     activityDays: readActivityDaysText(merged),

@@ -17,7 +17,6 @@ import { hebrewWeekdayMovingOrder } from "@/lib/movingOrders/orderMoveDate";
 import type {
   DriverSummary,
   MoverMatchEnrichment,
-  MovingOrderRecord,
   OrderMatchUiHints,
   OrderMatchedOpportunitySummary,
 } from "@/lib/movingOrders/types";
@@ -44,6 +43,7 @@ export async function GET(req: NextRequest) {
       for (const id of o.matchedDriverIds) idSet.add(id);
       for (const id of o.optionalDriverIds) idSet.add(id);
       for (const id of o.manualDriverIds) idSet.add(id);
+      for (const id of o.sentMatchDriverIds ?? []) idSet.add(id);
     }
     const regionMap = await getCityRegionMap();
     const orderMatchUi: Record<string, OrderMatchUiHints> = {};
@@ -79,25 +79,11 @@ export async function GET(req: NextRequest) {
       })
     );
 
-    function matchDriverSortRank(o: MovingOrderRecord, driverId: string): number {
-      const f = o.driverMatchFlags?.[driverId] ?? "ok";
-      if (f === "red") return 2;
-      if (f === "orange") return 1;
-      return 0;
-    }
-
-    function matchedDriverIdsForOrder(o: MovingOrderRecord): string[] {
-      const ids = [...new Set([...o.matchedDriverIds, ...o.optionalDriverIds, ...o.manualDriverIds])];
-      return ids.sort(
-        (a, b) => matchDriverSortRank(o, a) - matchDriverSortRank(o, b) || a.localeCompare(b)
-      );
-    }
-
     const orderMatchedOpportunities: Record<string, OrderMatchedOpportunitySummary[]> = {};
     for (const o of orders) {
       const seen = new Set<string>();
       const list: OrderMatchedOpportunitySummary[] = [];
-      for (const driverId of matchedDriverIdsForOrder(o)) {
+      for (const driverId of o.sentMatchDriverIds ?? []) {
         const en = moverEnrichment[driverId];
         const oid = en?.opportunityId?.trim();
         if (!oid || seen.has(oid)) continue;

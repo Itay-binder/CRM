@@ -385,7 +385,7 @@ export default function OrdersBoardTab() {
       pipelineId: "פייפליין",
       stage: "שלב",
       status: "סטטוס",
-      [ORDER_MATCHED_OPPS_COL]: "הזדמנויות (התאמה)",
+      [ORDER_MATCHED_OPPS_COL]: "הזדמנויות (נשלחו)",
       createdAt: "נוצר",
       updatedAt: "עודכן",
     };

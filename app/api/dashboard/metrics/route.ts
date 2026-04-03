@@ -30,8 +30,13 @@ type ApiOk = {
   payingCustomersByUtmSource: Record<string, number>;
   /** לקוחות משלמים עם סטטוס פתוח (לא מסונן לפי תאריכים) */
   payingCustomersOpenCount: number;
-  /** מוביל → מספר הזמנות משויכות (לפי contactId), רק עבור tenant עם הזמנות */
-  ordersPerMover: Array<{ opportunityId: string; opportunityName: string; orderCount: number }>;
+  /** מוביל → מספר הזמנות משויכות; פעיל = סטטוס פתוח; ממוין: פעילים לפי כמות יורד, אחריהם לא פעילים */
+  ordersPerMover: Array<{
+    opportunityId: string;
+    opportunityName: string;
+    orderCount: number;
+    isActive: boolean;
+  }>;
   movingOrdersWorkspace: boolean;
   warning?: string;
 };
@@ -77,7 +82,12 @@ function driverIdsForOrder(o: MovingOrderRecord): Set<string> {
 function buildOrdersPerMover(
   payingOpportunities: OpportunityRecord[],
   orders: MovingOrderRecord[]
-): Array<{ opportunityId: string; opportunityName: string; orderCount: number }> {
+): Array<{
+  opportunityId: string;
+  opportunityName: string;
+  orderCount: number;
+  isActive: boolean;
+}> {
   const contactToOrders = new Map<string, MovingOrderRecord[]>();
   for (const order of orders) {
     const ids = driverIdsForOrder(order);
@@ -90,7 +100,12 @@ function buildOrdersPerMover(
     }
   }
 
-  return payingOpportunities
+  const byCountThenName = (
+    a: { orderCount: number; opportunityName: string },
+    b: { orderCount: number; opportunityName: string }
+  ) => b.orderCount - a.orderCount || a.opportunityName.localeCompare(b.opportunityName, "he");
+
+  const rows = payingOpportunities
     .filter((opp) => (opp.contactId ?? "").trim())
     .map((opp) => {
       const contactId = opp.contactId.trim();
@@ -103,9 +118,19 @@ function buildOrdersPerMover(
         n += 1;
       }
       const name = (opp.name ?? "").trim() || opp.contactName?.trim() || "ללא שם";
-      return { opportunityId: opp.id, opportunityName: name, orderCount: n };
-    })
-    .sort((a, b) => b.orderCount - a.orderCount || a.opportunityName.localeCompare(b.opportunityName, "he"));
+      return {
+        opportunityId: opp.id,
+        opportunityName: name,
+        orderCount: n,
+        isActive: isPayingCustomerOpen(opp),
+      };
+    });
+
+  rows.sort((a, b) => {
+    if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+    return byCountThenName(a, b);
+  });
+  return rows;
 }
 
 export async function GET(req: NextRequest) {

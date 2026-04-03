@@ -14,7 +14,12 @@ type DashboardMetricsOk = {
   payingCustomersInRangeCount: number;
   payingCustomersByUtmSource: Record<string, number>;
   payingCustomersOpenCount: number;
-  ordersPerMover: Array<{ opportunityId: string; opportunityName: string; orderCount: number }>;
+  ordersPerMover: Array<{
+    opportunityId: string;
+    opportunityName: string;
+    orderCount: number;
+    isActive: boolean;
+  }>;
   movingOrdersWorkspace: boolean;
   warning?: string;
 };
@@ -324,7 +329,7 @@ export default function DashboardClient() {
       const subtitle =
         m && !m.movingOrdersWorkspace
           ? "מודול הזמנות אינו מופעל בעסק הנבחר — אין נתוני שיוך."
-          : "הזמנות משויכות למוביל לפי איש הקשר (כל ההזמנות במערכת, לא רק בטווח)";
+          : "הזמנות משויכות למוביל לפי איש הקשר (כל ההזמנות במערכת, לא רק בטווח). ממוין: פעילים (סטטוס פתוח) לפי כמות יורד, אחריהם לא פעילים באותו סדר. רקע אדום עדין = לא פעיל.";
       const body =
         rows.length === 0 ? (
           <div style={{ padding: 14, color: "#6b7280", fontWeight: 600 }}>אין מובילים או אין הזמנות משויכות.</div>
@@ -341,16 +346,37 @@ export default function DashboardClient() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <tr key={r.opportunityId} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                  <td style={{ padding: "10px 12px" }}>
-                    <a href={`/pipeline?openOpportunityId=${encodeURIComponent(r.opportunityId)}`} style={{ color: "#4c1d95", fontWeight: 700 }}>
-                      {r.opportunityName}
-                    </a>
-                  </td>
-                  <td style={{ padding: "10px 12px", fontWeight: 800 }}>{prettyCount(r.orderCount)}</td>
-                </tr>
-              ))}
+              {rows.map((r) => {
+                const inactive = !r.isActive;
+                return (
+                  <tr
+                    key={r.opportunityId}
+                    style={{
+                      borderBottom: "1px solid #f3f4f6",
+                      background: inactive ? "rgba(254, 226, 226, 0.35)" : undefined,
+                      boxShadow: inactive ? "inset 3px 0 0 rgba(248, 113, 113, 0.45)" : undefined,
+                    }}
+                  >
+                    <td style={{ padding: "10px 12px" }}>
+                      <a
+                        href={`/pipeline?openOpportunityId=${encodeURIComponent(r.opportunityId)}`}
+                        style={{
+                          color: inactive ? "#b91c1c" : "#4c1d95",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {r.opportunityName}
+                        {inactive ? (
+                          <span style={{ fontSize: 11, fontWeight: 600, color: "#991b1b", marginInlineStart: 6 }}> · לא פעיל</span>
+                        ) : null}
+                      </a>
+                    </td>
+                    <td style={{ padding: "10px 12px", fontWeight: 800, color: inactive ? "#9f1239" : undefined }}>
+                      {prettyCount(r.orderCount)}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         );

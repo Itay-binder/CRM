@@ -142,6 +142,9 @@ function mapDoc(id: string, data: Record<string, unknown>): MovingOrderRecord {
     excludedDriverIds: Array.isArray(data.excludedDriverIds)
       ? (data.excludedDriverIds as unknown[]).map((x) => String(x))
       : [],
+    sentMatchDriverIds: Array.isArray(data.sentMatchDriverIds)
+      ? (data.sentMatchDriverIds as unknown[]).map((x) => String(x))
+      : [],
     driverMatchFlags: coerceDriverMatchFlags(data.driverMatchFlags),
     driverMatchIssues: coerceDriverMatchIssues(data.driverMatchIssues),
     dispatchedAt: typeof data.dispatchedAt === "string" ? data.dispatchedAt : mapTs(data.dispatchedAt),
@@ -275,6 +278,7 @@ export async function upsertMovingOrderFromIngest(
         updatedAt: now,
         status: "pending" as MovingOrderStatus,
         dispatchedAt: null,
+        sentMatchDriverIds: [],
       },
       { merge: true }
     );
@@ -342,6 +346,7 @@ export async function createMovingOrderManual(
     driverMatchIssues: match.driverMatchIssues,
     manualDriverIds: [],
     excludedDriverIds: match.excludedDriverIds,
+    sentMatchDriverIds: [],
     createdAt: now,
     updatedAt: now,
     status: "pending" as MovingOrderStatus,
@@ -365,6 +370,8 @@ export async function updateMovingOrder(
     matchRejectionReason?: string | null;
     /** חישוב מחדש של matchedDriverIds לפי כללים עדכניים (ללא שינוי payload) */
     rematch?: boolean;
+    /** מזהי מוביל שנשלחו בהתאמה — מתווספים לרשימה הקיימת (ללא כפילויות) */
+    appendSentMatchDriverIds?: string[];
   },
   db?: Firestore
 ): Promise<MovingOrderRecord> {
@@ -482,6 +489,14 @@ export async function updateMovingOrder(
     const t = input.matchRejectionReason?.trim();
     if (!t) payload.matchRejectionReason = FieldValue.delete();
     else payload.matchRejectionReason = t;
+  }
+
+  if (input.appendSentMatchDriverIds !== undefined && input.appendSentMatchDriverIds.length > 0) {
+    const prevSent = Array.isArray(existing.sentMatchDriverIds)
+      ? (existing.sentMatchDriverIds as unknown[]).map((x) => String(x))
+      : [];
+    const merged = [...new Set([...prevSent, ...input.appendSentMatchDriverIds.map((x) => String(x).trim()).filter(Boolean)])];
+    payload.sentMatchDriverIds = merged;
   }
 
   const mergedStatus =

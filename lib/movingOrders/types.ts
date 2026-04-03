@@ -12,10 +12,12 @@ export type OrderMatchUiHints = {
   dropCity?: string;
 };
 
-/** הזדמנות (מוביל) שמוצגת בטבלת הזמנות — לפי התאמה בטאב התאמה */
+/** הזדמנות (מוביל) שמוצגת בטבלת הזמנות — מובילים שנשלחו בפועל מהתאמה */
 export type OrderMatchedOpportunitySummary = {
   id: string;
   name: string;
+  /** אין הזדמנות בפייפליין לקוחות — הקישור יפתח את איש הקשר */
+  linkToContact?: boolean;
 };
 
 /** גוף הזמנה כפי שנכנס מ-webhook חיצוני */
@@ -77,6 +79,11 @@ export type MovingOrderRecord = {
   manualDriverIds: string[];
   /** מזהי מובילים שהמשתמש ביטל מהבחירה (ברירת מחדל: כולם מסומנים) */
   excludedDriverIds: string[];
+  /**
+   * מובילים שנשלחו בפועל (שליחת התאמה / שלח ליד).
+   * משמש לעמודת ההזדמנות בטבלת הזמנות — לא את כל מי שהוצע.
+   */
+  sentMatchDriverIds: string[];
   /** סטטוס התאמה לכל מזהה איש קשר (מוביל) */
   driverMatchFlags?: Record<string, DriverMatchFlag>;
   /** סיבות קצרות (עברית) לכל מוביל — למה כתום/אדום */

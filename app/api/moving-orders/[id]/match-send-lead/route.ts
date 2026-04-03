@@ -3,7 +3,7 @@ import { requireApprovedUser } from "@/lib/auth/guard";
 import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
 import { applyMatchSendSideEffects } from "@/lib/movingOrders/matchOrderActions";
 import { postMatchSendWebhookForDrivers } from "@/lib/movingOrders/postMatchSendWebhook";
-import { getMovingOrder } from "@/lib/movingOrders/repo";
+import { getMovingOrder, updateMovingOrder } from "@/lib/movingOrders/repo";
 import type { MovingOrderRecord } from "@/lib/movingOrders/types";
 
 export const dynamic = "force-dynamic";
@@ -84,6 +84,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     orderId: order.orderId,
     transportNoteLines,
   });
+
+  await updateMovingOrder(id, { appendSentMatchDriverIds: [driverId] }, g.db);
 
   return NextResponse.json({
     ok: true,

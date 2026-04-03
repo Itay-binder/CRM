@@ -111,10 +111,14 @@ function MatchedOpportunitiesCell({ items }: { items: OrderMatchedOpportunitySum
     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "flex-end" }}>
       {items.map((opp) => (
         <Link
-          key={opp.id}
-          href={`/pipeline?openOpportunityId=${encodeURIComponent(opp.id)}`}
+          key={opp.linkToContact ? `c-${opp.id}` : opp.id}
+          href={
+            opp.linkToContact
+              ? `/contacts?openContactId=${encodeURIComponent(opp.id)}`
+              : `/pipeline?openOpportunityId=${encodeURIComponent(opp.id)}`
+          }
           style={{ ...OPP_CHIP_STYLE, textDecoration: "none" }}
-          title="פתח בניהול הזדמנויות"
+          title={opp.linkToContact ? "פתח איש קשר" : "פתח בניהול הזדמנויות"}
           onClick={(e) => e.stopPropagation()}
         >
           {opp.name}
@@ -385,7 +389,7 @@ export default function OrdersBoardTab() {
       pipelineId: "פייפליין",
       stage: "שלב",
       status: "סטטוס",
-      [ORDER_MATCHED_OPPS_COL]: "הזדמנויות (התאמה)",
+      [ORDER_MATCHED_OPPS_COL]: "הזדמנויות (נשלחו)",
       createdAt: "נוצר",
       updatedAt: "עודכן",
     };

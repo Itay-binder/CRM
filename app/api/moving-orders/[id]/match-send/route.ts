@@ -83,7 +83,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
 
   const dispatchedAt = new Date().toISOString();
-  const updated = await updateMovingOrder(id, { stage: MOVING_ORDER_STAGES[1], dispatchedAt }, g.db);
+  const updated = await updateMovingOrder(
+    id,
+    { stage: MOVING_ORDER_STAGES[1], dispatchedAt, appendSentMatchDriverIds: driverIds },
+    g.db
+  );
 
   return NextResponse.json({
     ok: true,

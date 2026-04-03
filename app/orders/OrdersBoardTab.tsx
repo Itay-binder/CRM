@@ -1,9 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { columnIntegrationKind, InlineFieldShell, WhatsAppIconLink } from "@/app/components/InlineFieldShell";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
-import type { MovingOrderRecord, MovingOrderStatus } from "@/lib/movingOrders/types";
+import type {
+  MovingOrderRecord,
+  MovingOrderStatus,
+  OrderMatchedOpportunitySummary,
+} from "@/lib/movingOrders/types";
 
 type Pipeline = { id: string; name: string; stages: string[] };
 type ViewMode = "board" | "list";
@@ -55,6 +60,9 @@ const ADV_OP_LABEL: Record<AdvOp, string> = {
   dateAfter: "מאוחר יותר מ...",
 };
 
+/** עמודת מערכת: הזדמנויות מובילים לפי טאב התאמה (לקריאה בלבד) */
+const ORDER_MATCHED_OPPS_COL = "matchedOpportunities";
+
 const BASE_ORDER_COLS = [
   "orderId",
   "name",
@@ -65,9 +73,121 @@ const BASE_ORDER_COLS = [
   "pipelineId",
   "stage",
   "status",
+  ORDER_MATCHED_OPPS_COL,
   "createdAt",
   "updatedAt",
 ];
+
+function insertMatchedOpportunitiesAfterStatus(cols: string[]): string[] {
+  if (!cols.includes(ORDER_MATCHED_OPPS_COL) || !cols.includes("status")) return cols;
+  const rest = cols.filter((c) => c !== ORDER_MATCHED_OPPS_COL);
+  const si = rest.indexOf("status");
+  if (si < 0) return cols;
+  return [...rest.slice(0, si + 1), ORDER_MATCHED_OPPS_COL, ...rest.slice(si + 1)];
+}
+
+const OPP_CHIP_STYLE: CSSProperties = {
+  display: "inline-block",
+  padding: "3px 10px",
+  borderRadius: 999,
+  background: "#f5f3ff",
+  border: "1px solid #e9d5ff",
+  fontSize: 12,
+  fontWeight: 700,
+  color: "#5b21b6",
+  maxWidth: "100%",
+  wordBreak: "break-word",
+  lineHeight: 1.35,
+};
+
+function MatchedOpportunitiesCell({ items }: { items: OrderMatchedOpportunitySummary[] }) {
+  const [open, setOpen] = useState(false);
+
+  if (!items.length) {
+    return <span style={{ color: "#9ca3af", fontWeight: 600 }}>—</span>;
+  }
+
+  const links = (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "flex-end" }}>
+      {items.map((opp) => (
+        <Link
+          key={opp.id}
+          href={`/pipeline?openOpportunityId=${encodeURIComponent(opp.id)}`}
+          style={{ ...OPP_CHIP_STYLE, textDecoration: "none" }}
+          title="פתח בניהול הזדמנויות"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {opp.name}
+        </Link>
+      ))}
+    </div>
+  );
+
+  if (items.length <= 2) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          width: "100%",
+          minHeight: 34,
+          padding: "4px 6px",
+          borderRadius: 8,
+          border: "2px solid transparent",
+          boxSizing: "border-box",
+          direction: "rtl",
+        }}
+      >
+        {links}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        width: "100%",
+        borderRadius: 8,
+        border: "2px solid transparent",
+        boxSizing: "border-box",
+        direction: "rtl",
+      }}
+    >
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          flexWrap: "wrap",
+          cursor: "pointer",
+          border: "none",
+          background: "transparent",
+          padding: "6px 4px",
+          font: "inherit",
+          textAlign: "right",
+        }}
+      >
+        <span
+          style={{
+            ...OPP_CHIP_STYLE,
+            background: "#ede9fe",
+            borderColor: "#ddd6fe",
+          }}
+        >
+          {open ? "▴" : "▾"} {items.length} הזדמנויות
+        </span>
+        <span style={{ color: "#7c3aed", fontSize: 11, fontWeight: 700 }}>הצג שמות</span>
+      </button>
+      {open ? <div style={{ padding: "4px 4px 8px" }}>{links}</div> : null}
+    </div>
+  );
+}
 
 /** אותו ערך כמו עמודות ה-baseline למעלה — מוצג רק שם, לא כעמודת moving_order_* כפולה */
 const MOVING_ORDER_FIELD_IDS_REDUNDANT_WITH_BASE = new Set([
@@ -107,6 +227,9 @@ export default function OrdersBoardTab() {
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [selectedPipelineId, setSelectedPipelineId] = useState("");
   const [orders, setOrders] = useState<MovingOrderRecord[]>([]);
+  const [orderMatchedOpportunities, setOrderMatchedOpportunities] = useState<
+    Record<string, OrderMatchedOpportunitySummary[]>
+  >({});
   const [customFieldLabelById, setCustomFieldLabelById] = useState<Record<string, string>>({});
   const [customFieldIds, setCustomFieldIds] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
@@ -181,11 +304,17 @@ export default function OrdersBoardTab() {
           { credentials: "include", cache: "no-store" }
         ),
       ]);
-      const oJson = (await oRes.json()) as { ok?: boolean; orders?: MovingOrderRecord[]; error?: string };
+      const oJson = (await oRes.json()) as {
+        ok?: boolean;
+        orders?: MovingOrderRecord[];
+        orderMatchedOpportunities?: Record<string, OrderMatchedOpportunitySummary[]>;
+        error?: string;
+      };
       const fJson = (await fRes.json()) as { ok?: boolean; fields?: Array<{ fieldId: string; label?: string }> };
       if (!oRes.ok || !oJson.ok) throw new Error(oJson.error ?? "טעינת הזמנות נכשלה");
       const list = oJson.orders ?? [];
       setOrders(list);
+      setOrderMatchedOpportunities(oJson.orderMatchedOpportunities ?? {});
 
       const labelMap: Record<string, string> = {};
       const fIds: string[] = [];
@@ -202,19 +331,28 @@ export default function OrdersBoardTab() {
       const fromData = Array.from(new Set(list.flatMap((o) => Object.keys(o.customValues ?? {}))));
       const fIdsNoDup = fIds.filter((id) => !MOVING_ORDER_FIELD_IDS_REDUNDANT_WITH_BASE.has(id));
       const fromDataNoDup = fromData.filter((id) => !MOVING_ORDER_FIELD_IDS_REDUNDANT_WITH_BASE.has(id));
-      const allCols = Array.from(new Set([...BASE_ORDER_COLS, ...fIdsNoDup, ...fromDataNoDup]));
+      const allCols = insertMatchedOpportunitiesAfterStatus(
+        Array.from(new Set([...BASE_ORDER_COLS, ...fIdsNoDup, ...fromDataNoDup]))
+      );
       setOrderColumnOrder((prev) => {
-        if (!prev.length)
-          return [...BASE_ORDER_COLS, ...fIdsNoDup, ...fromDataNoDup.filter((x) => !BASE_ORDER_COLS.includes(x))];
-        const next = [...prev].filter((c) => !MOVING_ORDER_FIELD_IDS_REDUNDANT_WITH_BASE.has(c));
+        if (!prev.length) {
+          return insertMatchedOpportunitiesAfterStatus([
+            ...BASE_ORDER_COLS,
+            ...fIdsNoDup,
+            ...fromDataNoDup.filter((x) => !BASE_ORDER_COLS.includes(x)),
+          ]);
+        }
+        const next = insertMatchedOpportunitiesAfterStatus(
+          [...prev].filter((c) => !MOVING_ORDER_FIELD_IDS_REDUNDANT_WITH_BASE.has(c))
+        );
         for (const c of allCols) if (!next.includes(c)) next.push(c);
-        return next;
+        return insertMatchedOpportunitiesAfterStatus(next);
       });
       setOrderVisibleCols((prev) => {
         if (!prev.length) return allCols;
         const next = [...prev.filter((c) => !MOVING_ORDER_FIELD_IDS_REDUNDANT_WITH_BASE.has(c))];
         for (const c of allCols) if (!next.includes(c)) next.push(c);
-        return next;
+        return insertMatchedOpportunitiesAfterStatus(next);
       });
       setBoardPreviewFields((prev) => {
         if (prev.length) return prev;
@@ -247,6 +385,7 @@ export default function OrdersBoardTab() {
       pipelineId: "פייפליין",
       stage: "שלב",
       status: "סטטוס",
+      [ORDER_MATCHED_OPPS_COL]: "הזדמנויות (התאמה)",
       createdAt: "נוצר",
       updatedAt: "עודכן",
     };
@@ -265,6 +404,10 @@ export default function OrdersBoardTab() {
   function orderCell(o: MovingOrderRecord, col: string): string {
     const p = o.payload;
     const cv = o.customValues ?? {};
+    if (col === ORDER_MATCHED_OPPS_COL) {
+      const items = orderMatchedOpportunities[o.id] ?? [];
+      return items.map((x) => x.name).join(", ");
+    }
     if (col === "orderId") return o.orderId || p.order_id || o.id;
     if (col === "name") return String(p.name ?? cv.moving_order_name ?? "");
     if (col === "phone") return String(p.phone ?? cv.moving_order_phone ?? "");
@@ -310,7 +453,7 @@ export default function OrdersBoardTab() {
       out[col] = "text";
     }
     return out;
-  }, [displayCols, orders, pipelines]);
+  }, [displayCols, orders, pipelines, orderMatchedOpportunities]);
 
   const advSelectValues = useMemo(() => {
     const out: Record<string, string[]> = {};
@@ -386,7 +529,7 @@ export default function OrdersBoardTab() {
       return 0;
     });
     return sorted;
-  }, [orders, displayCols, colFilters, advFilters, advLogic, sort, pipelines]);
+  }, [orders, displayCols, colFilters, advFilters, advLogic, sort, pipelines, orderMatchedOpportunities]);
 
   const grouped = useMemo(() => {
     const map: Record<string, MovingOrderRecord[]> = {};
@@ -443,7 +586,7 @@ export default function OrdersBoardTab() {
     window.addEventListener("mouseup", onUp);
   }
 
-  const INLINE_READONLY = new Set(["orderId", "createdAt", "updatedAt"]);
+  const INLINE_READONLY = new Set(["orderId", "createdAt", "updatedAt", ORDER_MATCHED_OPPS_COL]);
 
   async function patchOrderApi(id: string, body: Record<string, unknown>) {
     const res = await fetch(`/api/moving-orders/${encodeURIComponent(id)}`, {
@@ -570,6 +713,17 @@ export default function OrdersBoardTab() {
     }
     if (f === "status") {
       return <span style={{ color: "#6b7280", wordBreak: "break-word" }}>{statusLabel(o.status)}</span>;
+    }
+    if (f === ORDER_MATCHED_OPPS_COL) {
+      const opps = orderMatchedOpportunities[o.id] ?? [];
+      if (!opps.length) return <span style={{ color: "#9ca3af" }}>—</span>;
+      return (
+        <span style={{ color: "#6b7280", wordBreak: "break-word" }}>
+          {opps.length <= 2
+            ? opps.map((x) => x.name).join(", ")
+            : `${opps.length} הזדמנויות`}
+        </span>
+      );
     }
     return <span style={{ color: "#6b7280", wordBreak: "break-word" }}>{text}</span>;
   }
@@ -814,6 +968,8 @@ export default function OrdersBoardTab() {
                             style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
                           />
                         )
+                      ) : col === ORDER_MATCHED_OPPS_COL ? (
+                        <MatchedOpportunitiesCell items={orderMatchedOpportunities[o.id] ?? []} />
                       ) : INLINE_READONLY.has(col) ? (
                         <span style={{ wordBreak: "break-word", color: "#374151" }}>{orderCell(o, col)}</span>
                       ) : col === "phone" && orderCell(o, col).trim() ? (

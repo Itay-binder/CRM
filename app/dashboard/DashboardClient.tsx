@@ -1,18 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import CheckoutPagesManager from "@/app/components/CheckoutPagesManager";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 import { formatIsraelYmdUtc, israelTodayAndTomorrowKeys, parseTaskInstant } from "@/lib/datetime/taskTimestamps";
 
-type MetricsOk = {
+type DashboardMetricsOk = {
   ok: true;
-  total: number;
-  stageColumn?: string | null;
-  countsByStage: Record<string, number>;
+  opportunityCount: number;
+  ordersCount: number;
+  leadsByUtmSource: Record<string, number>;
+  payingCustomersPipelineId: string;
+  payingCustomersPipelineName: string;
+  payingCustomersInRangeCount: number;
+  payingCustomersByUtmSource: Record<string, number>;
+  payingCustomersOpenCount: number;
+  ordersPerMover: Array<{ opportunityId: string; opportunityName: string; orderCount: number }>;
+  movingOrdersWorkspace: boolean;
   warning?: string;
 };
-type MetricsErr = { ok: false; error: string };
+type DashboardMetricsErr = { ok: false; error: string };
+
 type TaskRow = {
   id: string;
   title: string;
@@ -25,27 +32,44 @@ type TaskRow = {
   entityPhone?: string;
 };
 
-type WidgetId = "kpi_total" | "stages" | "tasks" | "checkout";
+type WidgetId =
+  | "opp_count"
+  | "orders_count"
+  | "leads_by_channel"
+  | "paying_count"
+  | "customers_by_channel"
+  | "paying_open"
+  | "orders_per_mover"
+  | "sales_mvp"
+  | "tasks";
+
 type WidgetConfig = { id: WidgetId; title: string; visible: boolean };
 const DASHBOARD_WIDGETS_KEY = "crm:dashboard:widgets";
 
 const DEFAULT_WIDGETS: WidgetConfig[] = [
-  { id: "kpi_total", title: "סה\"כ לידים", visible: true },
-  { id: "stages", title: "לידים לפי סטטוס", visible: true },
+  { id: "opp_count", title: "כמות לידים (הזדמנויות)", visible: true },
+  { id: "orders_count", title: "כמות הזמנות", visible: true },
+  { id: "leads_by_channel", title: "לידים לפי ערוצים", visible: true },
+  { id: "paying_count", title: "לקוחות במערכת (פייפליין לקוחות משלמים)", visible: true },
+  { id: "customers_by_channel", title: "לקוחות לפי ערוצים", visible: true },
+  { id: "paying_open", title: "לקוחות פעילים", visible: true },
+  { id: "orders_per_mover", title: "כמות הזמנות פר מוביל", visible: true },
+  { id: "sales_mvp", title: "מכירות (MVP)", visible: true },
   { id: "tasks", title: "משימות (היום · מחר · באיחור)", visible: true },
-  { id: "checkout", title: "דפי סליקה", visible: true },
 ];
 
 function prettyCount(n: number) {
   return n.toLocaleString("en-US");
 }
 
+function sortedEntries(rec: Record<string, number>): [string, number][] {
+  return Object.entries(rec).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "he"));
+}
+
 export default function DashboardClient() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [total, setTotal] = useState<number>(0);
-  const [countsByStage, setCountsByStage] = useState<Record<string, number>>({});
-  const [warning, setWarning] = useState<string | null>(null);
+  const [metrics, setMetrics] = useState<DashboardMetricsOk | null>(null);
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [widgets, setWidgets] = useState<WidgetConfig[]>(DEFAULT_WIDGETS);
   const [manageOpen, setManageOpen] = useState(false);
@@ -64,7 +88,6 @@ export default function DashboardClient() {
   async function load() {
     setLoading(true);
     setErr(null);
-    setWarning(null);
     try {
       const [res, tasksRes] = await Promise.all([
         fetch(`/api/dashboard/metrics${query}`, {
@@ -86,14 +109,12 @@ export default function DashboardClient() {
         return;
       }
 
-      const json = (await res.json().catch(() => ({}))) as MetricsOk | MetricsErr;
+      const json = (await res.json().catch(() => ({}))) as DashboardMetricsOk | DashboardMetricsErr;
       if (!json || !("ok" in json) || json.ok !== true) {
         setErr("שגיאה בטעינת מדדים");
         return;
       }
-      setTotal(json.total ?? 0);
-      setCountsByStage(json.countsByStage ?? {});
-      setWarning(json.warning ?? null);
+      setMetrics(json);
 
       if (tasksRes.ok) {
         const tasksJson = (await tasksRes.json().catch(() => ({}))) as {
@@ -120,13 +141,13 @@ export default function DashboardClient() {
       if (!raw) return;
       const parsed = JSON.parse(raw) as WidgetConfig[];
       if (!Array.isArray(parsed) || parsed.length === 0) return;
-      const valid = parsed.filter((w) =>
-        DEFAULT_WIDGETS.some((d) => d.id === w.id)
-      );
-      const missing = DEFAULT_WIDGETS.filter(
-        (d) => !valid.some((w) => w.id === d.id)
-      );
-      setWidgets([...valid, ...missing]);
+      const valid = parsed.filter((w) => DEFAULT_WIDGETS.some((d) => d.id === w.id));
+      const missing = DEFAULT_WIDGETS.filter((d) => !valid.some((w) => w.id === d.id));
+      const merged = [...valid, ...missing].map((w) => {
+        const def = DEFAULT_WIDGETS.find((d) => d.id === w.id);
+        return def ? { ...w, title: def.title } : w;
+      });
+      setWidgets(merged);
     } catch {}
   }, []);
 
@@ -135,10 +156,6 @@ export default function DashboardClient() {
       window.localStorage.setItem(DASHBOARD_WIDGETS_KEY, JSON.stringify(widgets));
     } catch {}
   }, [widgets]);
-
-  function widgetVisible(id: WidgetId): boolean {
-    return widgets.find((w) => w.id === id)?.visible ?? true;
-  }
 
   function moveWidget(idx: number, dir: -1 | 1) {
     setWidgets((arr) => {
@@ -183,43 +200,172 @@ export default function DashboardClient() {
     return du.getTime() < Date.now();
   }
 
+  function tableShell(title: string, subtitle: string | undefined, children: ReactNode) {
+    return (
+      <div style={{ marginTop: 16, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, overflow: "hidden" }}>
+        <div style={{ padding: "12px 14px", borderBottom: "1px solid #f3f4f6", fontWeight: 900 }}>
+          {title}
+          {subtitle ? (
+            <div style={{ marginTop: 4, fontSize: 12, fontWeight: 600, color: "#6b7280" }}>{subtitle}</div>
+          ) : null}
+        </div>
+        <div style={{ overflowX: "auto", maxWidth: "100%" }}>{children}</div>
+      </div>
+    );
+  }
+
+  function renderUtmTable(rows: [string, number][]) {
+    if (rows.length === 0) {
+      return <div style={{ padding: 14, color: "#6b7280", fontWeight: 600 }}>אין נתונים בטווח התאריכים.</div>;
+    }
+    return (
+      <table style={{ width: "100%", minWidth: 360, borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            <th style={{ textAlign: "right", padding: "10px 12px", borderBottom: "2px solid #e5e7eb", background: "#f8fafc", fontSize: 12, fontWeight: 900 }}>
+              utm_source
+            </th>
+            <th style={{ textAlign: "right", padding: "10px 12px", borderBottom: "2px solid #e5e7eb", background: "#f8fafc", fontSize: 12, fontWeight: 900 }}>
+              כמות
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([src, count]) => (
+            <tr key={src} style={{ borderBottom: "1px solid #f3f4f6" }}>
+              <td style={{ padding: "10px 12px", wordBreak: "break-word" }}>{src}</td>
+              <td style={{ padding: "10px 12px", fontWeight: 800 }}>{prettyCount(count)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  }
+
+  function kpiCard(label: string, value: string | number, hint?: string) {
+    return (
+      <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: 16 }}>
+        <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 800 }}>{label}</div>
+        <div style={{ fontSize: 36, fontWeight: 900, color: "#6d28d9", marginTop: 6 }}>{value}</div>
+        {hint ? <div style={{ marginTop: 6, fontSize: 11, color: "#9ca3af", fontWeight: 600 }}>{hint}</div> : null}
+      </div>
+    );
+  }
+
   function renderWidget(id: WidgetId) {
-    if (id === "kpi_total") {
+    const m = metrics;
+
+    if (id === "opp_count") {
       return (
-        <div key={id} style={{ marginTop: 18, display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-          <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: 16 }}>
-            <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 800 }}>סה"כ לידים</div>
-            <div style={{ fontSize: 42, fontWeight: 900, color: "#6d28d9" }}>{prettyCount(total)}</div>
-          </div>
+        <div key={id}>
+          {kpiCard(
+            "כמות לידים",
+            m ? prettyCount(m.opportunityCount) : "—",
+            "הזדמנויות שנוצרו בטווח התאריכים (כל הפייפליינים)"
+          )}
         </div>
       );
     }
-    if (id === "stages") {
+    if (id === "orders_count") {
       return (
-        <div key={id} style={{ marginTop: 16 }}>
-          <h2 style={{ margin: "0 0 10px", fontSize: 16 }}>לידים לפי סטטוס</h2>
-          <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
-            {Object.keys(countsByStage).length === 0 ? (
-              <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, color: "#6b7280" }}>
-                אין נתונים להצגה.
-              </div>
-            ) : (
-              Object.entries(countsByStage)
-                .sort((a, b) => b[1] - a[1])
-                .map(([stage, count]) => (
-                  <div key={stage} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: 14 }}>
-                    <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 800, wordBreak: "break-word" }}>{stage}</div>
-                    <div style={{ fontSize: 30, fontWeight: 900, color: "#6d28d9", marginTop: 6 }}>{prettyCount(count)}</div>
-                  </div>
-                ))
-            )}
-          </div>
+        <div key={id}>
+          {kpiCard(
+            "כמות הזמנות",
+            m ? prettyCount(m.ordersCount) : "—",
+            m && !m.movingOrdersWorkspace ? "הזמנות זמינות רק כשמודול ההזמנות מופעל בעסק" : "הזמנות שנוצרו בטווח התאריכים"
+          )}
+        </div>
+      );
+    }
+    if (id === "leads_by_channel") {
+      return (
+        <div key={id}>
+          {tableShell("לידים לפי ערוצים", "לפי utm_source של ההזדמנות בטווח התאריכים", renderUtmTable(m ? sortedEntries(m.leadsByUtmSource) : []))}
+        </div>
+      );
+    }
+    if (id === "paying_count") {
+      return (
+        <div key={id}>
+          {kpiCard(
+            "לקוחות במערכת",
+            m ? prettyCount(m.payingCustomersInRangeCount) : "—",
+            m
+              ? `פייפליין: ${m.payingCustomersPipelineName} · לפי תאריך יצירת ההזדמנות בטווח`
+              : undefined
+          )}
+        </div>
+      );
+    }
+    if (id === "customers_by_channel") {
+      return (
+        <div key={id}>
+          {tableShell(
+            "לקוחות לפי ערוצים",
+            m ? `utm_source בפייפליין ${m.payingCustomersPipelineName} (יצירה בטווח)` : undefined,
+            renderUtmTable(m ? sortedEntries(m.payingCustomersByUtmSource) : [])
+          )}
+        </div>
+      );
+    }
+    if (id === "paying_open") {
+      return (
+        <div key={id}>
+          {kpiCard(
+            "לקוחות פעילים",
+            m ? prettyCount(m.payingCustomersOpenCount) : "—",
+            "הזדמנויות בפייפליין לקוחות משלמים עם סטטוס פתוח (ללא סינון תאריכים)"
+          )}
+        </div>
+      );
+    }
+    if (id === "orders_per_mover") {
+      const rows = m?.ordersPerMover ?? [];
+      const subtitle =
+        m && !m.movingOrdersWorkspace
+          ? "מודול הזמנות אינו מופעל בעסק הנבחר — אין נתוני שיוך."
+          : "הזמנות משויכות למוביל לפי איש הקשר (כל ההזמנות במערכת, לא רק בטווח)";
+      const body =
+        rows.length === 0 ? (
+          <div style={{ padding: 14, color: "#6b7280", fontWeight: 600 }}>אין מובילים או אין הזמנות משויכות.</div>
+        ) : (
+          <table style={{ width: "100%", minWidth: 420, borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "right", padding: "10px 12px", borderBottom: "2px solid #e5e7eb", background: "#f8fafc", fontSize: 12, fontWeight: 900 }}>
+                  מוביל / הזדמנות
+                </th>
+                <th style={{ textAlign: "right", padding: "10px 12px", borderBottom: "2px solid #e5e7eb", background: "#f8fafc", fontSize: 12, fontWeight: 900 }}>
+                  הזמנות
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.opportunityId} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                  <td style={{ padding: "10px 12px" }}>
+                    <a href={`/pipeline?openOpportunityId=${encodeURIComponent(r.opportunityId)}`} style={{ color: "#4c1d95", fontWeight: 700 }}>
+                      {r.opportunityName}
+                    </a>
+                  </td>
+                  <td style={{ padding: "10px 12px", fontWeight: 800 }}>{prettyCount(r.orderCount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        );
+      return <div key={id}>{tableShell("כמות הזמנות פר מוביל", subtitle, body)}</div>;
+    }
+    if (id === "sales_mvp") {
+      return (
+        <div key={id}>
+          {kpiCard("מכירות", "—", "בקרוב: סכום מכירות לפי טווח תאריכים (אין עדיין שדות נתונים מתאימים)")}
         </div>
       );
     }
     if (id === "tasks") {
       return (
-        <div key={id} style={{ marginTop: 16, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, overflow: "hidden" }}>
+        <div key={id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, overflow: "hidden" }}>
           <div style={{ padding: "12px 14px", borderBottom: "1px solid #f3f4f6", fontWeight: 900 }}>
             משימות — היום, מחר ובאיחור
             <div style={{ marginTop: 4, fontSize: 12, fontWeight: 600, color: "#6b7280" }}>
@@ -288,8 +434,37 @@ export default function DashboardClient() {
         </div>
       );
     }
-    return <CheckoutPagesManager key={id} compact />;
+    return null;
   }
+
+  /** Group consecutive KPI-style widgets into one responsive row */
+  const visibleWidgets = widgets.filter((w) => w.visible);
+  const renderedBlocks: ReactNode[] = [];
+  let kpiRun: WidgetId[] = [];
+  const flushKpiRun = () => {
+    if (kpiRun.length === 0) return;
+    renderedBlocks.push(
+      <div
+        key={`kpi-row-${kpiRun.join("-")}`}
+        style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}
+      >
+        {kpiRun.map((id) => renderWidget(id))}
+      </div>
+    );
+    kpiRun = [];
+  };
+  const isKpiWidget = (id: WidgetId) =>
+    id === "opp_count" || id === "orders_count" || id === "paying_count" || id === "paying_open" || id === "sales_mvp";
+
+  for (const w of visibleWidgets) {
+    if (isKpiWidget(w.id)) {
+      kpiRun.push(w.id);
+    } else {
+      flushKpiRun();
+      renderedBlocks.push(renderWidget(w.id));
+    }
+  }
+  flushKpiRun();
 
   return (
     <div>
@@ -362,7 +537,7 @@ export default function DashboardClient() {
           <div style={{ fontWeight: 900, marginBottom: 8 }}>בחירת חלוניות וסדר</div>
           <div style={{ display: "grid", gap: 8 }}>
             {widgets.map((w, idx) => (
-              <div key={w.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div key={w.id} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <input
                   type="checkbox"
                   checked={w.visible}
@@ -372,18 +547,22 @@ export default function DashboardClient() {
                     )
                   }
                 />
-                <span style={{ minWidth: 180 }}>{w.title}</span>
-                <button type="button" onClick={() => moveWidget(idx, -1)} style={{ border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff", cursor: "pointer" }}>↑</button>
-                <button type="button" onClick={() => moveWidget(idx, 1)} style={{ border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff", cursor: "pointer" }}>↓</button>
+                <span style={{ minWidth: 200, flex: "1 1 200px" }}>{w.title}</span>
+                <button type="button" onClick={() => moveWidget(idx, -1)} style={{ border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff", cursor: "pointer" }}>
+                  ↑
+                </button>
+                <button type="button" onClick={() => moveWidget(idx, 1)} style={{ border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff", cursor: "pointer" }}>
+                  ↓
+                </button>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {warning && (
+      {metrics?.warning && (
         <div style={{ marginTop: 14, background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", padding: 12, borderRadius: 12 }}>
-          {warning}
+          {metrics.warning}
         </div>
       )}
 
@@ -393,8 +572,7 @@ export default function DashboardClient() {
         </div>
       )}
 
-      {widgets.filter((w) => w.visible).map((w) => renderWidget(w.id))}
+      <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 20 }}>{renderedBlocks}</div>
     </div>
   );
 }
-

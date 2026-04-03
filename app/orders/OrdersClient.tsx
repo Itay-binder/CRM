@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import OrdersBoardTab from "@/app/orders/OrdersBoardTab";
 import { MatchOrderCard } from "@/app/orders/MatchOrderCard";
 import OrdersPipelinesTab from "@/app/orders/OrdersPipelinesTab";
+import OrdersByMoversTab from "@/app/orders/OrdersByMoversTab";
 import type {
   DriverSummary,
   MoverMatchEnrichment,
@@ -12,12 +13,12 @@ import type {
   OrderMatchUiHints,
 } from "@/lib/movingOrders/types";
 
-type TabId = "orders" | "pipelines" | "match";
+type TabId = "orders" | "pipelines" | "match" | "byMovers";
 
 const ORDERS_TAB_STORAGE_KEY = "liftygo_crm_orders_tab";
 
 function isTabId(v: string): v is TabId {
-  return v === "orders" || v === "pipelines" || v === "match";
+  return v === "orders" || v === "pipelines" || v === "match" || v === "byMovers";
 }
 type ApiListOk = {
   ok: true;
@@ -324,6 +325,20 @@ export default function OrdersClient() {
           >
             התאמת הזמנות
           </button>
+          <button
+            type="button"
+            onClick={() => setTabPersist("byMovers")}
+            style={{
+              padding: "8px 12px",
+              border: "none",
+              borderRadius: 8,
+              background: tab === "byMovers" ? "#e9d5ff" : "transparent",
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+          >
+            הזמנות לפי מובילים
+          </button>
         </div>
       </div>
       <p style={{ margin: "0 0 16px", color: "#4b5563", fontSize: 14, lineHeight: 1.5 }}>
@@ -341,6 +356,7 @@ export default function OrdersClient() {
 
       {tab === "pipelines" ? <OrdersPipelinesTab /> : null}
       {tab === "orders" ? <OrdersBoardTab /> : null}
+      {tab === "byMovers" ? <OrdersByMoversTab /> : null}
 
       {tab === "match" ? (
         loading ? (

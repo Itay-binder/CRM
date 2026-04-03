@@ -11,6 +11,7 @@ import { getCityRegionMap } from "@/lib/movingOrders/cityRegionSettingsRepo";
 import { matchMoversForOrderDetailed } from "@/lib/movingOrders/matchMovers";
 import { MOVING_ORDERS_INTAKE_PIPELINE_ID, MOVING_ORDER_STAGES } from "@/lib/movingOrders/pipelineConstants";
 import { defaultStageForStatus, statusFromStage } from "@/lib/movingOrders/stageSync";
+import { isoCreatedAtInYmdRange } from "@/lib/datetime/ymdBoundary";
 import type {
   DriverMatchFlag,
   MovingOrderPayload,
@@ -150,27 +151,46 @@ function mapDoc(id: string, data: Record<string, unknown>): MovingOrderRecord {
 }
 
 export async function listMovingOrders(
-  opts: { pipelineId?: string | null; db?: Firestore } = {}
+  opts: {
+    pipelineId?: string | null;
+    db?: Firestore;
+    /** YYYY-MM-DD inclusive, filter by order createdAt */
+    dateFrom?: string | null;
+    dateTo?: string | null;
+    /** Firestore read cap (default 400 for list UIs) */
+    maxFetch?: number;
+    /** Max rows returned after filter/sort; null = all fetched (for aggregates) */
+    resultLimit?: number | null;
+  } = {}
 ): Promise<MovingOrderRecord[]> {
   await ensureMovingOrdersIntakePipeline();
   const d = opts.db ?? (await getAdminDb());
+  const maxFetch = opts.maxFetch ?? 400;
   let snap;
   if (opts.pipelineId?.trim()) {
     snap = await d
       .collection(COLLECTION)
       .where("pipelineId", "==", opts.pipelineId.trim())
-      .limit(400)
+      .limit(maxFetch)
       .get();
   } else {
-    snap = await d.collection(COLLECTION).limit(400).get();
+    snap = await d.collection(COLLECTION).limit(maxFetch).get();
   }
   const rows = snap.docs.map((doc) => mapDoc(doc.id, (doc.data() ?? {}) as Record<string, unknown>));
-  rows.sort((a, b) => {
+  const from = opts.dateFrom?.trim();
+  const to = opts.dateTo?.trim();
+  const filtered =
+    from || to
+      ? rows.filter((o) => isoCreatedAtInYmdRange(o.createdAt, from, to))
+      : rows;
+  filtered.sort((a, b) => {
     const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
     const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
     return tb - ta;
   });
-  return rows.slice(0, 200);
+  const lim = opts.resultLimit === undefined ? 200 : opts.resultLimit;
+  if (lim === null) return filtered;
+  return filtered.slice(0, lim);
 }
 
 export async function getMovingOrder(id: string, db?: Firestore): Promise<MovingOrderRecord | null> {

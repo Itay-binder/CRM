@@ -10,6 +10,7 @@ import { mergeTaskArrays, type RawTaskIn } from "@/lib/tasks/merge";
 import { reconcileTasksGoogleCalendar } from "@/lib/googleCalendar/taskSync";
 import { fireServerWebhooks } from "@/lib/webhooks/dispatchServerWebhooks";
 import { normalizeIncomingLabelIds } from "@/lib/labels/repo";
+import { createdAtInYmdRange } from "@/lib/datetime/ymdBoundary";
 
 export type LeadRecord = {
   id: string; // doc id = normalized unique key
@@ -276,14 +277,6 @@ function dateToYmd(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function parseYmdBoundary(dateStr: string, mode: "from" | "to"): Date {
-  // dateStr is YYYY-MM-DD
-  const [y, m, d] = dateStr.split("-").map((x) => Number.parseInt(x, 10));
-  if (!y || !m || !d) return new Date(0);
-  if (mode === "from") return new Date(Date.UTC(y, m - 1, d, 0, 0, 0));
-  return new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999));
-}
-
 export async function listLeadsFiltered(dateFrom?: string | null, dateTo?: string | null): Promise<LeadRecord[]> {
   const db = await getAdminDb();
   const snap = await db.collection("leads").get();
@@ -293,16 +286,7 @@ export async function listLeadsFiltered(dateFrom?: string | null, dateTo?: strin
   const to = dateTo?.trim();
   if (!from && !to) return leads;
 
-  const fromDate = from ? parseYmdBoundary(from, "from") : null;
-  const toDate = to ? parseYmdBoundary(to, "to") : null;
-
-  return leads.filter((l) => {
-    if (!l.createdAt) return false;
-    const t = l.createdAt.getTime();
-    if (fromDate && t < fromDate.getTime()) return false;
-    if (toDate && t > toDate.getTime()) return false;
-    return true;
-  });
+  return leads.filter((l) => createdAtInYmdRange(l.createdAt, from, to));
 }
 
 export async function getLeadById(id: string): Promise<LeadRecord | null> {

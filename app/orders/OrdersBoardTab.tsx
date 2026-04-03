@@ -111,10 +111,14 @@ function MatchedOpportunitiesCell({ items }: { items: OrderMatchedOpportunitySum
     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "flex-end" }}>
       {items.map((opp) => (
         <Link
-          key={opp.id}
-          href={`/pipeline?openOpportunityId=${encodeURIComponent(opp.id)}`}
+          key={opp.linkToContact ? `c-${opp.id}` : opp.id}
+          href={
+            opp.linkToContact
+              ? `/contacts?openContactId=${encodeURIComponent(opp.id)}`
+              : `/pipeline?openOpportunityId=${encodeURIComponent(opp.id)}`
+          }
           style={{ ...OPP_CHIP_STYLE, textDecoration: "none" }}
-          title="פתח בניהול הזדמנויות"
+          title={opp.linkToContact ? "פתח איש קשר" : "פתח בניהול הזדמנויות"}
           onClick={(e) => e.stopPropagation()}
         >
           {opp.name}

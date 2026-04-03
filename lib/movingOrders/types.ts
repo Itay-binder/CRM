@@ -16,6 +16,8 @@ export type OrderMatchUiHints = {
 export type OrderMatchedOpportunitySummary = {
   id: string;
   name: string;
+  /** אין הזדמנות בפייפליין לקוחות — הקישור יפתח את איש הקשר */
+  linkToContact?: boolean;
 };
 
 /** גוף הזמנה כפי שנכנס מ-webhook חיצוני */

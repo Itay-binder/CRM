@@ -8,7 +8,7 @@ import {
   getPayingCustomersPipelineMeta,
   listOpportunities,
 } from "@/lib/opportunities/repo";
-import type { MovingOrderRecord } from "@/lib/movingOrders/types";
+import { MOVER_OPPORTUNITY_FIELD_IDS } from "@/lib/movingOrders/fieldIds";
 import type { OpportunityRecord } from "@/lib/opportunities/repo";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +30,7 @@ type ApiOk = {
   payingCustomersByUtmSource: Record<string, number>;
   /** לקוחות משלמים עם סטטוס פתוח (לא מסונן לפי תאריכים) */
   payingCustomersOpenCount: number;
-  /** מוביל → מספר הזמנות משויכות; פעיל = סטטוס פתוח; ממוין: פעילים לפי כמות יורד, אחריהם לא פעילים */
+  /** מוביל → ערך opportunity_leads_count (כמו בעמודת הפייפליין); פעיל = סטטוס פתוח */
   ordersPerMover: Array<{
     opportunityId: string;
     opportunityName: string;
@@ -71,35 +71,26 @@ function isPayingCustomerOpen(o: OpportunityRecord): boolean {
   return !o.status || o.status === "פתוח";
 }
 
-function driverIdsForOrder(o: MovingOrderRecord): Set<string> {
-  const s = new Set<string>();
-  for (const id of o.matchedDriverIds) s.add(id);
-  for (const id of o.optionalDriverIds) s.add(id);
-  for (const id of o.manualDriverIds) s.add(id);
-  return s;
+/** ערך מספרי לשדה opportunity_leads_count (כמו בעמודת הפייפליין). */
+function parseOpportunityLeadsCount(opp: OpportunityRecord): number {
+  const key = MOVER_OPPORTUNITY_FIELD_IDS.leadsCount;
+  const v = opp.customValues?.[key];
+  if (typeof v === "number" && Number.isFinite(v)) return Math.max(0, Math.floor(v));
+  if (typeof v === "string" && v.trim()) {
+    const digits = v.trim().replace(/[^\d]/g, "");
+    if (!digits) return 0;
+    const n = Number.parseInt(digits, 10);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  return 0;
 }
 
-function buildOrdersPerMover(
-  payingOpportunities: OpportunityRecord[],
-  orders: MovingOrderRecord[]
-): Array<{
+function buildOrdersPerMover(payingOpportunities: OpportunityRecord[]): Array<{
   opportunityId: string;
   opportunityName: string;
   orderCount: number;
   isActive: boolean;
 }> {
-  const contactToOrders = new Map<string, MovingOrderRecord[]>();
-  for (const order of orders) {
-    const ids = driverIdsForOrder(order);
-    for (const cid of ids) {
-      const t = cid.trim();
-      if (!t) continue;
-      const arr = contactToOrders.get(t) ?? [];
-      arr.push(order);
-      contactToOrders.set(t, arr);
-    }
-  }
-
   const byCountThenName = (
     a: { orderCount: number; opportunityName: string },
     b: { orderCount: number; opportunityName: string }
@@ -108,20 +99,11 @@ function buildOrdersPerMover(
   const rows = payingOpportunities
     .filter((opp) => (opp.contactId ?? "").trim())
     .map((opp) => {
-      const contactId = opp.contactId.trim();
-      const rawList = contactToOrders.get(contactId) ?? [];
-      const seen = new Set<string>();
-      let n = 0;
-      for (const o of rawList) {
-        if (seen.has(o.id)) continue;
-        seen.add(o.id);
-        n += 1;
-      }
       const name = (opp.name ?? "").trim() || opp.contactName?.trim() || "ללא שם";
       return {
         opportunityId: opp.id,
         opportunityName: name,
-        orderCount: n,
+        orderCount: parseOpportunityLeadsCount(opp),
         isActive: isPayingCustomerOpen(opp),
       };
     });
@@ -156,9 +138,10 @@ export async function GET(req: NextRequest) {
     const payingCustomersByUtmSource = countByUtm(payingInRange);
 
     let ordersCount = 0;
-    let ordersPerMover: ApiOk["ordersPerMover"] = [];
     let movingOrdersWorkspace = false;
     let warning: string | undefined;
+
+    const ordersPerMover = buildOrdersPerMover(payingAll);
 
     const g = await assertMovingOrdersWorkspace();
     if (g.ok) {
@@ -171,7 +154,6 @@ export async function GET(req: NextRequest) {
         resultLimit: null,
       });
       ordersCount = orders.length;
-      ordersPerMover = buildOrdersPerMover(payingAll, orders);
     } else if (g.status !== 403) {
       warning = g.error;
     }

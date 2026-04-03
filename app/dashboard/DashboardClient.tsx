@@ -58,7 +58,7 @@ const DEFAULT_WIDGETS: WidgetConfig[] = [
   { id: "paying_count", title: "לקוחות במערכת (פייפליין לקוחות משלמים)", visible: true },
   { id: "customers_by_channel", title: "לקוחות לפי ערוצים", visible: true },
   { id: "paying_open", title: "לקוחות פעילים", visible: true },
-  { id: "orders_per_mover", title: "כמות הזמנות פר מוביל", visible: true },
+  { id: "orders_per_mover", title: "לידים פר מוביל (קאונטר)", visible: true },
   { id: "sales_mvp", title: "מכירות (MVP)", visible: true },
   { id: "tasks", title: "משימות (היום · מחר · באיחור)", visible: true },
 ];
@@ -327,9 +327,7 @@ export default function DashboardClient() {
     if (id === "orders_per_mover") {
       const rows = m?.ordersPerMover ?? [];
       const subtitle =
-        m && !m.movingOrdersWorkspace
-          ? "מודול הזמנות אינו מופעל בעסק הנבחר — אין נתוני שיוך."
-          : "הזמנות משויכות למוביל לפי איש הקשר (כל ההזמנות במערכת, לא רק בטווח). ממוין: פעילים (סטטוס פתוח) לפי כמות יורד, אחריהם לא פעילים באותו סדר. רקע אדום עדין = לא פעיל.";
+        "המספר לפי שדה opportunity_leads_count בפייפליין (כמו עמודת הקאונטר בניהול הזדמנויות). ממוין: פעילים (סטטוס פתוח) לפי כמות יורד, אחריהם לא פעילים. רקע אדום עדין = לא פעיל.";
       const body =
         rows.length === 0 ? (
           <div style={{ padding: 14, color: "#6b7280", fontWeight: 600 }}>אין מובילים או אין הזמנות משויכות.</div>
@@ -341,7 +339,7 @@ export default function DashboardClient() {
                   מוביל / הזדמנות
                 </th>
                 <th style={{ textAlign: "right", padding: "10px 12px", borderBottom: "2px solid #e5e7eb", background: "#f8fafc", fontSize: 12, fontWeight: 900 }}>
-                  הזמנות
+                  לידים (קאונטר)
                 </th>
               </tr>
             </thead>
@@ -380,7 +378,7 @@ export default function DashboardClient() {
             </tbody>
           </table>
         );
-      return <div key={id}>{tableShell("כמות הזמנות פר מוביל", subtitle, body)}</div>;
+      return <div key={id}>{tableShell("לידים פר מוביל (קאונטר)", subtitle, body)}</div>;
     }
     if (id === "sales_mvp") {
       return (

@@ -3,6 +3,7 @@
 import { useState, type CSSProperties } from "react";
 import { WhatsAppIconLink } from "@/app/components/InlineFieldShell";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
+import { moverExcludedAsInactiveForWork } from "@/lib/movingOrders/matchMovers";
 import type {
   DriverSummary,
   MoverMatchEnrichment,
@@ -55,10 +56,17 @@ function sortDriverIdsForMatch(order: MovingOrderRecord, ids: string[]): string[
   return [...ids].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
 }
 
-function allMatchDriverIds(order: MovingOrderRecord): string[] {
+function allMatchDriverIdsRaw(order: MovingOrderRecord): string[] {
   return sortDriverIdsForMatch(
     order,
     [...new Set([...order.matchedDriverIds, ...order.optionalDriverIds, ...order.manualDriverIds])]
+  );
+}
+
+/** מובילים לטבלת התאמה — בלי «לא פעיל» בזמינות לעבודה (לא אפשרות שליחה) */
+function matchTabVisibleDriverIds(order: MovingOrderRecord): string[] {
+  return allMatchDriverIdsRaw(order).filter(
+    (id) => !moverExcludedAsInactiveForWork(order.driverMatchIssues?.[id])
   );
 }
 
@@ -127,6 +135,8 @@ function hoursCell(en: MoverMatchEnrichment | undefined): string {
 type MoverMatchTableProps = {
   order: MovingOrderRecord;
   driverIds: string[];
+  /** כשאין שורות אחרי סינון אבל היו מובילים — הודעה חלופית */
+  emptyMessage?: string;
   drivers: Record<string, DriverSummary>;
   enrichment: Record<string, MoverMatchEnrichment>;
   canAct: boolean;
@@ -143,6 +153,7 @@ type MoverMatchTableProps = {
 function MoverMatchTable({
   order,
   driverIds,
+  emptyMessage,
   drivers,
   enrichment,
   canAct,
@@ -178,7 +189,11 @@ function MoverMatchTable({
   };
 
   if (driverIds.length === 0) {
-    return <div style={{ color: "#6b7280", fontSize: 14 }}>אין מובילים מהפייפליין «לקוחות».</div>;
+    return (
+      <div style={{ color: "#6b7280", fontSize: 14 }}>
+        {emptyMessage ?? "אין מובילים מהפייפליין «לקוחות»."}
+      </div>
+    );
   }
 
   return (
@@ -337,7 +352,12 @@ export function MatchOrderCard({
   const [sendLeadConfirmId, setSendLeadConfirmId] = useState<string | null>(null);
 
   const p = order.payload;
-  const driverIds = allMatchDriverIds(order);
+  const driverIdsRaw = allMatchDriverIdsRaw(order);
+  const driverIds = matchTabVisibleDriverIds(order);
+  const matchTableEmptyMessage =
+    driverIds.length === 0 && driverIdsRaw.length > 0
+      ? "אין מובילים זמינים לשליחה — כל המובילים מסומנים כלא פעילים בזמינות לעבודה."
+      : undefined;
   const canAct = order.status !== "cancelled" && order.status !== "completed" && order.status !== "rejected";
   const createdShort = order.createdAt ? formatIsraelDateTime(order.createdAt) : "—";
 
@@ -450,6 +470,7 @@ export function MatchOrderCard({
         <MoverMatchTable
           order={order}
           driverIds={driverIds}
+          emptyMessage={matchTableEmptyMessage}
           drivers={drivers}
           enrichment={enrichment}
           canAct={canAct}
@@ -643,6 +664,7 @@ export function MatchOrderCard({
             <MoverMatchTable
               order={order}
               driverIds={driverIds}
+              emptyMessage={matchTableEmptyMessage}
               drivers={drivers}
               enrichment={enrichment}
               canAct={canAct}

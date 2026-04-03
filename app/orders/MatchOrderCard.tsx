@@ -3,7 +3,7 @@
 import { useState, type CSSProperties } from "react";
 import { WhatsAppIconLink } from "@/app/components/InlineFieldShell";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
-import { moverExcludedAsInactiveForWork } from "@/lib/movingOrders/matchMovers";
+import { moverExcludedAsInactiveForWork } from "@/lib/movingOrders/matchInactiveWork";
 import type {
   DriverSummary,
   MoverMatchEnrichment,

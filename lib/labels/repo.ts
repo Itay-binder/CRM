@@ -1,6 +1,9 @@
 import { randomUUID } from "crypto";
-import { FieldValue } from "firebase-admin/firestore";
-import { getAdminDb } from "@/lib/firebase/admin";
+import { FieldValue, type Firestore } from "firebase-admin/firestore";
+import { getAdminDb, getRequestTenantDatabaseId } from "@/lib/firebase/admin";
+import { invalidateTenantCachePrefix, withTenantTtlCache } from "@/lib/server/tenantMemoryCache";
+
+const LABELS_CACHE_TTL_MS = 45_000;
 
 export const LABEL_COLOR_PRESETS = [
   "#2563eb",
@@ -45,14 +48,19 @@ function mapDoc(id: string, d: Record<string, unknown>): LabelRecord {
   };
 }
 
-export async function listLabels(): Promise<LabelRecord[]> {
-  const db = await getAdminDb();
+export async function listLabelsFromDb(db: Firestore): Promise<LabelRecord[]> {
   const snap = await db.collection("labels").get();
   const rows = snap.docs.map((doc) => mapDoc(doc.id, (doc.data() ?? {}) as Record<string, unknown>));
   return rows.sort((a, b) => {
     if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
     return a.name.localeCompare(b.name, "he");
   });
+}
+
+export async function listLabels(): Promise<LabelRecord[]> {
+  const dbId = await getRequestTenantDatabaseId();
+  const db = await getAdminDb();
+  return withTenantTtlCache(`lbl:${dbId}`, LABELS_CACHE_TTL_MS, () => listLabelsFromDb(db));
 }
 
 export async function getLabelById(id: string): Promise<LabelRecord | null> {
@@ -64,6 +72,7 @@ export async function getLabelById(id: string): Promise<LabelRecord | null> {
 
 export async function createLabel(input: { name: string; color?: string }): Promise<LabelRecord> {
   const db = await getAdminDb();
+  const dbId = await getRequestTenantDatabaseId();
   const name = input.name.trim();
   if (!name) throw new Error("Label name is required");
   const color =
@@ -72,7 +81,7 @@ export async function createLabel(input: { name: string; color?: string }): Prom
       : LABEL_COLOR_PRESETS[0];
   const id = `lbl_${randomUUID().replace(/-/g, "")}`;
   const now = FieldValue.serverTimestamp();
-  const all = await listLabels();
+  const all = await listLabelsFromDb(db);
   const maxOrder = all.reduce((m, x) => Math.max(m, x.sortOrder), 0);
   const sortOrder = maxOrder + 1;
   await db.collection("labels").doc(id).set({
@@ -82,6 +91,7 @@ export async function createLabel(input: { name: string; color?: string }): Prom
     createdAt: now,
     updatedAt: now,
   });
+  invalidateTenantCachePrefix(`lbl:${dbId}`);
   const snap = await db.collection("labels").doc(id).get();
   return mapDoc(snap.id, (snap.data() ?? {}) as Record<string, unknown>);
 }
@@ -110,6 +120,7 @@ export async function updateLabel(
     payload.sortOrder = input.sortOrder;
   }
   await ref.set(payload, { merge: true });
+  invalidateTenantCachePrefix(`lbl:${await getRequestTenantDatabaseId()}`);
   const again = await ref.get();
   return mapDoc(again.id, (again.data() ?? {}) as Record<string, unknown>);
 }
@@ -117,6 +128,7 @@ export async function updateLabel(
 /** מסיר את המזהה מכל ההזדמנויות והלידים (batch) */
 export async function deleteLabel(id: string): Promise<void> {
   const db = await getAdminDb();
+  const dbId = await getRequestTenantDatabaseId();
   const ref = db.collection("labels").doc(id);
   const snap = await ref.get();
   if (!snap.exists) return;
@@ -151,6 +163,7 @@ export async function deleteLabel(id: string): Promise<void> {
   batch.delete(ref);
   n++;
   await batch.commit();
+  invalidateTenantCachePrefix(`lbl:${dbId}`);
 }
 
 export async function normalizeIncomingLabelIds(input: {

@@ -1,5 +1,6 @@
-import { FieldValue } from "firebase-admin/firestore";
-import { getAdminDb } from "@/lib/firebase/admin";
+import { FieldValue, type Firestore } from "firebase-admin/firestore";
+import { getAdminDb, getRequestTenantDatabaseId } from "@/lib/firebase/admin";
+import { invalidateTenantCachePrefix, withTenantTtlCache } from "@/lib/server/tenantMemoryCache";
 import { MOVER_OPPORTUNITY_FIELD_IDS } from "@/lib/movingOrders/fieldIds";
 
 export type CustomFieldEntity = "contact" | "opportunity" | "moving_order";
@@ -92,11 +93,13 @@ export type ListCustomFieldsOptions = {
   pipelineId?: string | null;
 };
 
-export async function listCustomFields(
+const CUSTOM_FIELDS_CACHE_TTL_MS = 45_000;
+
+async function listCustomFieldsFromDb(
+  db: Firestore,
   entityType?: CustomFieldEntity,
   options?: ListCustomFieldsOptions
 ): Promise<CustomFieldRecord[]> {
-  const db = await getAdminDb();
   const col = db.collection("customFields");
   const snap = entityType
     ? await col.where("entityType", "==", entityType).get()
@@ -124,6 +127,20 @@ export async function listCustomFields(
   }
 
   return rows.sort((a, b) => a.label.localeCompare(b.label, "he"));
+}
+
+export async function listCustomFields(
+  entityType?: CustomFieldEntity,
+  options?: ListCustomFieldsOptions
+): Promise<CustomFieldRecord[]> {
+  const dbId = await getRequestTenantDatabaseId();
+  const db = await getAdminDb();
+  const entityKey = entityType ?? "all";
+  const pipeKey = options?.filterByPipeline ? `p:${options.pipelineId ?? ""}` : "all";
+  const cacheKey = `cf:${dbId}:${entityKey}:${pipeKey}`;
+  return withTenantTtlCache(cacheKey, CUSTOM_FIELDS_CACHE_TTL_MS, () =>
+    listCustomFieldsFromDb(db, entityType, options)
+  );
 }
 
 export async function upsertCustomField(input: UpsertCustomFieldInput): Promise<CustomFieldRecord> {
@@ -158,6 +175,7 @@ export async function upsertCustomField(input: UpsertCustomFieldInput): Promise<
   };
 
   await docRef.set(payload, { merge: true });
+  invalidateTenantCachePrefix(`cf:${await getRequestTenantDatabaseId()}:`);
   const snap = await docRef.get();
   const d = (snap.data() ?? {}) as Record<string, unknown>;
   return {
@@ -180,6 +198,7 @@ export async function deleteCustomField(fieldId: string): Promise<void> {
   if (!id) throw new Error("Invalid fieldId");
   const db = await getAdminDb();
   await db.collection("customFields").doc(id).delete();
+  invalidateTenantCachePrefix(`cf:${await getRequestTenantDatabaseId()}:`);
 }
 
 export type ValidateCustomValuesOptions = {

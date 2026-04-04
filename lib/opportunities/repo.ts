@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { getAdminDb, getRequestTenantDatabaseId } from "@/lib/firebase/admin";
+import { invalidateTenantCachePrefix, withTenantTtlCache } from "@/lib/server/tenantMemoryCache";
 import { allocateRunningCode } from "@/lib/counters/repo";
 import { getTenantByDatabaseId } from "@/lib/tenant/config";
 import { reconcileContactNotesAcrossEntities } from "@/lib/notes/contactNotesSync";
@@ -13,6 +14,8 @@ import { ensureMovingOrdersIntakePipeline } from "@/lib/movingOrders/ensureIntak
 import { MOVING_ORDERS_INTAKE_PIPELINE_ID } from "@/lib/movingOrders/pipelineConstants";
 import { statusFromStage } from "@/lib/movingOrders/stageSync";
 import { normalizePhone } from "@/lib/leads/repo";
+
+const PIPELINES_LIST_CACHE_TTL_MS = 45_000;
 
 export type PipelineScope = "opportunity" | "moving_order";
 
@@ -330,15 +333,7 @@ export async function ensureDefaultPipeline(): Promise<PipelineRecord> {
   };
 }
 
-export async function listPipelines(scope: PipelineScope = "opportunity"): Promise<PipelineRecord[]> {
-  if (scope === "opportunity" && (await shouldSeedDefaultPipeline())) {
-    await ensureDefaultPipeline();
-    await ensureCustomersPipeline();
-  }
-  if (scope === "moving_order") {
-    await ensureMovingOrdersIntakePipeline();
-  }
-  const db = await getAdminDb();
+export async function listPipelinesFromDb(db: Firestore, scope: PipelineScope): Promise<PipelineRecord[]> {
   const snap = await db.collection("pipelines").get();
   const rows = snap.docs
     .map((doc) => {
@@ -354,6 +349,27 @@ export async function listPipelines(scope: PipelineScope = "opportunity"): Promi
     })
     .filter((p) => p.scope === scope);
   return rows.sort((a, b) => a.name.localeCompare(b.name, "he"));
+}
+
+export async function listPipelines(scope: PipelineScope = "opportunity"): Promise<PipelineRecord[]> {
+  let bypassCache = false;
+  if (scope === "opportunity" && (await shouldSeedDefaultPipeline())) {
+    await ensureDefaultPipeline();
+    await ensureCustomersPipeline();
+    bypassCache = true;
+  }
+  if (scope === "moving_order") {
+    await ensureMovingOrdersIntakePipeline();
+  }
+  const db = await getAdminDb();
+  const dbId = await getRequestTenantDatabaseId();
+  if (bypassCache) {
+    invalidateTenantCachePrefix(`pl:${dbId}:`);
+    return listPipelinesFromDb(db, scope);
+  }
+  return withTenantTtlCache(`pl:${dbId}:${scope}`, PIPELINES_LIST_CACHE_TTL_MS, () =>
+    listPipelinesFromDb(db, scope)
+  );
 }
 
 export async function createPipeline(input: CreatePipelineInput): Promise<PipelineRecord> {
@@ -374,6 +390,7 @@ export async function createPipeline(input: CreatePipelineInput): Promise<Pipeli
   });
   const snap = await ref.get();
   const d = (snap.data() ?? {}) as Record<string, unknown>;
+  invalidateTenantCachePrefix(`pl:${await getRequestTenantDatabaseId()}:`);
   return {
     id: snap.id,
     name: String(d.name ?? name),
@@ -1226,6 +1243,7 @@ export async function updatePipeline(
 
   const again = await ref.get();
   const d = (again.data() ?? {}) as Record<string, unknown>;
+  invalidateTenantCachePrefix(`pl:${await getRequestTenantDatabaseId()}:`);
   return {
     id: again.id,
     name: String(d.name ?? ""),
@@ -1283,5 +1301,6 @@ export async function deletePipeline(id: string): Promise<void> {
     }
   }
   await db.collection("pipelines").doc(id).delete();
+  invalidateTenantCachePrefix(`pl:${await getRequestTenantDatabaseId()}:`);
 }
 

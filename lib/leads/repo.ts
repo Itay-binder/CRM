@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { allocateRunningCode } from "@/lib/counters/repo";
 import {
@@ -10,7 +10,7 @@ import { mergeTaskArrays, type RawTaskIn } from "@/lib/tasks/merge";
 import { reconcileTasksGoogleCalendar } from "@/lib/googleCalendar/taskSync";
 import { fireServerWebhooks } from "@/lib/webhooks/dispatchServerWebhooks";
 import { normalizeIncomingLabelIds } from "@/lib/labels/repo";
-import { createdAtInYmdRange } from "@/lib/datetime/ymdBoundary";
+import { parseYmdBoundary } from "@/lib/datetime/ymdBoundary";
 
 export type LeadRecord = {
   id: string; // doc id = normalized unique key
@@ -279,14 +279,23 @@ function dateToYmd(d: Date): string {
 
 export async function listLeadsFiltered(dateFrom?: string | null, dateTo?: string | null): Promise<LeadRecord[]> {
   const db = await getAdminDb();
-  const snap = await db.collection("leads").get();
-  const leads = snap.docs.map((d) => mapDocToLead(d.id, d.data() as Record<string, unknown>));
-
   const from = dateFrom?.trim();
   const to = dateTo?.trim();
-  if (!from && !to) return leads;
 
-  return leads.filter((l) => createdAtInYmdRange(l.createdAt, from, to));
+  if (from || to) {
+    const fromD = from ? parseYmdBoundary(from, "from") : new Date(0);
+    const toD = to ? parseYmdBoundary(to, "to") : new Date(8640000000000000);
+    const snap = await db
+      .collection("leads")
+      .where("createdAt", ">=", Timestamp.fromDate(fromD))
+      .where("createdAt", "<=", Timestamp.fromDate(toD))
+      .get();
+    return snap.docs.map((d) => mapDocToLead(d.id, d.data() as Record<string, unknown>));
+  }
+
+  const snap = await db.collection("leads").get();
+  const leads = snap.docs.map((d) => mapDocToLead(d.id, d.data() as Record<string, unknown>));
+  return leads;
 }
 
 export async function getLeadById(id: string): Promise<LeadRecord | null> {

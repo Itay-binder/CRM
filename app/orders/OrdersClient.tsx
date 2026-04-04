@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import OrdersBoardTab from "@/app/orders/OrdersBoardTab";
 import { MatchOrderCard } from "@/app/orders/MatchOrderCard";
 import OrdersPipelinesTab from "@/app/orders/OrdersPipelinesTab";
@@ -14,12 +14,6 @@ import type {
 } from "@/lib/movingOrders/types";
 
 type TabId = "orders" | "pipelines" | "match" | "byMovers";
-
-const ORDERS_TAB_STORAGE_KEY = "liftygo_crm_orders_tab";
-
-function isTabId(v: string): v is TabId {
-  return v === "orders" || v === "pipelines" || v === "match" || v === "byMovers";
-}
 type ApiListOk = {
   ok: true;
   orders: MovingOrderRecord[];
@@ -48,7 +42,7 @@ function statusLabel(s: MovingOrderStatus): string {
 }
 
 export default function OrdersClient() {
-  const [tab, setTab] = useState<TabId>("orders");
+  const [tab, setTab] = useState<TabId>("match");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [orders, setOrders] = useState<MovingOrderRecord[]>([]);
@@ -114,22 +108,8 @@ export default function OrdersClient() {
     void load();
   }, [load]);
 
-  useLayoutEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(ORDERS_TAB_STORAGE_KEY);
-      if (raw && isTabId(raw)) setTab(raw);
-    } catch {
-      /* private mode / no storage */
-    }
-  }, []);
-
   const setTabPersist = useCallback((next: TabId) => {
     setTab(next);
-    try {
-      sessionStorage.setItem(ORDERS_TAB_STORAGE_KEY, next);
-    } catch {
-      /* ignore */
-    }
   }, []);
 
   async function setExcluded(order: MovingOrderRecord, leadId: string, checked: boolean) {

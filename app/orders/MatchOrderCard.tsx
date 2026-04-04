@@ -223,7 +223,7 @@ function MoverMatchTable({
             <th style={thStyle}>פניות</th>
             <th style={thStyle}>ליד אחרון שקיבל (תאריך)</th>
             <th style={thStyle}>שעות / גמישות</th>
-            <th style={thStyle}>וואטסאפ</th>
+            <th style={{ ...thStyle, minWidth: 130, whiteSpace: "nowrap" }}>וואטסאפ</th>
             {showOpportunityLinks ? <th style={thStyle}>הזדמנות</th> : null}
           </tr>
         </thead>
@@ -285,7 +285,9 @@ function MoverMatchTable({
                   {en?.lastLeadAt ? formatIsraelDateTime(en.lastLeadAt) : "—"}
                 </td>
                 <td style={{ ...tdStyle, fontSize: 11 }}>{hoursCell(en)}</td>
-                <td style={tdStyle}>{driverPhone ? <WhatsAppIconLink phone={driverPhone} size={18} /> : "—"}</td>
+                <td style={{ ...tdStyle, whiteSpace: "nowrap", minWidth: 130, maxWidth: "none", wordBreak: "normal" }}>
+                  {driverPhone ? <WhatsAppIconLink phone={driverPhone} size={18} /> : "—"}
+                </td>
                 {showOpportunityLinks ? (
                   <td style={tdStyle}>
                     {oppId ? (

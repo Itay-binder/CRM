@@ -10,7 +10,7 @@ export async function seedMoverWelcomeOpportunityFields(): Promise<{ fieldIds: s
   const defs: Array<{
     fieldId: string;
     label: string;
-    type: "boolean" | "text" | "phone" | "email";
+    type: "boolean" | "text" | "phone" | "email" | "number";
   }> = [
     { fieldId: "mover_welcome_full_name", label: "הצטרפות מוביל — שם מלא (name)", type: "text" },
     { fieldId: "mover_welcome_phone", label: "הצטרפות מוביל — טלפון (phone)", type: "phone" },
@@ -50,6 +50,11 @@ export async function seedMoverWelcomeOpportunityFields(): Promise<{ fieldIds: s
     },
     { fieldId: "mover_welcome_mover_services", label: "הצטרפות מוביל — שירותים (mover_services)", type: "text" },
     { fieldId: "mover_welcome_notes", label: "הצטרפות מוביל — הערות (notes)", type: "text" },
+    {
+      fieldId: "opportunity_leads_count",
+      label: "מספר פניות (לידים) — התאמת הזמנות",
+      type: "number",
+    },
   ];
 
   const fieldIds: string[] = [];

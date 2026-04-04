@@ -73,6 +73,15 @@ const OPPORTUNITY_SYSTEM_FIELDS: SystemField[] = [
   { kind: "system", entityType: "opportunity", label: "תאריך יצירה", fieldId: "opportunity_created_at", type: "readonly", isRequired: false, isActive: true },
   { kind: "system", entityType: "opportunity", label: "תאריך עדכון", fieldId: "opportunity_updated_at", type: "readonly", isRequired: false, isActive: true },
   { kind: "system", entityType: "opportunity", label: "תאריך ליד אחרון", fieldId: "opportunity_last_lead_at", type: "readonly", isRequired: false, isActive: true },
+  {
+    kind: "system",
+    entityType: "opportunity",
+    label: "מספר פניות (לידים)",
+    fieldId: "opportunity_leads_count",
+    type: "number",
+    isRequired: false,
+    isActive: true,
+  },
 ];
 
 const MOVING_ORDER_SYSTEM_FIELDS: SystemField[] = [

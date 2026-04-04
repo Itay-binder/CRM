@@ -528,8 +528,13 @@ export default function ContactsClient() {
     "labelIds",
   ]);
 
+  function contactColDefaultWidth(col: string): number {
+    if (col === "phone" || columnIntegrationKind(col) === "phone") return 220;
+    return 180;
+  }
+
   function onResizeColumnStart(col: string, startX: number) {
-    const base = contactColWidths[col] ?? 180;
+    const base = contactColWidths[col] ?? contactColDefaultWidth(col);
     const onMove = (ev: MouseEvent) => {
       const next = Math.max(120, base + (ev.clientX - startX));
       setContactColWidths((prev) => ({ ...prev, [col]: next }));
@@ -922,8 +927,8 @@ export default function ContactsClient() {
                         fontWeight: 900,
                         fontSize: 12,
                         whiteSpace: "nowrap",
-                        minWidth: contactColWidths[h] ?? 180,
-                        width: contactColWidths[h] ?? 180,
+                        minWidth: contactColWidths[h] ?? contactColDefaultWidth(h),
+                        width: contactColWidths[h] ?? contactColDefaultWidth(h),
                         verticalAlign: "top",
                         zIndex: 2,
                       }}
@@ -970,10 +975,11 @@ export default function ContactsClient() {
                           borderBottom: "1px solid #f3f4f6",
                           verticalAlign: "top",
                           fontSize: 12,
-                          minWidth: contactColWidths[h] ?? 180,
-                          width: contactColWidths[h] ?? 180,
-                          maxWidth: contactColWidths[h] ?? 180,
-                          wordBreak: "break-word",
+                          minWidth: contactColWidths[h] ?? contactColDefaultWidth(h),
+                          width: contactColWidths[h] ?? contactColDefaultWidth(h),
+                          maxWidth: contactColWidths[h] ?? contactColDefaultWidth(h),
+                          wordBreak: columnIntegrationKind(h) === "phone" ? "normal" : "break-word",
+                          whiteSpace: columnIntegrationKind(h) === "phone" ? "nowrap" : undefined,
                         }}
                       >
                         {h === "name" && row.id ? (

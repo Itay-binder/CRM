@@ -13,6 +13,35 @@ import {
   InlineFieldShell,
   WhatsAppIconLink,
 } from "@/app/components/InlineFieldShell";
+import { MOVER_OPPORTUNITY_FIELD_IDS } from "@/lib/movingOrders/fieldIds";
+
+function pipelineOppColOrderCookieKey(pipelineId: string): string {
+  const safe = pipelineId.replace(/[^\w-]/g, "_");
+  return `crm_pl_opp_ord_${safe}`;
+}
+
+function pipelineOppColVisibleCookieKey(pipelineId: string): string {
+  const safe = pipelineId.replace(/[^\w-]/g, "_");
+  return `crm_pl_opp_vis_${safe}`;
+}
+
+function readPipelineColsCookie<T>(key: string): T | null {
+  if (typeof document === "undefined") return null;
+  const esc = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const m = document.cookie.match(new RegExp(`(?:^|; )${esc}=([^;]*)`));
+  if (!m?.[1]) return null;
+  try {
+    return JSON.parse(decodeURIComponent(m[1])) as T;
+  } catch {
+    return null;
+  }
+}
+
+function writePipelineColsCookie(key: string, value: unknown) {
+  if (typeof document === "undefined") return;
+  const enc = encodeURIComponent(JSON.stringify(value));
+  document.cookie = `${key}=${enc}; path=/; max-age=${60 * 60 * 24 * 400}; SameSite=Lax`;
+}
 
 type Pipeline = {
   id: string;
@@ -380,20 +409,27 @@ export default function PipelineClient() {
       setOppCustomFieldIds(
         Array.from(new Set([...customFromSettings, ...keysFromOpps])).sort()
       );
-      setOppColumnOrder((prev) => {
-        const migrateKey = (k: string) => (k === "lastLeadAt" ? "contactLastLeadAt" : k);
-        if (!prev.length) return allOppColKeys;
-        const next = [...new Set(prev.map(migrateKey))];
-        for (const k of allOppColKeys) {
-          if (!next.includes(k)) next.push(k);
-        }
-        return next;
-      });
-      setOppVisibleCols((prev) => {
-        const migrateKey = (k: string) => (k === "lastLeadAt" ? "contactLastLeadAt" : k);
-        if (!prev.length) return [...allOppColKeys];
-        return Array.from(new Set([...prev.map(migrateKey), ...allOppColKeys]));
-      });
+      const migrateKey = (k: string) => (k === "lastLeadAt" ? "contactLastLeadAt" : k);
+      const orderCookie = readPipelineColsCookie<string[]>(
+        pipelineOppColOrderCookieKey(resolvedPipelineId)
+      );
+      const visCookie = readPipelineColsCookie<string[]>(
+        pipelineOppColVisibleCookieKey(resolvedPipelineId)
+      );
+      const orderFromCookie = orderCookie?.length
+        ? [...new Set(orderCookie.map(migrateKey))]
+        : null;
+      const mergedOrder = orderFromCookie?.length ? [...orderFromCookie] : [...allOppColKeys];
+      for (const k of allOppColKeys) {
+        if (!mergedOrder.includes(k)) mergedOrder.push(k);
+      }
+      setOppColumnOrder(mergedOrder);
+
+      const visFromCookie = visCookie?.length ? [...new Set(visCookie.map(migrateKey))] : null;
+      const mergedVisible = visFromCookie?.length
+        ? Array.from(new Set([...visFromCookie, ...allOppColKeys]))
+        : [...allOppColKeys];
+      setOppVisibleCols(mergedVisible);
       setBoardPreviewFields((prev) => {
         if (prev.length) return prev;
         const available = new Set(allOppColKeys);
@@ -411,6 +447,19 @@ export default function PipelineClient() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPipelineId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !selectedPipelineId) return;
+    if (oppColumnOrder.length === 0 && oppVisibleCols.length === 0) return;
+    writePipelineColsCookie(
+      pipelineOppColOrderCookieKey(selectedPipelineId),
+      oppColumnOrder
+    );
+    writePipelineColsCookie(
+      pipelineOppColVisibleCookieKey(selectedPipelineId),
+      oppVisibleCols
+    );
+  }, [selectedPipelineId, oppColumnOrder, oppVisibleCols]);
 
   useEffect(() => {
     if (!toastMessage) return;
@@ -721,8 +770,8 @@ export default function PipelineClient() {
     const raw = opportunityCell(o, f);
     if (columnIntegrationKind(f) === "phone" && raw.trim()) {
       return (
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-          <span style={{ color: "#6b7280", wordBreak: "break-word" }}>{text}</span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "nowrap", whiteSpace: "nowrap" }}>
+          <span style={{ color: "#6b7280" }}>{text}</span>
           <WhatsAppIconLink phone={raw} size={16} />
         </span>
       );
@@ -769,14 +818,30 @@ export default function PipelineClient() {
       createdAt: "נוצר",
       updatedAt: "עודכן",
       contactLastLeadAt: "ליד אחרון (איש קשר)",
+      [MOVER_OPPORTUNITY_FIELD_IDS.leadsCount]: "מספר פניות (לידים)",
     };
     return labels[col] ?? oppCustomFieldLabelById[col] ?? col;
+  }
+
+  function oppDefaultColWidth(col: string): number {
+    if (
+      col === "phone" ||
+      col === "contactPhone" ||
+      columnIntegrationKind(col) === "phone"
+    ) {
+      return 220;
+    }
+    return 180;
   }
 
   const advFieldKinds = useMemo(() => {
     const out: Record<string, AdvFieldKind> = {};
     const rowsToInspect = oppForSelectedPipeline.slice(0, 120);
     for (const col of oppDisplayCols) {
+      if (col === MOVER_OPPORTUNITY_FIELD_IDS.leadsCount) {
+        out[col] = "number";
+        continue;
+      }
       const key = col.trim().toLowerCase();
       if (
         key === "status" ||
@@ -912,13 +977,25 @@ export default function PipelineClient() {
       await saveOpportunityPatch(o.id, { [col]: value } as Record<string, unknown>);
       return;
     }
+    if (col === MOVER_OPPORTUNITY_FIELD_IDS.leadsCount) {
+      const n = Number.parseInt(value, 10);
+      if (value !== "" && (Number.isNaN(n) || n < 0)) {
+        setErr("מספר פניות חייב להיות מספר שלם אי־שלילי");
+        return;
+      }
+      const numVal = value === "" ? 0 : n;
+      await saveOpportunityPatch(o.id, {
+        customValues: { ...(o.customValues ?? {}), [col]: numVal },
+      });
+      return;
+    }
     await saveOpportunityPatch(o.id, {
       customValues: { ...(o.customValues ?? {}), [col]: value },
     });
   }
 
   function onResizeColumnStart(col: string, startX: number) {
-    const base = oppColWidths[col] ?? 180;
+    const base = oppColWidths[col] ?? oppDefaultColWidth(col);
     const onMove = (ev: MouseEvent) => {
       const next = Math.max(120, base + (ev.clientX - startX));
       setOppColWidths((prev) => ({ ...prev, [col]: next }));
@@ -1166,7 +1243,7 @@ export default function PipelineClient() {
                 <thead>
                   <tr>
                     {oppDisplayCols.map((h) => (
-                      <th key={h} style={{ textAlign: "right", padding: "8px 10px", borderBottom: "2px solid #e5e7eb", background: "#f8fafc", fontSize: 12, fontWeight: 900, whiteSpace: "nowrap", minWidth: oppColWidths[h] ?? 180, width: oppColWidths[h] ?? 180, position: "relative", verticalAlign: "top" }}>
+                      <th key={h} style={{ textAlign: "right", padding: "8px 10px", borderBottom: "2px solid #e5e7eb", background: "#f8fafc", fontSize: 12, fontWeight: 900, whiteSpace: "nowrap", minWidth: oppColWidths[h] ?? oppDefaultColWidth(h), width: oppColWidths[h] ?? oppDefaultColWidth(h), position: "relative", verticalAlign: "top" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           <span>{opportunityFieldLabel(h)}</span>
                           <button
@@ -1202,7 +1279,16 @@ export default function PipelineClient() {
                   {filteredSortedOpps.map((o) => (
                     <tr key={o.id}>
                       {oppDisplayCols.map((col, idx) => (
-                        <td key={col} style={{ padding: "10px 12px", borderBottom: "1px solid #f3f4f6", minWidth: oppColWidths[col] ?? 180, width: oppColWidths[col] ?? 180 }}>
+                        <td
+                          key={col}
+                          style={{
+                            padding: "10px 12px",
+                            borderBottom: "1px solid #f3f4f6",
+                            minWidth: oppColWidths[col] ?? oppDefaultColWidth(col),
+                            width: oppColWidths[col] ?? oppDefaultColWidth(col),
+                            whiteSpace: columnIntegrationKind(col) === "phone" ? "nowrap" : undefined,
+                          }}
+                        >
                           {col === "name" ? (
                             <button type="button" onClick={() => void openOpportunityDetail(o.id)} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#4c1d95", fontWeight: 800, padding: 0 }}>
                               {opportunityCell(o, col)}
@@ -1264,6 +1350,9 @@ export default function PipelineClient() {
                               ) : (
                                 <input
                                   autoFocus
+                                  type={col === MOVER_OPPORTUNITY_FIELD_IDS.leadsCount ? "number" : "text"}
+                                  min={col === MOVER_OPPORTUNITY_FIELD_IDS.leadsCount ? 0 : undefined}
+                                  inputMode={col === MOVER_OPPORTUNITY_FIELD_IDS.leadsCount ? "numeric" : undefined}
                                   value={editingCell.value}
                                   onChange={(e) =>
                                     setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
@@ -1287,7 +1376,8 @@ export default function PipelineClient() {
                                 style={{
                                   display: "block",
                                   textAlign: "right",
-                                  wordBreak: "break-word",
+                                  wordBreak: columnIntegrationKind(col) === "phone" ? "normal" : "break-word",
+                                  whiteSpace: columnIntegrationKind(col) === "phone" ? "nowrap" : undefined,
                                   color: "#374151",
                                 }}
                               >

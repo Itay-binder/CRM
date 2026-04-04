@@ -210,6 +210,17 @@ function orderTitle(o: MovingOrderRecord): string {
   return o.payload.name?.trim() || o.payload.order_id || o.id;
 }
 
+function orderColDefaultWidth(col: string): number {
+  if (
+    col === "phone" ||
+    col === "moving_order_phone" ||
+    columnIntegrationKind(col) === "phone"
+  ) {
+    return 220;
+  }
+  return 180;
+}
+
 function statusLabel(s: MovingOrderStatus): string {
   switch (s) {
     case "pending":
@@ -577,7 +588,7 @@ export default function OrdersBoardTab() {
   }
 
   function onResizeColumnStart(col: string, startX: number) {
-    const base = colWidths[col] ?? 180;
+    const base = colWidths[col] ?? orderColDefaultWidth(col);
     const onMove = (ev: MouseEvent) => {
       const next = Math.max(120, base + (ev.clientX - startX));
       setColWidths((prev) => ({ ...prev, [col]: next }));
@@ -709,8 +720,8 @@ export default function OrdersBoardTab() {
     const raw = orderCell(o, f);
     if (columnIntegrationKind(f) === "phone" && raw.trim()) {
       return (
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-          <span style={{ color: "#6b7280", wordBreak: "break-word" }}>{text}</span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "nowrap", whiteSpace: "nowrap" }}>
+          <span style={{ color: "#6b7280" }}>{text}</span>
           <WhatsAppIconLink phone={raw} size={16} />
         </span>
       );
@@ -837,8 +848,8 @@ export default function OrdersBoardTab() {
                       fontSize: 12,
                       fontWeight: 900,
                       whiteSpace: "nowrap",
-                      minWidth: colWidths[h] ?? 180,
-                      width: colWidths[h] ?? 180,
+                      minWidth: colWidths[h] ?? orderColDefaultWidth(h),
+                      width: colWidths[h] ?? orderColDefaultWidth(h),
                       position: "relative",
                       verticalAlign: "top",
                     }}
@@ -897,8 +908,9 @@ export default function OrdersBoardTab() {
                       style={{
                         padding: "10px 12px",
                         borderBottom: "1px solid #f3f4f6",
-                        minWidth: colWidths[col] ?? 180,
-                        width: colWidths[col] ?? 180,
+                        minWidth: colWidths[col] ?? orderColDefaultWidth(col),
+                        width: colWidths[col] ?? orderColDefaultWidth(col),
+                        whiteSpace: columnIntegrationKind(col) === "phone" ? "nowrap" : undefined,
                       }}
                     >
                       {editingCell?.id === o.id && editingCell.col === col ? (
@@ -977,7 +989,7 @@ export default function OrdersBoardTab() {
                       ) : INLINE_READONLY.has(col) ? (
                         <span style={{ wordBreak: "break-word", color: "#374151" }}>{orderCell(o, col)}</span>
                       ) : col === "phone" && orderCell(o, col).trim() ? (
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "nowrap", whiteSpace: "nowrap" }}>
                           <InlineFieldShell
                             integration="phone"
                             rawValue={orderCell(o, col)}

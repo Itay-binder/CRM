@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import useSWR from "swr";
 import { useSearchParams } from "next/navigation";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 import {
@@ -144,7 +145,6 @@ function asDateKey(raw: string): string | null {
 
 export default function ContactsClient() {
   const searchParams = useSearchParams();
-  const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
@@ -224,54 +224,64 @@ export default function ContactsClient() {
     return q ? `?${q}` : "";
   }, [dateFrom, dateTo]);
 
-  async function load() {
-    setLoading(true);
-    setErr(null);
-    try {
-      const res = await fetch(`/api/contacts${query}`, { credentials: "include", cache: "no-store" });
+  const contactsKey = `/api/contacts${query}`;
+
+  const {
+    data: contactsPayload,
+    error: contactsSwrError,
+    isLoading: contactsLoading,
+    mutate: mutateContacts,
+  } = useSWR(
+    contactsKey,
+    async (url: string): Promise<LeadsOk> => {
+      const res = await fetch(url, { credentials: "include", cache: "no-store" });
       if (res.status === 401) {
         window.location.href = `/login?returnTo=${encodeURIComponent("/contacts")}`;
-        return;
+        throw new Error("CRM_AUTH_REDIRECT");
       }
       if (res.status === 403) {
         window.location.href = `/pending?returnTo=${encodeURIComponent("/contacts")}`;
-        return;
+        throw new Error("CRM_AUTH_REDIRECT");
       }
-
       const json = (await res.json().catch(() => ({}))) as LeadsOk | LeadsErr;
       if (!json || json.ok !== true) {
-        setErr("שגיאה בטעינת contacts");
-        return;
+        throw new Error("שגיאה בטעינת contacts");
       }
+      return json;
+    },
+    { revalidateOnFocus: true, dedupingInterval: 5000, keepPreviousData: true }
+  );
 
-      setHeaders(json.headers ?? []);
-      setRows(json.rows ?? []);
-      setCount(json.count ?? 0);
-      setVisibleCols((prev) => {
-        if (prev.length) return prev;
-        const hs = json.headers ?? [];
-        const initial = BASE_COLS.filter((c) => hs.includes(c));
-        const rest = hs.filter((h) => !initial.includes(h)).slice(0, 3);
-        return [...initial, ...rest];
-      });
-      setColumnOrder((prev) => {
-        if (prev.length) return prev;
-        const hs = json.headers ?? [];
-        const initial = BASE_COLS.filter((c) => hs.includes(c));
-        const rest = hs.filter((h) => !initial.includes(h));
-        return [...initial, ...rest];
-      });
-    } catch {
-      setErr("לא ניתן לטעון contacts");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const loading = contactsLoading && !contactsPayload;
 
   useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
+    if (contactsSwrError && contactsSwrError.message !== "CRM_AUTH_REDIRECT") {
+      setErr(contactsSwrError.message);
+    } else {
+      setErr(null);
+    }
+  }, [contactsSwrError]);
+
+  useEffect(() => {
+    if (!contactsPayload) return;
+    setHeaders(contactsPayload.headers ?? []);
+    setRows(contactsPayload.rows ?? []);
+    setCount(contactsPayload.count ?? 0);
+    setVisibleCols((prev) => {
+      if (prev.length) return prev;
+      const hs = contactsPayload.headers ?? [];
+      const initial = BASE_COLS.filter((c) => hs.includes(c));
+      const rest = hs.filter((h) => !initial.includes(h)).slice(0, 3);
+      return [...initial, ...rest];
+    });
+    setColumnOrder((prev) => {
+      if (prev.length) return prev;
+      const hs = contactsPayload.headers ?? [];
+      const initial = BASE_COLS.filter((c) => hs.includes(c));
+      const rest = hs.filter((h) => !initial.includes(h));
+      return [...initial, ...rest];
+    });
+  }, [contactsPayload]);
 
   useEffect(() => {
     if (openedFromQueryRef.current) return;
@@ -623,7 +633,7 @@ export default function ContactsClient() {
       setCreateEmail("");
       setCreateStatus("פתוח");
       setCreateAssignedRep("");
-      await load();
+      await mutateContacts();
     } catch {
       setErr("יצירת איש קשר נכשלה");
     } finally {
@@ -683,7 +693,7 @@ export default function ContactsClient() {
       };
       if (!res.ok || !j.ok || !j.lead) throw new Error(j.error ?? "שמירה נכשלה");
       setDetail(j.lead);
-      await load();
+      await mutateContacts();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "שמירה נכשלה");
     } finally {
@@ -735,7 +745,7 @@ export default function ContactsClient() {
         return;
       }
       setImportResult(`הייבוא הסתיים: ${j.success ?? 0} הצליחו, ${j.failed ?? 0} נכשלו`);
-      await load();
+      await mutateContacts();
     } catch {
       setErr("ייבוא CSV נכשל");
     } finally {

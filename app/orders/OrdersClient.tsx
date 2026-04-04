@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import useSWR from "swr";
 import OrdersBoardTab from "@/app/orders/OrdersBoardTab";
 import { MatchOrderCard } from "@/app/orders/MatchOrderCard";
 import OrdersPipelinesTab from "@/app/orders/OrdersPipelinesTab";
@@ -43,7 +44,6 @@ function statusLabel(s: MovingOrderStatus): string {
 
 export default function OrdersClient() {
   const [tab, setTab] = useState<TabId>("match");
-  const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [orders, setOrders] = useState<MovingOrderRecord[]>([]);
   const [drivers, setDrivers] = useState<Record<string, DriverSummary>>({});
@@ -57,56 +57,60 @@ export default function OrdersClient() {
   const [sendingLeadKey, setSendingLeadKey] = useState<string | null>(null);
   const autoRematchedOnceRef = useRef(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setErr(null);
-    try {
+  const {
+    data: ordersSwrData,
+    error: ordersSwrError,
+    isLoading: ordersSwrLoading,
+    mutate: mutateOrders,
+  } = useSWR(
+    "crm-moving-orders",
+    async (): Promise<ApiListOk> => {
       const res = await fetch("/api/moving-orders", { credentials: "include", cache: "no-store" });
       const j = (await res.json()) as ApiListResponse;
-      if (!res.ok || !j.ok) {
-        setErr(!j.ok ? j.error ?? "שגיאה" : "שגיאה");
-        return;
-      }
-      setOrders(j.orders);
-      setDrivers(j.drivers);
-      setMoverEnrichment(j.moverEnrichment ?? {});
-      setOrderMatchUi(j.orderMatchUi ?? {});
-      const needAutoRematch =
-        !autoRematchedOnceRef.current &&
-        j.orders.some((o) => !o.driverMatchFlags || Object.keys(o.driverMatchFlags).length === 0);
-      if (needAutoRematch) {
-        autoRematchedOnceRef.current = true;
-        await Promise.all(
-          j.orders
-            .filter((o) => !o.driverMatchFlags || Object.keys(o.driverMatchFlags).length === 0)
-            .map((o) =>
-              fetch(`/api/moving-orders/${encodeURIComponent(o.id)}`, {
-                method: "PATCH",
-                credentials: "include",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ rematch: true }),
-              }).catch(() => null)
-            )
-        );
-        const r2 = await fetch("/api/moving-orders", { credentials: "include", cache: "no-store" });
-        const j2 = (await r2.json()) as ApiListResponse;
-        if (r2.ok && j2.ok) {
-          setOrders(j2.orders);
-          setDrivers(j2.drivers);
-          setMoverEnrichment(j2.moverEnrichment ?? {});
-          setOrderMatchUi(j2.orderMatchUi ?? {});
-        }
-      }
-    } catch {
-      setErr("שגיאה בטעינה");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      if (!res.ok || !j.ok) throw new Error(!j.ok ? j.error ?? "שגיאה" : "שגיאה");
+      return j;
+    },
+    { revalidateOnFocus: true, dedupingInterval: 5000 }
+  );
+
+  const loading = ordersSwrLoading && !ordersSwrData;
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (ordersSwrError) setErr(ordersSwrError.message);
+    else setErr(null);
+  }, [ordersSwrError]);
+
+  useEffect(() => {
+    if (!ordersSwrData) return;
+    setOrders(ordersSwrData.orders);
+    setDrivers(ordersSwrData.drivers);
+    setMoverEnrichment(ordersSwrData.moverEnrichment ?? {});
+    setOrderMatchUi(ordersSwrData.orderMatchUi ?? {});
+  }, [ordersSwrData]);
+
+  useEffect(() => {
+    if (!ordersSwrData) return;
+    const needAutoRematch =
+      !autoRematchedOnceRef.current &&
+      ordersSwrData.orders.some((o) => !o.driverMatchFlags || Object.keys(o.driverMatchFlags).length === 0);
+    if (!needAutoRematch) return;
+    autoRematchedOnceRef.current = true;
+    void (async () => {
+      await Promise.all(
+        ordersSwrData.orders
+          .filter((o) => !o.driverMatchFlags || Object.keys(o.driverMatchFlags).length === 0)
+          .map((o) =>
+            fetch(`/api/moving-orders/${encodeURIComponent(o.id)}`, {
+              method: "PATCH",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ rematch: true }),
+            }).catch(() => null)
+          )
+      );
+      await mutateOrders();
+    })();
+  }, [ordersSwrData, mutateOrders]);
 
   const setTabPersist = useCallback((next: TabId) => {
     setTab(next);
@@ -130,7 +134,7 @@ export default function OrdersClient() {
         setOrders((prev) => prev.map((o) => (o.id === order.id ? j.order! : o)));
       }
     } catch {
-      void load();
+      void mutateOrders();
     }
   }
 
@@ -163,7 +167,7 @@ export default function OrdersClient() {
       }
       setSentSuccessOrderId(order.id);
       setTimeout(() => setSentSuccessOrderId((cur) => (cur === order.id ? null : cur)), 6000);
-      void load();
+      void mutateOrders();
     } catch {
       alert("שגיאת רשת");
     } finally {
@@ -192,7 +196,7 @@ export default function OrdersClient() {
         alert(j.error ?? "מחיקה נכשלה");
         return;
       }
-      void load();
+      void mutateOrders();
     } catch {
       alert("שגיאת רשת");
     } finally {
@@ -215,7 +219,7 @@ export default function OrdersClient() {
         alert(j.error ?? "שליחת הליד נכשלה");
         return;
       }
-      void load();
+      void mutateOrders();
     } catch {
       alert("שגיאת רשת");
     } finally {

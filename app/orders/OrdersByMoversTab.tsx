@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import useSWR from "swr";
 import type { OpportunityOrdersGroup, OrderByOpportunityRow } from "@/lib/movingOrders/opportunityOrdersView";
 import type { MovingOrderStatus } from "@/lib/movingOrders/types";
 
@@ -26,32 +27,28 @@ function statusLabel(s: MovingOrderStatus): string {
 }
 
 export default function OrdersByMoversTab() {
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-  const [items, setItems] = useState<OpportunityOrdersGroup[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setErr(null);
-    try {
-      const res = await fetch("/api/moving-orders/by-opportunities", { credentials: "include", cache: "no-store" });
+  const {
+    data: items = [],
+    error: swrError,
+    isLoading,
+  } = useSWR(
+    "crm-moving-orders-by-opportunities",
+    async (): Promise<OpportunityOrdersGroup[]> => {
+      const res = await fetch("/api/moving-orders/by-opportunities", {
+        credentials: "include",
+        cache: "no-store",
+      });
       const j = (await res.json()) as ApiResponse;
-      if (!res.ok || !j.ok) {
-        setErr(!j.ok ? j.error ?? "שגיאה" : "שגיאה");
-        return;
-      }
-      setItems(j.items);
-    } catch {
-      setErr("שגיאה בטעינה");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      if (!res.ok || !j.ok) throw new Error(!j.ok ? j.error ?? "שגיאה" : "שגיאה");
+      return j.items;
+    },
+    { revalidateOnFocus: true, dedupingInterval: 5000 }
+  );
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const loading = isLoading && items.length === 0;
+  const err = swrError ? swrError.message : null;
 
   if (loading) {
     return <div style={{ padding: 24 }}>טוען…</div>;

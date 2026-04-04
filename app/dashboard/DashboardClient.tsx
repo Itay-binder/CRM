@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import useSWR from "swr";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 import { formatIsraelYmdUtc, israelTodayAndTomorrowKeys, parseTaskInstant } from "@/lib/datetime/taskTimestamps";
 
@@ -71,11 +72,10 @@ function sortedEntries(rec: Record<string, number>): [string, number][] {
   return Object.entries(rec).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "he"));
 }
 
+const DASH_AUTH_REDIRECT = "CRM_DASH_AUTH_REDIRECT";
+
 export default function DashboardClient() {
-  const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [metrics, setMetrics] = useState<DashboardMetricsOk | null>(null);
-  const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [widgets, setWidgets] = useState<WidgetConfig[]>(DEFAULT_WIDGETS);
   const [manageOpen, setManageOpen] = useState(false);
 
@@ -90,55 +90,61 @@ export default function DashboardClient() {
     return q ? `?${q}` : "";
   }, [dateFrom, dateTo]);
 
-  async function load() {
-    setLoading(true);
-    setErr(null);
-    try {
-      const [res, tasksRes] = await Promise.all([
-        fetch(`/api/dashboard/metrics${query}`, {
-          cache: "no-store",
-          credentials: "include",
-        }),
-        fetch("/api/tasks", {
-          cache: "no-store",
-          credentials: "include",
-        }),
-      ]);
+  const metricsUrl = `/api/dashboard/metrics${query}`;
 
+  const {
+    data: metrics,
+    error: metricsSwrError,
+    isLoading: metricsLoading,
+    mutate: mutateMetrics,
+  } = useSWR(
+    metricsUrl,
+    async (url: string): Promise<DashboardMetricsOk> => {
+      const res = await fetch(url, { cache: "no-store", credentials: "include" });
       if (res.status === 401) {
         window.location.href = `/login?returnTo=${encodeURIComponent("/dashboard")}`;
-        return;
+        throw new Error(DASH_AUTH_REDIRECT);
       }
       if (res.status === 403) {
         window.location.href = `/pending?returnTo=${encodeURIComponent("/dashboard")}`;
-        return;
+        throw new Error(DASH_AUTH_REDIRECT);
       }
-
       const json = (await res.json().catch(() => ({}))) as DashboardMetricsOk | DashboardMetricsErr;
       if (!json || !("ok" in json) || json.ok !== true) {
-        setErr("שגיאה בטעינת מדדים");
-        return;
+        throw new Error("שגיאה בטעינת מדדים");
       }
-      setMetrics(json);
+      return json;
+    },
+    { revalidateOnFocus: true, dedupingInterval: 5000 }
+  );
 
-      if (tasksRes.ok) {
-        const tasksJson = (await tasksRes.json().catch(() => ({}))) as {
-          ok?: boolean;
-          tasks?: TaskRow[];
-        };
-        if (tasksJson.ok) setTasks(tasksJson.tasks ?? []);
-      }
-    } catch {
-      setErr("לא ניתן לטעון מדדים");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const { data: tasks = [], isLoading: tasksLoading, mutate: mutateTasks } = useSWR(
+    "crm-dashboard-tasks",
+    async (): Promise<TaskRow[]> => {
+      const tasksRes = await fetch("/api/tasks", { cache: "no-store", credentials: "include" });
+      if (!tasksRes.ok) return [];
+      const tasksJson = (await tasksRes.json().catch(() => ({}))) as {
+        ok?: boolean;
+        tasks?: TaskRow[];
+      };
+      return tasksJson.ok ? tasksJson.tasks ?? [] : [];
+    },
+    { revalidateOnFocus: true, dedupingInterval: 5000 }
+  );
+
+  const loading = Boolean((metricsLoading && !metrics) || (tasksLoading && !tasks.length));
 
   useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
+    if (metricsSwrError && metricsSwrError.message !== DASH_AUTH_REDIRECT) {
+      setErr(metricsSwrError.message);
+    } else {
+      setErr(null);
+    }
+  }, [metricsSwrError]);
+
+  async function refreshDashboard() {
+    await Promise.all([mutateMetrics(), mutateTasks()]);
+  }
 
   useEffect(() => {
     try {
@@ -524,7 +530,7 @@ export default function DashboardClient() {
 
         <button
           type="button"
-          onClick={() => void load()}
+          onClick={() => void refreshDashboard()}
           disabled={loading}
           style={{
             padding: "10px 16px",

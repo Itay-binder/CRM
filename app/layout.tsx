@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import CrmSwrProvider from "@/app/components/CrmSwrProvider";
 import { rubik } from "./fonts";
 import "./globals.css";
 
@@ -14,7 +15,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="he" dir="rtl" className={rubik.variable}>
-      <body>{children}</body>
+      <body>
+        <CrmSwrProvider>{children}</CrmSwrProvider>
+      </body>
     </html>
   );
 }

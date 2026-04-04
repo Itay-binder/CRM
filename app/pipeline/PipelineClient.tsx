@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import useSWR from "swr";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 import {
   naiveLocalInputToStoredIso,
@@ -227,6 +228,109 @@ function compareOpportunitiesLossLast(a: Opportunity, b: Opportunity): number {
   return tb.localeCompare(ta);
 }
 
+const PIPELINE_AUTH_REDIRECT = "CRM_AUTH_REDIRECT";
+
+async function fetchPipelineBootstrap(selectedPipelineId: string) {
+  const [pRes, oRes, cRes, lRes] = await Promise.all([
+    fetch("/api/opportunities/pipelines", { credentials: "include", cache: "no-store" }),
+    fetch(
+      selectedPipelineId
+        ? `/api/opportunities?pipelineId=${encodeURIComponent(selectedPipelineId)}`
+        : "/api/opportunities",
+      { credentials: "include", cache: "no-store" }
+    ),
+    fetch("/api/contacts", { credentials: "include", cache: "no-store" }),
+    fetch("/api/labels", { credentials: "include", cache: "no-store" }),
+  ]);
+  const adminsRes = await fetch("/api/admin-users", {
+    credentials: "include",
+    cache: "no-store",
+  });
+
+  for (const r of [pRes, oRes, cRes, lRes, adminsRes]) {
+    if (r.status === 401) {
+      window.location.href = `/login?returnTo=${encodeURIComponent("/pipeline")}`;
+      throw new Error(PIPELINE_AUTH_REDIRECT);
+    }
+    if (r.status === 403) {
+      window.location.href = `/pending?returnTo=${encodeURIComponent("/pipeline")}`;
+      throw new Error(PIPELINE_AUTH_REDIRECT);
+    }
+  }
+
+  const pJson = (await pRes.json().catch(() => ({}))) as {
+    ok?: boolean;
+    pipelines?: Pipeline[];
+    error?: string;
+  };
+  const oJson = (await oRes.json().catch(() => ({}))) as {
+    ok?: boolean;
+    opportunities?: Opportunity[];
+    error?: string;
+  };
+  const cJson = (await cRes.json().catch(() => ({}))) as {
+    ok?: boolean;
+    rows?: ContactRow[];
+    error?: string;
+  };
+  const lJson = (await lRes.json().catch(() => ({}))) as {
+    ok?: boolean;
+    labels?: Array<{ id: string; name: string; color: string }>;
+  };
+  const adminsJson = (await adminsRes.json().catch(() => ({}))) as {
+    ok?: boolean;
+    users?: Array<{ email: string; name?: string }>;
+  };
+
+  if (!pJson.ok) throw new Error(pJson.error ?? "שגיאה בטעינת pipelines");
+  if (!oJson.ok) throw new Error(oJson.error ?? "שגיאה בטעינת opportunities");
+  if (!cJson.ok) throw new Error(cJson.error ?? "שגיאה בטעינת contacts");
+
+  const p = pJson.pipelines ?? [];
+  const opp = oJson.opportunities ?? [];
+  const sessionPipe =
+    typeof window !== "undefined"
+      ? window.sessionStorage.getItem("crm:selectedPipelineId")?.trim() || ""
+      : "";
+  const inPipelines = (id: string) => Boolean(id && p.some((pl) => pl.id === id));
+  const resolvedPipelineId =
+    (inPipelines(selectedPipelineId) ? selectedPipelineId : "") ||
+    (inPipelines(sessionPipe) ? sessionPipe : "") ||
+    p[0]?.id ||
+    "";
+
+  const cfRes = await fetch(
+    resolvedPipelineId
+      ? `/api/custom-fields?entityType=opportunity&pipelineId=${encodeURIComponent(resolvedPipelineId)}`
+      : `/api/custom-fields?entityType=opportunity`,
+    { credentials: "include", cache: "no-store" }
+  );
+  if (cfRes.status === 401) {
+    window.location.href = `/login?returnTo=${encodeURIComponent("/pipeline")}`;
+    throw new Error(PIPELINE_AUTH_REDIRECT);
+  }
+  if (cfRes.status === 403) {
+    window.location.href = `/pending?returnTo=${encodeURIComponent("/pipeline")}`;
+    throw new Error(PIPELINE_AUTH_REDIRECT);
+  }
+  const cfJson = (await cfRes.json().catch(() => ({}))) as {
+    ok?: boolean;
+    fields?: Array<{ fieldId: string; label?: string }>;
+  };
+
+  const catalogLabels = lJson.ok && Array.isArray(lJson.labels) ? lJson.labels : [];
+
+  return {
+    p,
+    opp,
+    contacts: cJson.rows ?? [],
+    adminUsers: adminsJson.ok ? adminsJson.users ?? [] : [],
+    catalogLabels,
+    cfJson,
+    resolvedPipelineId,
+  };
+}
+
 /** כפילות מול «מספר פניות (לידים)» — שדה ישן/מותאם עם אותו משמעות */
 const REDUNDANT_LEAD_COLUMN_LABEL_SNIPPET = "כמות לידים שקיבל";
 
@@ -260,7 +364,6 @@ function mergeVisibleColsWithNewKeys(
 
 export default function PipelineClient() {
   const searchParams = useSearchParams();
-  const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("opportunities");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
@@ -372,230 +475,160 @@ export default function PipelineClient() {
     return map;
   }, [oppForSelectedPipeline, selectedPipeline]);
 
-  async function load() {
-    setLoading(true);
-    setErr(null);
-    try {
-      const [pRes, oRes, cRes, lRes] = await Promise.all([
-        fetch("/api/opportunities/pipelines", { credentials: "include", cache: "no-store" }),
-        fetch(
-          selectedPipelineId
-            ? `/api/opportunities?pipelineId=${encodeURIComponent(selectedPipelineId)}`
-            : "/api/opportunities",
-          { credentials: "include", cache: "no-store" }
-        ),
-        fetch("/api/contacts", { credentials: "include", cache: "no-store" }),
-        fetch("/api/labels", { credentials: "include", cache: "no-store" }),
-      ]);
-      const adminsRes = await fetch("/api/admin-users", {
-        credentials: "include",
-        cache: "no-store",
-      });
+  const {
+    data: pipelineData,
+    error: pipelineSwrError,
+    isLoading: pipelineIsLoading,
+    mutate: mutatePipeline,
+  } = useSWR(
+    ["crm-pipeline", selectedPipelineId],
+    ([, pid]) => fetchPipelineBootstrap(pid),
+    { revalidateOnFocus: true, dedupingInterval: 5000, keepPreviousData: false }
+  );
 
-      for (const r of [pRes, oRes, cRes, lRes, adminsRes]) {
-        if (r.status === 401) {
-          window.location.href = `/login?returnTo=${encodeURIComponent("/pipeline")}`;
-          return;
-        }
-        if (r.status === 403) {
-          window.location.href = `/pending?returnTo=${encodeURIComponent("/pipeline")}`;
-          return;
-        }
-      }
-
-      const pJson = (await pRes.json().catch(() => ({}))) as {
-        ok?: boolean;
-        pipelines?: Pipeline[];
-        error?: string;
-      };
-      const oJson = (await oRes.json().catch(() => ({}))) as {
-        ok?: boolean;
-        opportunities?: Opportunity[];
-        error?: string;
-      };
-      const cJson = (await cRes.json().catch(() => ({}))) as {
-        ok?: boolean;
-        rows?: ContactRow[];
-        error?: string;
-      };
-      const lJson = (await lRes.json().catch(() => ({}))) as {
-        ok?: boolean;
-        labels?: Array<{ id: string; name: string; color: string }>;
-      };
-      const adminsJson = (await adminsRes.json().catch(() => ({}))) as {
-        ok?: boolean;
-        users?: Array<{ email: string; name?: string }>;
-      };
-
-      if (!pJson.ok) throw new Error(pJson.error ?? "שגיאה בטעינת pipelines");
-      if (!oJson.ok) throw new Error(oJson.error ?? "שגיאה בטעינת opportunities");
-      if (!cJson.ok) throw new Error(cJson.error ?? "שגיאה בטעינת contacts");
-
-      const p = pJson.pipelines ?? [];
-      setPipelines(p);
-      const opp = oJson.opportunities ?? [];
-      setOpportunities(opp);
-      setContacts(cJson.rows ?? []);
-      setAdminUsers(adminsJson.ok ? adminsJson.users ?? [] : []);
-
-      const sessionPipe =
-        typeof window !== "undefined"
-          ? window.sessionStorage.getItem("crm:selectedPipelineId")?.trim() || ""
-          : "";
-      const inPipelines = (id: string) => Boolean(id && p.some((pl) => pl.id === id));
-      const resolvedPipelineId =
-        (inPipelines(selectedPipelineId) ? selectedPipelineId : "") ||
-        (inPipelines(sessionPipe) ? sessionPipe : "") ||
-        p[0]?.id ||
-        "";
-
-      const cfRes = await fetch(
-        resolvedPipelineId
-          ? `/api/custom-fields?entityType=opportunity&pipelineId=${encodeURIComponent(resolvedPipelineId)}`
-          : `/api/custom-fields?entityType=opportunity`,
-        { credentials: "include", cache: "no-store" }
-      );
-      if (cfRes.status === 401) {
-        window.location.href = `/login?returnTo=${encodeURIComponent("/pipeline")}`;
-        return;
-      }
-      if (cfRes.status === 403) {
-        window.location.href = `/pending?returnTo=${encodeURIComponent("/pipeline")}`;
-        return;
-      }
-      const cfJson = (await cfRes.json().catch(() => ({}))) as {
-        ok?: boolean;
-        fields?: Array<{ fieldId: string; label?: string }>;
-      };
-
-      setSelectedPipelineId((prev) => (inPipelines(prev) ? prev : resolvedPipelineId));
-
-      const customFromSettings =
-        cfJson.ok && Array.isArray(cfJson.fields)
-          ? cfJson.fields.map((f) => f.fieldId)
-          : [];
-      const labelMap: Record<string, string> = {};
-      if (cfJson.ok && Array.isArray(cfJson.fields)) {
-        for (const f of cfJson.fields) {
-          if (f.fieldId) labelMap[f.fieldId] = (f.label?.trim() || f.fieldId).trim();
-        }
-      }
-      if (resolvedPipelineId === PAYING_CUSTOMERS_PIPELINE_ID) {
-        const lc = MOVER_OPPORTUNITY_FIELD_IDS.leadsCount;
-        labelMap[lc] = labelMap[lc] ?? "מספר פניות (לידים)";
-      }
-      setOppCustomFieldLabelById(labelMap);
-      if (lJson.ok && Array.isArray(lJson.labels)) {
-        setCatalogLabels(lJson.labels);
-      }
-      const keysFromOpps = Array.from(
-        new Set(opp.flatMap((o) => Object.keys((o.customValues ?? {}) as Record<string, unknown>)))
-      );
-      const leadsColExtra =
-        resolvedPipelineId === PAYING_CUSTOMERS_PIPELINE_ID
-          ? [MOVER_OPPORTUNITY_FIELD_IDS.leadsCount]
-          : [];
-      const allOppColKeysRaw = Array.from(
-        new Set([...BASE_OPP_COLS, ...customFromSettings, ...keysFromOpps, ...leadsColExtra])
-      );
-      const allOppColKeys = allOppColKeysRaw.filter(
-        (k) => !isRedundantPipelineLeadColumn(k, labelMap)
-      );
-
-      setOppCustomFieldIds(
-        Array.from(new Set([...customFromSettings, ...keysFromOpps, ...leadsColExtra]))
-          .filter((k) => !isRedundantPipelineLeadColumn(k, labelMap))
-          .sort()
-      );
-      const migrateKey = (k: string) => (k === "lastLeadAt" ? "contactLastLeadAt" : k);
-
-      const prefsPid = resolvedPipelineId;
-      const prefsKeys = prefsPid ? pipelineColPrefsStorageKeys(prefsPid) : null;
-      const pipelinePrefsJustSwitched = Boolean(
-        prefsPid && pipelinePrefsLoadedForRef.current !== prefsPid
-      );
-      if (prefsPid) {
-        pipelinePrefsLoadedForRef.current = prefsPid;
-      }
-
-      if (pipelinePrefsJustSwitched && prefsKeys) {
-        const orderFromSaved =
-          readJsonLocalStorage<string[]>(prefsKeys.order) ??
-          readPipelineColsCookie<string[]>(pipelineOppColOrderCookieKey(prefsPid));
-        const visFromSaved =
-          readJsonLocalStorage<string[]>(prefsKeys.visible) ??
-          readPipelineColsCookie<string[]>(pipelineOppColVisibleCookieKey(prefsPid));
-        const widthsFromLs = readJsonLocalStorage<Record<string, number>>(prefsKeys.widths);
-
-        const orderMigrated = orderFromSaved?.length
-          ? [...new Set(orderFromSaved.map(migrateKey))]
-          : null;
-        const mergedOrder = orderMigrated?.length ? [...orderMigrated] : [...allOppColKeys];
-        for (const k of allOppColKeys) {
-          if (!mergedOrder.includes(k)) mergedOrder.push(k);
-        }
-        const orderClean = mergedOrder.filter((k) => !isRedundantPipelineLeadColumn(k, labelMap));
-        setOppColumnOrder(orderClean);
-
-        const visMigrated = visFromSaved?.length
-          ? [...new Set(visFromSaved.map(migrateKey))]
-          : null;
-        const mergedVisible = visMigrated?.length
-          ? mergeVisibleColsWithNewKeys(visMigrated, allOppColKeys, orderClean)
-          : [...allOppColKeys];
-        setOppVisibleCols(
-          mergedVisible.filter((k) => !isRedundantPipelineLeadColumn(k, labelMap))
-        );
-
-        if (widthsFromLs && typeof widthsFromLs === "object" && !Array.isArray(widthsFromLs)) {
-          const w = { ...widthsFromLs };
-          for (const k of Object.keys(w)) {
-            if (isRedundantPipelineLeadColumn(k, labelMap)) delete w[k];
-          }
-          setOppColWidths(w);
-        }
-      } else {
-        const prevKeysSnapshot = lastLoadedAllOppColKeysRef.current;
-        setOppColumnOrder((prev) => {
-          const base = prev.length ? prev : [...allOppColKeys];
-          const next = [...base];
-          for (const k of allOppColKeys) {
-            if (!next.includes(k)) next.push(k);
-          }
-          return next
-            .filter((k) => allOppColKeys.includes(k))
-            .filter((k) => !isRedundantPipelineLeadColumn(k, labelMap));
-        });
-        setOppVisibleCols((prev) => {
-          if (!prev.length) return [...allOppColKeys];
-          let next = prev.filter((k) => allOppColKeys.includes(k));
-          next = next.filter((k) => !isRedundantPipelineLeadColumn(k, labelMap));
-          if (prevKeysSnapshot?.length) {
-            for (const k of allOppColKeys) {
-              if (!prevKeysSnapshot.includes(k) && !next.includes(k)) next.push(k);
-            }
-          }
-          return next;
-        });
-      }
-      lastLoadedAllOppColKeysRef.current = [...allOppColKeys];
-      setBoardPreviewFields((prev) => {
-        if (prev.length) return prev;
-        const available = new Set(allOppColKeys);
-        const defaults = ["contactName", "status", "stage", "assignedRep", "phone"];
-        return defaults.filter((x) => available.has(x)).slice(0, 5);
-      });
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "לא ניתן לטעון ניהול הזדמנויות");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const loading = pipelineIsLoading && !pipelineData;
 
   useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPipelineId]);
+    if (pipelineSwrError && pipelineSwrError.message !== PIPELINE_AUTH_REDIRECT) {
+      setErr(pipelineSwrError.message);
+    }
+  }, [pipelineSwrError]);
+
+  useEffect(() => {
+    if (pipelineData) setErr(null);
+  }, [pipelineData]);
+
+  useEffect(() => {
+    if (!pipelineData) return;
+    const {
+      p,
+      opp,
+      contacts: cRows,
+      adminUsers: admins,
+      catalogLabels: catLab,
+      cfJson,
+      resolvedPipelineId,
+    } = pipelineData;
+    setPipelines(p);
+    setOpportunities(opp);
+    setContacts(cRows);
+    setAdminUsers(admins);
+
+    const inPipelines = (id: string) => Boolean(id && p.some((pl) => pl.id === id));
+    setSelectedPipelineId((prev) => (inPipelines(prev) ? prev : resolvedPipelineId));
+
+    const customFromSettings =
+      cfJson.ok && Array.isArray(cfJson.fields) ? cfJson.fields.map((f) => f.fieldId) : [];
+    const labelMap: Record<string, string> = {};
+    if (cfJson.ok && Array.isArray(cfJson.fields)) {
+      for (const f of cfJson.fields) {
+        if (f.fieldId) labelMap[f.fieldId] = (f.label?.trim() || f.fieldId).trim();
+      }
+    }
+    if (resolvedPipelineId === PAYING_CUSTOMERS_PIPELINE_ID) {
+      const lc = MOVER_OPPORTUNITY_FIELD_IDS.leadsCount;
+      labelMap[lc] = labelMap[lc] ?? "מספר פניות (לידים)";
+    }
+    setOppCustomFieldLabelById(labelMap);
+    setCatalogLabels(catLab);
+    const keysFromOpps = Array.from(
+      new Set(opp.flatMap((o) => Object.keys((o.customValues ?? {}) as Record<string, unknown>)))
+    );
+    const leadsColExtra =
+      resolvedPipelineId === PAYING_CUSTOMERS_PIPELINE_ID
+        ? [MOVER_OPPORTUNITY_FIELD_IDS.leadsCount]
+        : [];
+    const allOppColKeysRaw = Array.from(
+      new Set([...BASE_OPP_COLS, ...customFromSettings, ...keysFromOpps, ...leadsColExtra])
+    );
+    const allOppColKeys = allOppColKeysRaw.filter(
+      (k) => !isRedundantPipelineLeadColumn(k, labelMap)
+    );
+
+    setOppCustomFieldIds(
+      Array.from(new Set([...customFromSettings, ...keysFromOpps, ...leadsColExtra]))
+        .filter((k) => !isRedundantPipelineLeadColumn(k, labelMap))
+        .sort()
+    );
+    const migrateKey = (k: string) => (k === "lastLeadAt" ? "contactLastLeadAt" : k);
+
+    const prefsPid = resolvedPipelineId;
+    const prefsKeys = prefsPid ? pipelineColPrefsStorageKeys(prefsPid) : null;
+    const pipelinePrefsJustSwitched = Boolean(
+      prefsPid && pipelinePrefsLoadedForRef.current !== prefsPid
+    );
+    if (prefsPid) {
+      pipelinePrefsLoadedForRef.current = prefsPid;
+    }
+
+    if (pipelinePrefsJustSwitched && prefsKeys) {
+      const orderFromSaved =
+        readJsonLocalStorage<string[]>(prefsKeys.order) ??
+        readPipelineColsCookie<string[]>(pipelineOppColOrderCookieKey(prefsPid));
+      const visFromSaved =
+        readJsonLocalStorage<string[]>(prefsKeys.visible) ??
+        readPipelineColsCookie<string[]>(pipelineOppColVisibleCookieKey(prefsPid));
+      const widthsFromLs = readJsonLocalStorage<Record<string, number>>(prefsKeys.widths);
+
+      const orderMigrated = orderFromSaved?.length
+        ? [...new Set(orderFromSaved.map(migrateKey))]
+        : null;
+      const mergedOrder = orderMigrated?.length ? [...orderMigrated] : [...allOppColKeys];
+      for (const k of allOppColKeys) {
+        if (!mergedOrder.includes(k)) mergedOrder.push(k);
+      }
+      const orderClean = mergedOrder.filter((k) => !isRedundantPipelineLeadColumn(k, labelMap));
+      setOppColumnOrder(orderClean);
+
+      const visMigrated = visFromSaved?.length
+        ? [...new Set(visFromSaved.map(migrateKey))]
+        : null;
+      const mergedVisible = visMigrated?.length
+        ? mergeVisibleColsWithNewKeys(visMigrated, allOppColKeys, orderClean)
+        : [...allOppColKeys];
+      setOppVisibleCols(
+        mergedVisible.filter((k) => !isRedundantPipelineLeadColumn(k, labelMap))
+      );
+
+      if (widthsFromLs && typeof widthsFromLs === "object" && !Array.isArray(widthsFromLs)) {
+        const w = { ...widthsFromLs };
+        for (const k of Object.keys(w)) {
+          if (isRedundantPipelineLeadColumn(k, labelMap)) delete w[k];
+        }
+        setOppColWidths(w);
+      }
+    } else {
+      const prevKeysSnapshot = lastLoadedAllOppColKeysRef.current;
+      setOppColumnOrder((prev) => {
+        const base = prev.length ? prev : [...allOppColKeys];
+        const next = [...base];
+        for (const k of allOppColKeys) {
+          if (!next.includes(k)) next.push(k);
+        }
+        return next
+          .filter((k) => allOppColKeys.includes(k))
+          .filter((k) => !isRedundantPipelineLeadColumn(k, labelMap));
+      });
+      setOppVisibleCols((prev) => {
+        if (!prev.length) return [...allOppColKeys];
+        let next = prev.filter((k) => allOppColKeys.includes(k));
+        next = next.filter((k) => !isRedundantPipelineLeadColumn(k, labelMap));
+        if (prevKeysSnapshot?.length) {
+          for (const k of allOppColKeys) {
+            if (!prevKeysSnapshot.includes(k) && !next.includes(k)) next.push(k);
+          }
+        }
+        return next;
+      });
+    }
+    lastLoadedAllOppColKeysRef.current = [...allOppColKeys];
+    setBoardPreviewFields((prev) => {
+      if (prev.length) return prev;
+      const available = new Set(allOppColKeys);
+      const defaults = ["contactName", "status", "stage", "assignedRep", "phone"];
+      return defaults.filter((x) => available.has(x)).slice(0, 5);
+    });
+  }, [pipelineData]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !selectedPipelineId) return;
@@ -778,7 +811,7 @@ export default function PipelineClient() {
       setSelectedPipelineId(j.pipeline.id);
       setNewPipelineName("");
       setNewPipelineStages(["New Lead", "Contacted", "Proposal Sent", "Closed"]);
-      await load();
+      await mutatePipeline();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "יצירת פייפליין נכשלה");
     }
@@ -809,7 +842,7 @@ export default function PipelineClient() {
       setNewOppStatus("פתוח");
       setNewOppAssignedRep("");
       setNewOppLabelIds([]);
-      await load();
+      await mutatePipeline();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "יצירת הזדמנות נכשלה");
     }
@@ -897,7 +930,7 @@ export default function PipelineClient() {
       setOppNotes(j.opportunity.notes ?? []);
       setOppTasks(j.opportunity.tasks ?? []);
     }
-    await load();
+    await mutatePipeline();
   }
 
   async function onDropOpportunity(oppId: string, stage: string) {
@@ -1260,7 +1293,7 @@ export default function PipelineClient() {
     }
     setEditPipelineOpen(false);
     setEditPipelineId(null);
-    await load();
+    await mutatePipeline();
   }
 
   function moveEditStage(from: number, to: number) {
@@ -1294,7 +1327,7 @@ export default function PipelineClient() {
       return;
     }
     setPipelineMenuOpenId(null);
-    await load();
+    await mutatePipeline();
   }
 
   async function deletePipelineById(id: string) {
@@ -1319,7 +1352,7 @@ export default function PipelineClient() {
     if (selectedPipelineId === id) {
       setSelectedPipelineId("");
     }
-    await load();
+    await mutatePipeline();
   }
 
   return (
@@ -3057,7 +3090,7 @@ export default function PipelineClient() {
                   setOppDeleteConfirm("");
                   setSelectedOpp(null);
                   setToastMessage("ההזדמנות נמחקה");
-                  await load();
+                  await mutatePipeline();
                 })()}
                 style={{
                   padding: "10px 14px",

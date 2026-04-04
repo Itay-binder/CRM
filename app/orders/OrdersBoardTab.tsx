@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { columnIntegrationKind, InlineFieldShell, WhatsAppIconLink } from "@/app/components/InlineFieldShell";
+import { TableCellClamp } from "@/app/components/TableCellClamp";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 import type {
   MovingOrderRecord,
@@ -984,26 +985,30 @@ export default function OrdersBoardTab() {
                             style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
                           />
                         )
-                      ) : col === ORDER_MATCHED_OPPS_COL ? (
-                        <MatchedOpportunitiesCell items={orderMatchedOpportunities[o.id] ?? []} />
-                      ) : INLINE_READONLY.has(col) ? (
-                        <span style={{ wordBreak: "break-word", color: "#374151" }}>{orderCell(o, col)}</span>
-                      ) : col === "phone" && orderCell(o, col).trim() ? (
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "nowrap", whiteSpace: "nowrap" }}>
-                          <InlineFieldShell
-                            integration="phone"
-                            rawValue={orderCell(o, col)}
-                            label={orderCell(o, col)}
-                            onEdit={() => startInlineEdit(o, col)}
-                          />
-                        </span>
                       ) : (
-                        <InlineFieldShell
-                          integration={columnIntegrationKind(col)}
-                          rawValue={orderCell(o, col)}
-                          label={col === "status" ? statusLabel(o.status) : orderCell(o, col)}
-                          onEdit={() => startInlineEdit(o, col)}
-                        />
+                        <TableCellClamp noClamp={columnIntegrationKind(col) === "phone"}>
+                          {col === ORDER_MATCHED_OPPS_COL ? (
+                            <MatchedOpportunitiesCell items={orderMatchedOpportunities[o.id] ?? []} />
+                          ) : INLINE_READONLY.has(col) ? (
+                            <span style={{ wordBreak: "break-word", color: "#374151" }}>{orderCell(o, col)}</span>
+                          ) : col === "phone" && orderCell(o, col).trim() ? (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "nowrap", whiteSpace: "nowrap" }}>
+                              <InlineFieldShell
+                                integration="phone"
+                                rawValue={orderCell(o, col)}
+                                label={orderCell(o, col)}
+                                onEdit={() => startInlineEdit(o, col)}
+                              />
+                            </span>
+                          ) : (
+                            <InlineFieldShell
+                              integration={columnIntegrationKind(col)}
+                              rawValue={orderCell(o, col)}
+                              label={col === "status" ? statusLabel(o.status) : orderCell(o, col)}
+                              onEdit={() => startInlineEdit(o, col)}
+                            />
+                          )}
+                        </TableCellClamp>
                       )}
                     </td>
                   ))}

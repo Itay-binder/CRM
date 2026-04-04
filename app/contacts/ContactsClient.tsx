@@ -12,6 +12,7 @@ import {
   InlineFieldShell,
   WhatsAppIconLink,
 } from "@/app/components/InlineFieldShell";
+import { TableCellClamp } from "@/app/components/TableCellClamp";
 
 type LeadsOk = {
   ok: true;
@@ -982,101 +983,117 @@ export default function ContactsClient() {
                           whiteSpace: columnIntegrationKind(h) === "phone" ? "nowrap" : undefined,
                         }}
                       >
-                        {h === "name" && row.id ? (
-                          <button
-                            type="button"
-                            onClick={() => void openDetailById(String(row.id))}
-                            style={{
-                              border: "none",
-                              background: "transparent",
-                              cursor: "pointer",
-                              color: "#4c1d95",
-                              fontWeight: 800,
-                              padding: 0,
-                            }}
-                          >
-                            {row[h] ?? ""}
-                          </button>
-                        ) : CONTACT_INLINE_READONLY.has(h) || !row.id ? (
-                          h === "assignedRep"
-                            ? adminLabelByEmail.get(String(row[h] ?? "").trim()) ?? (row[h] ?? "")
-                            : formatContactTableCell(h, String(row[h] ?? ""))
-                        ) : (
-                          editingCell?.id === String(row.id) && editingCell.col === h ? (
-                            h === "status" ? (
-                              <select
-                                autoFocus
-                                value={editingCell.value || "פתוח"}
-                                onChange={(e) =>
-                                  setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
-                                }
-                                onBlur={() => {
-                                  void commitInlineEdit(row, h, editingCell.value);
-                                  setEditingCell(null);
-                                }}
-                                style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
-                              >
-                                {["פתוח", "זכיה", "הפסד"].map((s) => (
-                                  <option key={s} value={s}>{s}</option>
-                                ))}
-                              </select>
-                            ) : h === "assignedRep" ? (
-                              <select
-                                autoFocus
-                                value={editingCell.value}
-                                onChange={(e) =>
-                                  setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
-                                }
-                                onBlur={() => {
-                                  void commitInlineEdit(row, h, editingCell.value);
-                                  setEditingCell(null);
-                                }}
-                                style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
-                              >
-                                <option value="">לא משויך</option>
-                                {adminUsers.map((u) => (
-                                  <option key={u.email} value={u.email}>{u.name?.trim() || u.email}</option>
-                                ))}
-                              </select>
-                            ) : (
-                              <input
-                                autoFocus
-                                value={editingCell.value}
-                                onChange={(e) =>
-                                  setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
-                                }
-                                onBlur={() => {
-                                  void commitInlineEdit(row, h, editingCell.value);
-                                  setEditingCell(null);
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") {
-                                    void commitInlineEdit(row, h, editingCell.value);
-                                    setEditingCell(null);
-                                  }
-                                  if (e.key === "Escape") setEditingCell(null);
-                                }}
-                                style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
-                              />
-                            )
+                        {editingCell?.id === String(row.id) &&
+                        editingCell.col === h &&
+                        row.id &&
+                        !CONTACT_INLINE_READONLY.has(h) &&
+                        !(h === "name" && row.id) ? (
+                          h === "status" ? (
+                            <select
+                              autoFocus
+                              value={editingCell.value || "פתוח"}
+                              onChange={(e) =>
+                                setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
+                              }
+                              onBlur={() => {
+                                void commitInlineEdit(row, h, editingCell.value);
+                                setEditingCell(null);
+                              }}
+                              style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
+                            >
+                              {["פתוח", "זכיה", "הפסד"].map((s) => (
+                                <option key={s} value={s}>{s}</option>
+                              ))}
+                            </select>
+                          ) : h === "assignedRep" ? (
+                            <select
+                              autoFocus
+                              value={editingCell.value}
+                              onChange={(e) =>
+                                setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
+                              }
+                              onBlur={() => {
+                                void commitInlineEdit(row, h, editingCell.value);
+                                setEditingCell(null);
+                              }}
+                              style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
+                            >
+                              <option value="">לא משויך</option>
+                              {adminUsers.map((u) => (
+                                <option key={u.email} value={u.email}>{u.name?.trim() || u.email}</option>
+                              ))}
+                            </select>
                           ) : (
-                            <InlineFieldShell
-                              integration={columnIntegrationKind(h)}
-                              rawValue={String(row[h] ?? "")}
-                              label={
-                                h === "assignedRep"
-                                  ? adminLabelByEmail.get(String(row[h] ?? "").trim()) ?? (row[h] ?? "")
-                                  : formatContactTableCell(h, String(row[h] ?? ""))
+                            <input
+                              autoFocus
+                              value={editingCell.value}
+                              onChange={(e) =>
+                                setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
                               }
-                              onEdit={() =>
-                                setEditingCell({
-                                  id: String(row.id),
-                                  col: h,
-                                  value: String(row[h] ?? ""),
-                                })
-                              }
+                              onBlur={() => {
+                                void commitInlineEdit(row, h, editingCell.value);
+                                setEditingCell(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  void commitInlineEdit(row, h, editingCell.value);
+                                  setEditingCell(null);
+                                }
+                                if (e.key === "Escape") setEditingCell(null);
+                              }}
+                              style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
                             />
                           )
+                        ) : (
+                          <TableCellClamp noClamp={columnIntegrationKind(h) === "phone"}>
+                            {h === "name" && row.id ? (
+                              <button
+                                type="button"
+                                onClick={() => void openDetailById(String(row.id))}
+                                style={{
+                                  border: "none",
+                                  background: "transparent",
+                                  cursor: "pointer",
+                                  color: "#4c1d95",
+                                  fontWeight: 800,
+                                  padding: 0,
+                                  textAlign: "right",
+                                  width: "100%",
+                                }}
+                              >
+                                {row[h] ?? ""}
+                              </button>
+                            ) : CONTACT_INLINE_READONLY.has(h) || !row.id ? (
+                              <span
+                                style={{
+                                  display: "block",
+                                  wordBreak: columnIntegrationKind(h) === "phone" ? "normal" : "break-word",
+                                  whiteSpace: columnIntegrationKind(h) === "phone" ? "nowrap" : undefined,
+                                }}
+                              >
+                                {h === "assignedRep"
+                                  ? adminLabelByEmail.get(String(row[h] ?? "").trim()) ?? (row[h] ?? "")
+                                  : formatContactTableCell(h, String(row[h] ?? ""))}
+                              </span>
+                            ) : (
+                              <InlineFieldShell
+                                integration={columnIntegrationKind(h)}
+                                rawValue={String(row[h] ?? "")}
+                                label={
+                                  h === "assignedRep"
+                                    ? adminLabelByEmail.get(String(row[h] ?? "").trim()) ?? (row[h] ?? "")
+                                    : formatContactTableCell(h, String(row[h] ?? ""))
+                                }
+                                onEdit={() =>
+                                  setEditingCell({
+                                    id: String(row.id),
+                                    col: h,
+                                    value: String(row[h] ?? ""),
+                                  })
+                                }
+                              />
+                            )}
+                          </TableCellClamp>
                         )}
                       </td>
                     ))}

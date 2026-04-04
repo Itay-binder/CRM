@@ -14,6 +14,7 @@ import {
   WhatsAppIconLink,
 } from "@/app/components/InlineFieldShell";
 import { MOVER_OPPORTUNITY_FIELD_IDS } from "@/lib/movingOrders/fieldIds";
+import { TableCellClamp } from "@/app/components/TableCellClamp";
 
 function pipelineOppColOrderCookieKey(pipelineId: string): string {
   const safe = pipelineId.replace(/[^\w-]/g, "_");
@@ -1290,113 +1291,117 @@ export default function PipelineClient() {
                           }}
                         >
                           {col === "name" ? (
-                            <button type="button" onClick={() => void openOpportunityDetail(o.id)} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#4c1d95", fontWeight: 800, padding: 0 }}>
-                              {opportunityCell(o, col)}
-                            </button>
-                          ) : (
-                            editingCell?.id === o.id && editingCell.col === col ? (
-                              col === "stage" ? (
-                                <select
-                                  autoFocus
-                                  value={editingCell.value}
-                                  onChange={(e) =>
-                                    setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
-                                  }
-                                  onBlur={() => {
-                                    void commitInlineEdit(o, col, editingCell.value);
-                                    setEditingCell(null);
-                                  }}
-                                  style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
-                                >
-                                  {(pipelines.find((p) => p.id === o.pipelineId)?.stages ?? []).map((s) => (
-                                    <option key={s} value={s}>{s}</option>
-                                  ))}
-                                </select>
-                              ) : col === "status" ? (
-                                <select
-                                  autoFocus
-                                  value={editingCell.value || "פתוח"}
-                                  onChange={(e) =>
-                                    setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
-                                  }
-                                  onBlur={() => {
-                                    void commitInlineEdit(o, col, editingCell.value);
-                                    setEditingCell(null);
-                                  }}
-                                  style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
-                                >
-                                  {["פתוח", "זכיה", "הפסד"].map((s) => (
-                                    <option key={s} value={s}>{s}</option>
-                                  ))}
-                                </select>
-                              ) : col === "assignedRep" ? (
-                                <select
-                                  autoFocus
-                                  value={editingCell.value}
-                                  onChange={(e) =>
-                                    setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
-                                  }
-                                  onBlur={() => {
-                                    void commitInlineEdit(o, col, editingCell.value);
-                                    setEditingCell(null);
-                                  }}
-                                  style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
-                                >
-                                  <option value="">לא משויך</option>
-                                  {adminUsers.map((u) => (
-                                    <option key={u.email} value={u.email}>{u.name?.trim() || u.email}</option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <input
-                                  autoFocus
-                                  type={col === MOVER_OPPORTUNITY_FIELD_IDS.leadsCount ? "number" : "text"}
-                                  min={col === MOVER_OPPORTUNITY_FIELD_IDS.leadsCount ? 0 : undefined}
-                                  inputMode={col === MOVER_OPPORTUNITY_FIELD_IDS.leadsCount ? "numeric" : undefined}
-                                  value={editingCell.value}
-                                  onChange={(e) =>
-                                    setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
-                                  }
-                                  onBlur={() => {
-                                    void commitInlineEdit(o, col, editingCell.value);
-                                    setEditingCell(null);
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                      void commitInlineEdit(o, col, editingCell.value);
-                                      setEditingCell(null);
-                                    }
-                                    if (e.key === "Escape") setEditingCell(null);
-                                  }}
-                                  style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
-                                />
-                              )
-                            ) : INLINE_READONLY.has(col) ? (
-                              <span
-                                style={{
-                                  display: "block",
-                                  textAlign: "right",
-                                  wordBreak: columnIntegrationKind(col) === "phone" ? "normal" : "break-word",
-                                  whiteSpace: columnIntegrationKind(col) === "phone" ? "nowrap" : undefined,
-                                  color: "#374151",
-                                }}
-                              >
+                            <TableCellClamp>
+                              <button type="button" onClick={() => void openOpportunityDetail(o.id)} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#4c1d95", fontWeight: 800, padding: 0, textAlign: "right", width: "100%" }}>
                                 {opportunityCell(o, col)}
-                              </span>
-                            ) : (
-                              <InlineFieldShell
-                                integration={columnIntegrationKind(col)}
-                                rawValue={opportunityCell(o, col)}
-                                label={
-                                  col === "tags" ? (
-                                    <LabelPills labels={o.labels ?? []} />
-                                  ) : (
-                                    opportunityCell(o, col)
-                                  )
+                              </button>
+                            </TableCellClamp>
+                          ) : editingCell?.id === o.id && editingCell.col === col ? (
+                            col === "stage" ? (
+                              <select
+                                autoFocus
+                                value={editingCell.value}
+                                onChange={(e) =>
+                                  setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
                                 }
-                                onEdit={() => startInlineEdit(o, col)}
+                                onBlur={() => {
+                                  void commitInlineEdit(o, col, editingCell.value);
+                                  setEditingCell(null);
+                                }}
+                                style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
+                              >
+                                {(pipelines.find((p) => p.id === o.pipelineId)?.stages ?? []).map((s) => (
+                                  <option key={s} value={s}>{s}</option>
+                                ))}
+                              </select>
+                            ) : col === "status" ? (
+                              <select
+                                autoFocus
+                                value={editingCell.value || "פתוח"}
+                                onChange={(e) =>
+                                  setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
+                                }
+                                onBlur={() => {
+                                  void commitInlineEdit(o, col, editingCell.value);
+                                  setEditingCell(null);
+                                }}
+                                style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
+                              >
+                                {["פתוח", "זכיה", "הפסד"].map((s) => (
+                                  <option key={s} value={s}>{s}</option>
+                                ))}
+                              </select>
+                            ) : col === "assignedRep" ? (
+                              <select
+                                autoFocus
+                                value={editingCell.value}
+                                onChange={(e) =>
+                                  setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
+                                }
+                                onBlur={() => {
+                                  void commitInlineEdit(o, col, editingCell.value);
+                                  setEditingCell(null);
+                                }}
+                                style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
+                              >
+                                <option value="">לא משויך</option>
+                                {adminUsers.map((u) => (
+                                  <option key={u.email} value={u.email}>{u.name?.trim() || u.email}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                autoFocus
+                                type={col === MOVER_OPPORTUNITY_FIELD_IDS.leadsCount ? "number" : "text"}
+                                min={col === MOVER_OPPORTUNITY_FIELD_IDS.leadsCount ? 0 : undefined}
+                                inputMode={col === MOVER_OPPORTUNITY_FIELD_IDS.leadsCount ? "numeric" : undefined}
+                                value={editingCell.value}
+                                onChange={(e) =>
+                                  setEditingCell((x) => (x ? { ...x, value: e.target.value } : x))
+                                }
+                                onBlur={() => {
+                                  void commitInlineEdit(o, col, editingCell.value);
+                                  setEditingCell(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    void commitInlineEdit(o, col, editingCell.value);
+                                    setEditingCell(null);
+                                  }
+                                  if (e.key === "Escape") setEditingCell(null);
+                                }}
+                                style={{ width: "100%", padding: "7px 8px", borderRadius: 8, border: "1px solid #e5e7eb" }}
                               />
                             )
+                          ) : (
+                            <TableCellClamp noClamp={columnIntegrationKind(col) === "phone"}>
+                              {INLINE_READONLY.has(col) ? (
+                                <span
+                                  style={{
+                                    display: "block",
+                                    textAlign: "right",
+                                    wordBreak: columnIntegrationKind(col) === "phone" ? "normal" : "break-word",
+                                    whiteSpace: columnIntegrationKind(col) === "phone" ? "nowrap" : undefined,
+                                    color: "#374151",
+                                  }}
+                                >
+                                  {opportunityCell(o, col)}
+                                </span>
+                              ) : (
+                                <InlineFieldShell
+                                  integration={columnIntegrationKind(col)}
+                                  rawValue={opportunityCell(o, col)}
+                                  label={
+                                    col === "tags" ? (
+                                      <LabelPills labels={o.labels ?? []} />
+                                    ) : (
+                                      opportunityCell(o, col)
+                                    )
+                                  }
+                                  onEdit={() => startInlineEdit(o, col)}
+                                />
+                              )}
+                            </TableCellClamp>
                           )}
                         </td>
                       ))}

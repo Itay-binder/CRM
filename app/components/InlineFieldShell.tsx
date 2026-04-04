@@ -141,26 +141,37 @@ export function InlineFieldShell({
       <span
         style={{
           flex: 1,
-          display: "flex",
-          flexWrap: "wrap",
+          display: "inline-flex",
+          flexWrap: "nowrap",
           alignItems: "center",
           justifyContent: "flex-end",
           gap: 8,
-          wordBreak: "break-word",
+          whiteSpace: "nowrap",
         }}
       >
         {tel ? (
           <a
             href={`tel:${tel}`}
-            style={{ color: "#2563eb", fontWeight: 600, textDecoration: "underline", textUnderlineOffset: 2 }}
+            style={{
+              color: "#2563eb",
+              fontWeight: 600,
+              textDecoration: "underline",
+              textUnderlineOffset: 2,
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+            }}
             onClick={(e) => e.stopPropagation()}
           >
             {label}
           </a>
         ) : (
-          <span style={{ color: "#111827" }}>{label}</span>
+          <span style={{ color: "#111827", whiteSpace: "nowrap" }}>{label}</span>
         )}
-        {wa ? <WhatsAppIconLink phone={rawValue} /> : null}
+        {wa ? (
+          <span style={{ flexShrink: 0, display: "inline-flex" }}>
+            <WhatsAppIconLink phone={rawValue} />
+          </span>
+        ) : null}
       </span>
     );
   } else {

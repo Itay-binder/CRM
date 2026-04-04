@@ -3,6 +3,7 @@ import { requireApprovedUser } from "@/lib/auth/guard";
 import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
 import { listMovingOrders } from "@/lib/movingOrders/repo";
 import { getPayingCustomersPipelineId, listOpportunities } from "@/lib/opportunities/repo";
+import { driverIdsForOpportunitiesColumn } from "@/lib/movingOrders/driverIdsForOpportunityDisplay";
 import type { MovingOrderRecord } from "@/lib/movingOrders/types";
 import type { OpportunityOrdersGroup, OrderByOpportunityRow } from "@/lib/movingOrders/opportunityOrdersView";
 
@@ -17,14 +18,6 @@ function orderDisplayTitle(o: MovingOrderRecord): string {
   const parts = [pl.items_text?.trim(), pl.move_type?.trim(), pl.name?.trim()].filter(Boolean);
   if (parts.length) return parts[0] as string;
   return pl.order_id || o.id;
-}
-
-function driverIdsForOrder(o: MovingOrderRecord): Set<string> {
-  const s = new Set<string>();
-  for (const id of o.matchedDriverIds) s.add(id);
-  for (const id of o.optionalDriverIds) s.add(id);
-  for (const id of o.manualDriverIds) s.add(id);
-  return s;
 }
 
 export async function GET(req: NextRequest) {
@@ -47,8 +40,7 @@ export async function GET(req: NextRequest) {
 
     const contactToOrders = new Map<string, MovingOrderRecord[]>();
     for (const order of orders) {
-      const ids = driverIdsForOrder(order);
-      for (const cid of ids) {
+      for (const cid of driverIdsForOpportunitiesColumn(order)) {
         const t = cid.trim();
         if (!t) continue;
         const arr = contactToOrders.get(t) ?? [];

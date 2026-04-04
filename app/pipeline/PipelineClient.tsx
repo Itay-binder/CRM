@@ -213,6 +213,20 @@ const BASE_OPP_COLS = [
   "contactLastLeadAt",
 ];
 
+function opportunityIsLossStatus(o: Pick<Opportunity, "status">): boolean {
+  return (o.status ?? "פתוח") === "הפסד";
+}
+
+/** הפסד למטה; באותה רמה — עדכון אחרון קודם */
+function compareOpportunitiesLossLast(a: Opportunity, b: Opportunity): number {
+  const ra = opportunityIsLossStatus(a) ? 1 : 0;
+  const rb = opportunityIsLossStatus(b) ? 1 : 0;
+  if (ra !== rb) return ra - rb;
+  const ta = String(a.updatedAt ?? a.createdAt ?? "");
+  const tb = String(b.updatedAt ?? b.createdAt ?? "");
+  return tb.localeCompare(ta);
+}
+
 export default function PipelineClient() {
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
@@ -318,6 +332,9 @@ export default function PipelineClient() {
       const key = o.stage || "—";
       map[key] ||= [];
       map[key].push(o);
+    }
+    for (const k of Object.keys(map)) {
+      map[k].sort(compareOpportunitiesLossLast);
     }
     return map;
   }, [oppForSelectedPipeline, selectedPipeline]);
@@ -1110,14 +1127,17 @@ export default function PipelineClient() {
         return advLogic === "and" ? checks.every(Boolean) : checks.some(Boolean);
       });
     }
-    if (!oppSort) return filtered;
     const sorted = [...filtered];
+    if (!oppSort) {
+      sorted.sort(compareOpportunitiesLossLast);
+      return sorted;
+    }
     sorted.sort((a, b) => {
       const av = opportunityCell(a, oppSort.col).toLowerCase();
       const bv = opportunityCell(b, oppSort.col).toLowerCase();
       if (av < bv) return oppSort.dir === "asc" ? -1 : 1;
       if (av > bv) return oppSort.dir === "asc" ? 1 : -1;
-      return 0;
+      return compareOpportunitiesLossLast(a, b);
     });
     return sorted;
   }, [oppForSelectedPipeline, oppDisplayCols, oppColFilters, oppSort, advFilters, advLogic]);
@@ -1365,7 +1385,18 @@ export default function PipelineClient() {
                 </thead>
                 <tbody>
                   {filteredSortedOpps.map((o) => (
-                    <tr key={o.id}>
+                    <tr
+                      key={o.id}
+                      style={
+                        opportunityIsLossStatus(o)
+                          ? {
+                              background:
+                                "linear-gradient(90deg, rgba(254, 242, 242, 0.92) 0%, rgba(255, 255, 255, 0.35) 100%)",
+                              boxShadow: "inset 3px 0 0 0 #f87171",
+                            }
+                          : undefined
+                      }
+                    >
                       {oppDisplayCols.map((col, idx) => (
                         <td
                           key={col}
@@ -1537,7 +1568,15 @@ export default function PipelineClient() {
                               key={o.id}
                               draggable
                               onDragStart={(e) => e.dataTransfer.setData("text/opportunity-id", o.id)}
-                              style={{ border: "1px solid #f3f4f6", borderRadius: 12, padding: 10, background: "#fafafa", cursor: "grab" }}
+                              style={{
+                                border: opportunityIsLossStatus(o) ? "1px solid #fecaca" : "1px solid #f3f4f6",
+                                borderRadius: 12,
+                                padding: 10,
+                                background: opportunityIsLossStatus(o)
+                                  ? "linear-gradient(180deg, #fff5f5 0%, #fef2f2 100%)"
+                                  : "#fafafa",
+                                cursor: "grab",
+                              }}
                             >
                               <button type="button" onClick={() => void openOpportunityDetail(o.id)} style={{ border: "none", background: "transparent", padding: 0, textAlign: "right", cursor: "pointer", fontWeight: 900, fontSize: 12, wordBreak: "break-word", color: "#111827" }}>{o.name}</button>
                               <div style={{ marginTop: 6, display: "grid", gap: 4 }}>

@@ -166,7 +166,7 @@ export default function OrdersClient() {
     });
     setDispatching(order.id);
     try {
-      const notifyCustomer = Boolean(notifyCustomerByOrderId[order.id]);
+      const notifyCustomer = notifyCustomerByOrderId[order.id] ?? true;
       const res = await fetch(`/api/moving-orders/${encodeURIComponent(order.id)}/match-send`, {
         method: "POST",
         credentials: "include",
@@ -384,7 +384,7 @@ export default function OrdersClient() {
                 onDelete={() => void deleteOrder(order)}
                 statusLabel={statusLabel}
                 sentNow={sentSuccessOrderId === order.id}
-                notifyCustomer={Boolean(notifyCustomerByOrderId[order.id])}
+                notifyCustomer={notifyCustomerByOrderId[order.id] ?? true}
                 onNotifyCustomerChange={(checked) =>
                   setNotifyCustomerByOrderId((prev) => ({ ...prev, [order.id]: checked }))
                 }

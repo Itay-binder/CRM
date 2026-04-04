@@ -227,6 +227,37 @@ function compareOpportunitiesLossLast(a: Opportunity, b: Opportunity): number {
   return tb.localeCompare(ta);
 }
 
+/** כפילות מול «מספר פניות (לידים)» — שדה ישן/מותאם עם אותו משמעות */
+const REDUNDANT_LEAD_COLUMN_LABEL_SNIPPET = "כמות לידים שקיבל";
+
+function isRedundantPipelineLeadColumn(fieldId: string, labelById: Record<string, string>): boolean {
+  const label = (labelById[fieldId] ?? "").trim();
+  return label.includes(REDUNDANT_LEAD_COLUMN_LABEL_SNIPPET);
+}
+
+/**
+ * עמודות גלויות לפי שמירה + רק שדות חדשים שלא היו בסדר השמור (ברירת מחדל גלוי).
+ * לא מוסיפים בחזרה עמודה שהוסרה מהתצוגה אם היא עדיין מופיעה בסדר העמודות.
+ */
+function mergeVisibleColsWithNewKeys(
+  savedVisible: string[],
+  allKeys: string[],
+  savedOrder: string[]
+): string[] {
+  const orderSet = new Set(savedOrder);
+  const base = savedVisible.filter((k) => allKeys.includes(k));
+  const seen = new Set(base);
+  const out = [...base];
+  for (const k of allKeys) {
+    if (seen.has(k)) continue;
+    if (!orderSet.has(k)) {
+      out.push(k);
+      seen.add(k);
+    }
+  }
+  return out;
+}
+
 export default function PipelineClient() {
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
@@ -239,6 +270,8 @@ export default function PipelineClient() {
   const [selectedPipelineId, setSelectedPipelineId] = useState("");
   /** מניעת דריסת סדר/נראות עמודות בכל קריאת load() (שמירה אחרי PATCH וכו׳) */
   const pipelinePrefsLoadedForRef = useRef<string | null>(null);
+  /** לזיהוי שדות חדשים ב־load חוזר בלי לאבד עמודות מוסתרות */
+  const lastLoadedAllOppColKeysRef = useRef<string[] | null>(null);
 
   const [createPipelineOpen, setCreatePipelineOpen] = useState(false);
   const [newPipelineName, setNewPipelineName] = useState("");
@@ -462,12 +495,17 @@ export default function PipelineClient() {
         resolvedPipelineId === PAYING_CUSTOMERS_PIPELINE_ID
           ? [MOVER_OPPORTUNITY_FIELD_IDS.leadsCount]
           : [];
-      const allOppColKeys = Array.from(
+      const allOppColKeysRaw = Array.from(
         new Set([...BASE_OPP_COLS, ...customFromSettings, ...keysFromOpps, ...leadsColExtra])
+      );
+      const allOppColKeys = allOppColKeysRaw.filter(
+        (k) => !isRedundantPipelineLeadColumn(k, labelMap)
       );
 
       setOppCustomFieldIds(
-        Array.from(new Set([...customFromSettings, ...keysFromOpps, ...leadsColExtra])).sort()
+        Array.from(new Set([...customFromSettings, ...keysFromOpps, ...leadsColExtra]))
+          .filter((k) => !isRedundantPipelineLeadColumn(k, labelMap))
+          .sort()
       );
       const migrateKey = (k: string) => (k === "lastLeadAt" ? "contactLastLeadAt" : k);
 
@@ -496,33 +534,51 @@ export default function PipelineClient() {
         for (const k of allOppColKeys) {
           if (!mergedOrder.includes(k)) mergedOrder.push(k);
         }
-        setOppColumnOrder(mergedOrder);
+        const orderClean = mergedOrder.filter((k) => !isRedundantPipelineLeadColumn(k, labelMap));
+        setOppColumnOrder(orderClean);
 
         const visMigrated = visFromSaved?.length
           ? [...new Set(visFromSaved.map(migrateKey))]
           : null;
         const mergedVisible = visMigrated?.length
-          ? Array.from(new Set([...visMigrated, ...allOppColKeys]))
+          ? mergeVisibleColsWithNewKeys(visMigrated, allOppColKeys, orderClean)
           : [...allOppColKeys];
-        setOppVisibleCols(mergedVisible);
+        setOppVisibleCols(
+          mergedVisible.filter((k) => !isRedundantPipelineLeadColumn(k, labelMap))
+        );
 
         if (widthsFromLs && typeof widthsFromLs === "object" && !Array.isArray(widthsFromLs)) {
-          setOppColWidths(widthsFromLs);
+          const w = { ...widthsFromLs };
+          for (const k of Object.keys(w)) {
+            if (isRedundantPipelineLeadColumn(k, labelMap)) delete w[k];
+          }
+          setOppColWidths(w);
         }
       } else {
+        const prevKeysSnapshot = lastLoadedAllOppColKeysRef.current;
         setOppColumnOrder((prev) => {
           const base = prev.length ? prev : [...allOppColKeys];
           const next = [...base];
           for (const k of allOppColKeys) {
             if (!next.includes(k)) next.push(k);
           }
-          return next;
+          return next
+            .filter((k) => allOppColKeys.includes(k))
+            .filter((k) => !isRedundantPipelineLeadColumn(k, labelMap));
         });
         setOppVisibleCols((prev) => {
-          const base = prev.length ? prev : [...allOppColKeys];
-          return Array.from(new Set([...base, ...allOppColKeys]));
+          if (!prev.length) return [...allOppColKeys];
+          let next = prev.filter((k) => allOppColKeys.includes(k));
+          next = next.filter((k) => !isRedundantPipelineLeadColumn(k, labelMap));
+          if (prevKeysSnapshot?.length) {
+            for (const k of allOppColKeys) {
+              if (!prevKeysSnapshot.includes(k) && !next.includes(k)) next.push(k);
+            }
+          }
+          return next;
         });
       }
+      lastLoadedAllOppColKeysRef.current = [...allOppColKeys];
       setBoardPreviewFields((prev) => {
         if (prev.length) return prev;
         const available = new Set(allOppColKeys);
@@ -1387,22 +1443,19 @@ export default function PipelineClient() {
                   {filteredSortedOpps.map((o) => (
                     <tr
                       key={o.id}
-                      style={
-                        opportunityIsLossStatus(o)
-                          ? {
-                              background:
-                                "linear-gradient(90deg, rgba(254, 242, 242, 0.92) 0%, rgba(255, 255, 255, 0.35) 100%)",
-                              boxShadow: "inset 3px 0 0 0 #f87171",
-                            }
-                          : undefined
-                      }
+                      style={{
+                        backgroundColor: opportunityIsLossStatus(o) ? "#fff0f1" : "#ffffff",
+                        borderBottom: opportunityIsLossStatus(o)
+                          ? "1px solid #f5a8a8"
+                          : "1px solid #e8e8ea",
+                      }}
                     >
                       {oppDisplayCols.map((col, idx) => (
                         <td
                           key={col}
                           style={{
                             padding: "10px 12px",
-                            borderBottom: "1px solid #f3f4f6",
+                            borderBottom: "none",
                             minWidth: oppColWidths[col] ?? oppDefaultColWidth(col),
                             width: oppColWidths[col] ?? oppDefaultColWidth(col),
                             whiteSpace: columnIntegrationKind(col) === "phone" ? "nowrap" : undefined,
@@ -1569,12 +1622,13 @@ export default function PipelineClient() {
                               draggable
                               onDragStart={(e) => e.dataTransfer.setData("text/opportunity-id", o.id)}
                               style={{
-                                border: opportunityIsLossStatus(o) ? "1px solid #fecaca" : "1px solid #f3f4f6",
+                                border: opportunityIsLossStatus(o) ? "1px solid #f9a8a8" : "1px solid #f3f4f6",
                                 borderRadius: 12,
                                 padding: 10,
-                                background: opportunityIsLossStatus(o)
-                                  ? "linear-gradient(180deg, #fff5f5 0%, #fef2f2 100%)"
-                                  : "#fafafa",
+                                backgroundColor: opportunityIsLossStatus(o) ? "#fff0f1" : "#fafafa",
+                                boxShadow: opportunityIsLossStatus(o)
+                                  ? "inset 0 0 0 1px rgba(248, 113, 113, 0.12)"
+                                  : undefined,
                                 cursor: "grab",
                               }}
                             >

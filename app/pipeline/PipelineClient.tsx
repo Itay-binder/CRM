@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 import {
@@ -13,7 +13,10 @@ import {
   InlineFieldShell,
   WhatsAppIconLink,
 } from "@/app/components/InlineFieldShell";
-import { MOVER_OPPORTUNITY_FIELD_IDS } from "@/lib/movingOrders/fieldIds";
+import {
+  MOVER_OPPORTUNITY_FIELD_IDS,
+  PAYING_CUSTOMERS_PIPELINE_ID,
+} from "@/lib/movingOrders/fieldIds";
 import { TableCellClamp } from "@/app/components/TableCellClamp";
 
 function pipelineOppColOrderCookieKey(pipelineId: string): string {
@@ -42,6 +45,35 @@ function writePipelineColsCookie(key: string, value: unknown) {
   if (typeof document === "undefined") return;
   const enc = encodeURIComponent(JSON.stringify(value));
   document.cookie = `${key}=${enc}; path=/; max-age=${60 * 60 * 24 * 400}; SameSite=Lax`;
+}
+
+function pipelineColPrefsStorageKeys(pipelineId: string) {
+  const safe = pipelineId.replace(/[^\w-]/g, "_");
+  return {
+    order: `crm_pl_v2_opp_ord_${safe}`,
+    visible: `crm_pl_v2_opp_vis_${safe}`,
+    widths: `crm_pl_v2_opp_w_${safe}`,
+  };
+}
+
+function readJsonLocalStorage<T>(key: string): T | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (raw == null) return null;
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function writeJsonLocalStorage(key: string, value: unknown) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* quota / private mode */
+  }
 }
 
 type Pipeline = {
@@ -191,6 +223,8 @@ export default function PipelineClient() {
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [contacts, setContacts] = useState<ContactRow[]>([]);
   const [selectedPipelineId, setSelectedPipelineId] = useState("");
+  /** מניעת דריסת סדר/נראות עמודות בכל קריאת load() (שמירה אחרי PATCH וכו׳) */
+  const pipelinePrefsLoadedForRef = useRef<string | null>(null);
 
   const [createPipelineOpen, setCreatePipelineOpen] = useState(false);
   const [newPipelineName, setNewPipelineName] = useState("");
@@ -396,6 +430,10 @@ export default function PipelineClient() {
           if (f.fieldId) labelMap[f.fieldId] = (f.label?.trim() || f.fieldId).trim();
         }
       }
+      if (resolvedPipelineId === PAYING_CUSTOMERS_PIPELINE_ID) {
+        const lc = MOVER_OPPORTUNITY_FIELD_IDS.leadsCount;
+        labelMap[lc] = labelMap[lc] ?? "מספר פניות (לידים)";
+      }
       setOppCustomFieldLabelById(labelMap);
       if (lJson.ok && Array.isArray(lJson.labels)) {
         setCatalogLabels(lJson.labels);
@@ -403,34 +441,71 @@ export default function PipelineClient() {
       const keysFromOpps = Array.from(
         new Set(opp.flatMap((o) => Object.keys((o.customValues ?? {}) as Record<string, unknown>)))
       );
+      const leadsColExtra =
+        resolvedPipelineId === PAYING_CUSTOMERS_PIPELINE_ID
+          ? [MOVER_OPPORTUNITY_FIELD_IDS.leadsCount]
+          : [];
       const allOppColKeys = Array.from(
-        new Set([...BASE_OPP_COLS, ...customFromSettings, ...keysFromOpps])
+        new Set([...BASE_OPP_COLS, ...customFromSettings, ...keysFromOpps, ...leadsColExtra])
       );
 
       setOppCustomFieldIds(
-        Array.from(new Set([...customFromSettings, ...keysFromOpps])).sort()
+        Array.from(new Set([...customFromSettings, ...keysFromOpps, ...leadsColExtra])).sort()
       );
       const migrateKey = (k: string) => (k === "lastLeadAt" ? "contactLastLeadAt" : k);
-      const orderCookie = readPipelineColsCookie<string[]>(
-        pipelineOppColOrderCookieKey(resolvedPipelineId)
-      );
-      const visCookie = readPipelineColsCookie<string[]>(
-        pipelineOppColVisibleCookieKey(resolvedPipelineId)
-      );
-      const orderFromCookie = orderCookie?.length
-        ? [...new Set(orderCookie.map(migrateKey))]
-        : null;
-      const mergedOrder = orderFromCookie?.length ? [...orderFromCookie] : [...allOppColKeys];
-      for (const k of allOppColKeys) {
-        if (!mergedOrder.includes(k)) mergedOrder.push(k);
-      }
-      setOppColumnOrder(mergedOrder);
 
-      const visFromCookie = visCookie?.length ? [...new Set(visCookie.map(migrateKey))] : null;
-      const mergedVisible = visFromCookie?.length
-        ? Array.from(new Set([...visFromCookie, ...allOppColKeys]))
-        : [...allOppColKeys];
-      setOppVisibleCols(mergedVisible);
+      const prefsPid = resolvedPipelineId;
+      const prefsKeys = prefsPid ? pipelineColPrefsStorageKeys(prefsPid) : null;
+      const pipelinePrefsJustSwitched = Boolean(
+        prefsPid && pipelinePrefsLoadedForRef.current !== prefsPid
+      );
+      if (prefsPid) {
+        pipelinePrefsLoadedForRef.current = prefsPid;
+      }
+
+      if (pipelinePrefsJustSwitched && prefsKeys) {
+        const orderFromSaved =
+          readJsonLocalStorage<string[]>(prefsKeys.order) ??
+          readPipelineColsCookie<string[]>(pipelineOppColOrderCookieKey(prefsPid));
+        const visFromSaved =
+          readJsonLocalStorage<string[]>(prefsKeys.visible) ??
+          readPipelineColsCookie<string[]>(pipelineOppColVisibleCookieKey(prefsPid));
+        const widthsFromLs = readJsonLocalStorage<Record<string, number>>(prefsKeys.widths);
+
+        const orderMigrated = orderFromSaved?.length
+          ? [...new Set(orderFromSaved.map(migrateKey))]
+          : null;
+        const mergedOrder = orderMigrated?.length ? [...orderMigrated] : [...allOppColKeys];
+        for (const k of allOppColKeys) {
+          if (!mergedOrder.includes(k)) mergedOrder.push(k);
+        }
+        setOppColumnOrder(mergedOrder);
+
+        const visMigrated = visFromSaved?.length
+          ? [...new Set(visFromSaved.map(migrateKey))]
+          : null;
+        const mergedVisible = visMigrated?.length
+          ? Array.from(new Set([...visMigrated, ...allOppColKeys]))
+          : [...allOppColKeys];
+        setOppVisibleCols(mergedVisible);
+
+        if (widthsFromLs && typeof widthsFromLs === "object" && !Array.isArray(widthsFromLs)) {
+          setOppColWidths(widthsFromLs);
+        }
+      } else {
+        setOppColumnOrder((prev) => {
+          const base = prev.length ? prev : [...allOppColKeys];
+          const next = [...base];
+          for (const k of allOppColKeys) {
+            if (!next.includes(k)) next.push(k);
+          }
+          return next;
+        });
+        setOppVisibleCols((prev) => {
+          const base = prev.length ? prev : [...allOppColKeys];
+          return Array.from(new Set([...base, ...allOppColKeys]));
+        });
+      }
       setBoardPreviewFields((prev) => {
         if (prev.length) return prev;
         const available = new Set(allOppColKeys);
@@ -452,6 +527,9 @@ export default function PipelineClient() {
   useEffect(() => {
     if (typeof window === "undefined" || !selectedPipelineId) return;
     if (oppColumnOrder.length === 0 && oppVisibleCols.length === 0) return;
+    const keys = pipelineColPrefsStorageKeys(selectedPipelineId);
+    writeJsonLocalStorage(keys.order, oppColumnOrder);
+    writeJsonLocalStorage(keys.visible, oppVisibleCols);
     writePipelineColsCookie(
       pipelineOppColOrderCookieKey(selectedPipelineId),
       oppColumnOrder
@@ -461,6 +539,15 @@ export default function PipelineClient() {
       oppVisibleCols
     );
   }, [selectedPipelineId, oppColumnOrder, oppVisibleCols]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !selectedPipelineId) return;
+    if (Object.keys(oppColWidths).length === 0) return;
+    writeJsonLocalStorage(
+      pipelineColPrefsStorageKeys(selectedPipelineId).widths,
+      oppColWidths
+    );
+  }, [selectedPipelineId, oppColWidths]);
 
   useEffect(() => {
     if (!toastMessage) return;
@@ -2317,7 +2404,49 @@ export default function PipelineClient() {
                 {oppCustomFieldIds.map((fid) => (
                   <label key={fid} style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>{opportunityFieldLabel(fid)}</span>
-                    <input value={String((selectedOpp.customValues ?? {})[fid] ?? "")} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, customValues: { ...(x.customValues ?? {}), [fid]: e.target.value } } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }} />
+                    {fid === MOVER_OPPORTUNITY_FIELD_IDS.leadsCount ? (
+                      <input
+                        type="number"
+                        min={0}
+                        value={
+                          (selectedOpp.customValues ?? {})[fid] === undefined ||
+                          (selectedOpp.customValues ?? {})[fid] === null
+                            ? ""
+                            : String((selectedOpp.customValues ?? {})[fid])
+                        }
+                        onChange={(e) => {
+                          const v = e.target.value.trim();
+                          const n = v === "" ? 0 : Number.parseInt(v, 10);
+                          setSelectedOpp((x) =>
+                            x
+                              ? {
+                                  ...x,
+                                  customValues: {
+                                    ...(x.customValues ?? {}),
+                                    [fid]: v === "" || Number.isNaN(n) ? 0 : n,
+                                  },
+                                }
+                              : x
+                          );
+                        }}
+                        style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+                      />
+                    ) : (
+                      <input
+                        value={String((selectedOpp.customValues ?? {})[fid] ?? "")}
+                        onChange={(e) =>
+                          setSelectedOpp((x) =>
+                            x
+                              ? {
+                                  ...x,
+                                  customValues: { ...(x.customValues ?? {}), [fid]: e.target.value },
+                                }
+                              : x
+                          )
+                        }
+                        style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+                      />
+                    )}
                   </label>
                 ))}
                 <button

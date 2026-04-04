@@ -1,5 +1,6 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
+import { MOVER_OPPORTUNITY_FIELD_IDS } from "@/lib/movingOrders/fieldIds";
 
 export type CustomFieldEntity = "contact" | "opportunity" | "moving_order";
 export type CustomFieldType =
@@ -226,6 +227,26 @@ export async function validateCustomValues(
       continue;
     }
     out[k] = String(v ?? "");
+  }
+
+  /** שדה מערכת בלי חובת רשומה ב-customFields (למשל אחרי התאמת הזמנות) */
+  const leadsKey = MOVER_OPPORTUNITY_FIELD_IDS.leadsCount;
+  if (entityType === "opportunity") {
+    if (Object.prototype.hasOwnProperty.call(incoming, leadsKey)) {
+      const raw = incoming[leadsKey];
+      const n = typeof raw === "number" ? raw : Number.parseFloat(String(raw));
+      if (!Number.isNaN(n) && n >= 0) {
+        out[leadsKey] = Number.isInteger(n) ? n : Math.floor(n);
+      }
+    } else if (
+      previousValues &&
+      Object.prototype.hasOwnProperty.call(previousValues, leadsKey) &&
+      !Object.prototype.hasOwnProperty.call(out, leadsKey)
+    ) {
+      const pv = previousValues[leadsKey];
+      const n = typeof pv === "number" ? pv : Number.parseFloat(String(pv));
+      if (!Number.isNaN(n) && n >= 0) out[leadsKey] = Number.isInteger(n) ? n : Math.floor(n);
+    }
   }
 
   return out;

@@ -123,6 +123,19 @@ function rowBackground(
   return "#ffffff";
 }
 
+/** רקע כרטיס בלשונית התאמה: אדום לביטול/דחייה, ירוק עדין אחרי שליחה (מלאה או ליד בודד) */
+function matchOrderCardShellStyle(order: MovingOrderRecord): { background: string; borderColor: string } {
+  const st = order.status;
+  if (st === "cancelled" || st === "rejected") {
+    return { background: "#fef2f2", borderColor: "#fecaca" };
+  }
+  const sent = order.sentMatchDriverIds?.length ?? 0;
+  if (st === "dispatched" || st === "completed" || sent > 0) {
+    return { background: "#f0fdf4", borderColor: "#bbf7d0" };
+  }
+  return { background: "#ffffff", borderColor: "#e5e7eb" };
+}
+
 function hoursCell(en: MoverMatchEnrichment | undefined): string {
   if (!en) return "—";
   const parts = [
@@ -378,14 +391,16 @@ export function MatchOrderCard({
     return issueList(id).some((x) => x.includes("זמינות"));
   }
 
+  const shell = matchOrderCardShellStyle(order);
+
   return (
     <>
       <article
         style={{
           padding: 18,
           borderRadius: 16,
-          border: "1px solid #e5e7eb",
-          background: "#fff",
+          border: `1px solid ${shell.borderColor}`,
+          background: shell.background,
           boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
         }}
       >

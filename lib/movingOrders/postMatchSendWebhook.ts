@@ -6,10 +6,28 @@ import {
   buildMatchWebhookMovers,
   customerFacingMoversMessageText,
   flatMatchSendOpportunityFields,
+  type MatchWebhookMover,
 } from "@/lib/movingOrders/matchOrderActions";
 import { opportunitiesByContactId } from "@/lib/movingOrders/matchMovers";
 import type { MovingOrderRecord } from "@/lib/movingOrders/types";
+import { displayPhoneIsraeliLocal } from "@/lib/phoneIsraeliDisplay";
 import { postWebhookForEvent } from "@/lib/webhooks/dispatchServerWebhooks";
+
+function moversWithIsraeliPhoneDisplay(movers: MatchWebhookMover[]): MatchWebhookMover[] {
+  return movers.map((m) => ({
+    ...m,
+    lead: {
+      ...m.lead,
+      phone: m.lead.phone ? displayPhoneIsraeliLocal(m.lead.phone) : m.lead.phone,
+    },
+    opportunity: m.opportunity
+      ? {
+          ...m.opportunity,
+          phone: m.opportunity.phone ? displayPhoneIsraeliLocal(m.opportunity.phone) : m.opportunity.phone,
+        }
+      : null,
+  }));
+}
 
 /**
  * אותו אירוע וובהוק כמו שליחת הזמנה מלאה — עם רשימת מובילים נתונה וערך לשדה שליחת הודעה למזמין.
@@ -35,9 +53,10 @@ export async function postMatchSendWebhookForDrivers(
     opps.filter((o) => (o.pipelineId ?? "").trim() === PAYING_CUSTOMERS_PIPELINE_ID)
   );
 
-  const movers = await buildMatchWebhookMovers(driverIds, order.driverMatchFlags, leadById, oppByContact);
-  if (movers.length === 0) return false;
+  const moversRaw = await buildMatchWebhookMovers(driverIds, order.driverMatchFlags, leadById, oppByContact);
+  if (moversRaw.length === 0) return false;
 
+  const movers = moversWithIsraeliPhoneDisplay(moversRaw);
   const textForCustomer = customerFacingMoversMessageText(movers);
   const notifyCustomerWebhook = notifyCustomer ? "כן" : "לא";
 

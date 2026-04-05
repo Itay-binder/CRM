@@ -16,6 +16,8 @@ export type OrderMatchUiHints = {
 export type OrderMatchedOpportunitySummary = {
   id: string;
   name: string;
+  /** מזהה איש הקשר (מוביל) — תואם ל־sentMatchDriverIds ולסינון בלשונית «לפי מובילים» */
+  contactId: string;
   /** אין הזדמנות בפייפליין לקוחות — הקישור יפתח את איש הקשר */
   linkToContact?: boolean;
 };

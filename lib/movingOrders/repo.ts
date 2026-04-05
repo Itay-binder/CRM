@@ -9,6 +9,7 @@ import { rawCustomValuesFromPayload } from "@/lib/movingOrders/customValuesFromP
 import { ensureMovingOrdersIntakePipeline } from "@/lib/movingOrders/ensureIntakePipeline";
 import { getCityRegionMap } from "@/lib/movingOrders/cityRegionSettingsRepo";
 import { matchMoversForOrderDetailed } from "@/lib/movingOrders/matchMovers";
+import { driverIdsForOpportunitiesColumn } from "@/lib/movingOrders/driverIdsForOpportunityDisplay";
 import { MOVING_ORDERS_INTAKE_PIPELINE_ID, MOVING_ORDER_STAGES } from "@/lib/movingOrders/pipelineConstants";
 import { defaultStageForStatus, statusFromStage } from "@/lib/movingOrders/stageSync";
 import { isoCreatedAtInYmdRange } from "@/lib/datetime/ymdBoundary";
@@ -372,6 +373,8 @@ export async function updateMovingOrder(
     rematch?: boolean;
     /** מזהי מוביל שנשלחו בהתאמה — מתווספים לרשימה הקיימת (ללא כפילויות) */
     appendSentMatchDriverIds?: string[];
+    /** הסרת מוביל מרשימת השליחות (מזהה איש קשר) — מעדכן sentMatchDriverIds ומונע fallback שגוי */
+    removeSentMatchDriverIds?: string[];
   },
   db?: Firestore
 ): Promise<MovingOrderRecord> {
@@ -491,11 +494,41 @@ export async function updateMovingOrder(
     else payload.matchRejectionReason = t;
   }
 
+  if (input.removeSentMatchDriverIds !== undefined && input.removeSentMatchDriverIds.length > 0) {
+    const existingRecord = mapDoc(id, existing);
+    const toRemove = new Set(
+      input.removeSentMatchDriverIds.map((x) => String(x).trim()).filter(Boolean)
+    );
+    const current = driverIdsForOpportunitiesColumn(existingRecord);
+    for (const cid of toRemove) {
+      if (!current.includes(cid)) {
+        throw new Error("מוביל לא מופיע ברשימת ההזדמנות שנשלחו עבור הזמנה זו");
+      }
+    }
+    const next = current.filter((cid) => !toRemove.has(cid));
+    payload.sentMatchDriverIds = next;
+    if (next.length === 0) {
+      payload.dispatchedAt = null;
+      if (coerceStatus(existing.status) === "dispatched") {
+        payload.stage = MOVING_ORDER_STAGES[0];
+        payload.status = "pending";
+      }
+    }
+  }
+
   if (input.appendSentMatchDriverIds !== undefined && input.appendSentMatchDriverIds.length > 0) {
-    const prevSent = Array.isArray(existing.sentMatchDriverIds)
+    let baseForAppend = Array.isArray(existing.sentMatchDriverIds)
       ? (existing.sentMatchDriverIds as unknown[]).map((x) => String(x))
       : [];
-    const merged = [...new Set([...prevSent, ...input.appendSentMatchDriverIds.map((x) => String(x).trim()).filter(Boolean)])];
+    if (payload.sentMatchDriverIds !== undefined) {
+      baseForAppend = payload.sentMatchDriverIds as string[];
+    }
+    const merged = [
+      ...new Set([
+        ...baseForAppend,
+        ...input.appendSentMatchDriverIds.map((x) => String(x).trim()).filter(Boolean),
+      ]),
+    ];
     payload.sentMatchDriverIds = merged;
   }
 

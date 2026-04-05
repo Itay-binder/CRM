@@ -94,13 +94,13 @@ export async function GET(req: NextRequest) {
         const key = `o:${oid}`;
         if (seen.has(key)) return;
         seen.add(key);
-        list.push({ id: oid, name });
+        list.push({ id: oid, name, contactId: driverId });
         return;
       }
       const ckey = `c:${driverId}`;
       if (seen.has(ckey)) return;
       seen.add(ckey);
-      list.push({ id: driverId, name, linkToContact: true });
+      list.push({ id: driverId, name, contactId: driverId, linkToContact: true });
     }
 
     const orderMatchedOpportunities: Record<string, OrderMatchedOpportunitySummary[]> = {};

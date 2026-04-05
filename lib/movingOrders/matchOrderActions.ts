@@ -157,3 +157,25 @@ export async function applyMatchSendSideEffects(params: {
     }
   }
 }
+
+/** הפחתת מונה פניות (לידים) כשמסירים שליחת התאמה למוביל — לא משנה פתקיות קיימות */
+export async function applyMatchRemoveSideEffects(contactIds: string[]): Promise<void> {
+  const ids = [...new Set(contactIds.map((x) => String(x).trim()).filter(Boolean))];
+  if (!ids.length) return;
+  const opps = await listOpportunities(PAYING_CUSTOMERS_PIPELINE_ID);
+  const idx = opportunitiesByContactId(opps);
+
+  for (const contactId of ids) {
+    const opp = idx.get(contactId);
+    if (!opp) continue;
+    const cv = { ...(opp.customValues ?? {}) };
+    const k = MOVER_OPPORTUNITY_FIELD_IDS.leadsCount;
+    const next = Math.max(0, (Number(cv[k]) || 0) - 1);
+    cv[k] = next;
+    try {
+      await updateOpportunity(opp.id, { customValues: cv });
+    } catch {
+      /* ignore */
+    }
+  }
+}

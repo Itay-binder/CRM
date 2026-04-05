@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { mutate as swrMutate } from "swr";
 import { columnIntegrationKind, InlineFieldShell, WhatsAppIconLink } from "@/app/components/InlineFieldShell";
 import { TableCellClamp } from "@/app/components/TableCellClamp";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
@@ -101,8 +102,47 @@ const OPP_CHIP_STYLE: CSSProperties = {
   lineHeight: 1.35,
 };
 
-function MatchedOpportunitiesCell({ items }: { items: OrderMatchedOpportunitySummary[] }) {
+function MatchedOpportunitiesCell({
+  orderId,
+  items,
+  onReload,
+}: {
+  orderId: string;
+  items: OrderMatchedOpportunitySummary[];
+  onReload: () => void | Promise<void>;
+}) {
   const [open, setOpen] = useState(false);
+  const [removingContactId, setRemovingContactId] = useState<string | null>(null);
+
+  async function removeChip(opp: OrderMatchedOpportunitySummary) {
+    const cid = opp.contactId?.trim();
+    if (!cid) return;
+    if (
+      !window.confirm(
+        `להסיר את «${opp.name}» מרשימת ההזדמנות שנשלחו?\n\nההזמנה תוסר גם מלשונית «הזמנות לפי מובילים», ובשדה «מספר פניות (לידים)» של ההזדמנות יופחת 1.`
+      )
+    ) {
+      return;
+    }
+    setRemovingContactId(cid);
+    try {
+      const res = await fetch(`/api/moving-orders/${encodeURIComponent(orderId)}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ removeSentMatchDriverIds: [cid] }),
+      });
+      const j = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) throw new Error(j.error ?? "הסרה נכשלה");
+      await Promise.resolve(onReload());
+      void swrMutate("crm-moving-orders-by-opportunities");
+      void swrMutate("crm-moving-orders");
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "הסרה נכשלה");
+    } finally {
+      setRemovingContactId(null);
+    }
+  }
 
   if (!items.length) {
     return <span style={{ color: "#9ca3af", fontWeight: 600 }}>—</span>;
@@ -110,21 +150,78 @@ function MatchedOpportunitiesCell({ items }: { items: OrderMatchedOpportunitySum
 
   const links = (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "flex-end" }}>
-      {items.map((opp) => (
-        <Link
-          key={opp.linkToContact ? `c-${opp.id}` : opp.id}
-          href={
-            opp.linkToContact
-              ? `/contacts?openContactId=${encodeURIComponent(opp.id)}`
-              : `/pipeline?openOpportunityId=${encodeURIComponent(opp.id)}`
-          }
-          style={{ ...OPP_CHIP_STYLE, textDecoration: "none" }}
-          title={opp.linkToContact ? "פתח איש קשר" : "פתח בניהול הזדמנויות"}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {opp.name}
-        </Link>
-      ))}
+      {items.map((opp) => {
+        const cid = opp.contactId?.trim() ?? "";
+        const href = opp.linkToContact
+          ? `/contacts?openContactId=${encodeURIComponent(opp.id)}`
+          : `/pipeline?openOpportunityId=${encodeURIComponent(opp.id)}`;
+        return (
+          <span
+            key={cid || (opp.linkToContact ? `c-${opp.id}` : opp.id)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 2,
+              maxWidth: "100%",
+              borderRadius: 999,
+              background: "#f5f3ff",
+              border: "1px solid #e9d5ff",
+              padding: "2px 2px 2px 6px",
+              boxSizing: "border-box",
+            }}
+          >
+            <Link
+              href={href}
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: "#5b21b6",
+                textDecoration: "none",
+                wordBreak: "break-word",
+                lineHeight: 1.35,
+                padding: "2px 4px",
+                minWidth: 0,
+              }}
+              title={opp.linkToContact ? "פתח איש קשר" : "פתח בניהול הזדמנויות"}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {opp.name}
+            </Link>
+            {cid ? (
+              <button
+                type="button"
+                aria-label={`הסר שליחה ל־${opp.name}`}
+                title="הסר מהרשימה"
+                disabled={removingContactId === cid}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  void removeChip(opp);
+                }}
+                style={{
+                  flexShrink: 0,
+                  width: 22,
+                  height: 22,
+                  border: "none",
+                  borderRadius: 999,
+                  background: removingContactId === cid ? "#ede9fe" : "transparent",
+                  color: "#6d28d9",
+                  fontSize: 16,
+                  fontWeight: 800,
+                  lineHeight: 1,
+                  cursor: removingContactId === cid ? "wait" : "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: 0,
+                }}
+              >
+                ×
+              </button>
+            ) : null}
+          </span>
+        );
+      })}
     </div>
   );
 
@@ -988,7 +1085,11 @@ export default function OrdersBoardTab() {
                       ) : (
                         <TableCellClamp noClamp={columnIntegrationKind(col) === "phone"}>
                           {col === ORDER_MATCHED_OPPS_COL ? (
-                            <MatchedOpportunitiesCell items={orderMatchedOpportunities[o.id] ?? []} />
+                            <MatchedOpportunitiesCell
+                              orderId={o.id}
+                              items={orderMatchedOpportunities[o.id] ?? []}
+                              onReload={() => void loadAll()}
+                            />
                           ) : INLINE_READONLY.has(col) ? (
                             <span style={{ wordBreak: "break-word", color: "#374151" }}>{orderCell(o, col)}</span>
                           ) : col === "phone" && orderCell(o, col).trim() ? (

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
+import { applyMatchRemoveSideEffects } from "@/lib/movingOrders/matchOrderActions";
 import { deleteMovingOrder, getMovingOrder, updateMovingOrder } from "@/lib/movingOrders/repo";
 import type { MovingOrderPayload, MovingOrderStatus } from "@/lib/movingOrders/types";
 
@@ -40,6 +41,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const patch: Parameters<typeof updateMovingOrder>[1] = {};
+
+  if (Array.isArray(body.removeSentMatchDriverIds)) {
+    const rm = body.removeSentMatchDriverIds.map((x) => String(x).trim()).filter(Boolean);
+    if (rm.length) patch.removeSentMatchDriverIds = rm;
+  }
 
   if (body.rematch === true) {
     patch.rematch = true;
@@ -82,7 +88,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   try {
+    const removed = patch.removeSentMatchDriverIds ?? [];
     const updated = await updateMovingOrder(id, patch, g.db);
+    if (removed.length) {
+      await applyMatchRemoveSideEffects(removed);
+    }
     return NextResponse.json({ ok: true, order: updated });
   } catch (e) {
     return NextResponse.json(

@@ -21,7 +21,8 @@
  *   --dry-run                             רק ספירת שורות ודוגמה למיפוי
  *   --limit 50                            מגביל מספר רשומות
  *   --offset 100                          דילוג על רשומות ראשונות
- *   --delay-ms 80                         השהיה בין שורות (ברירת מחדל 80)
+ *   --delay-ms 0                          השהיה אחרי כל שורה (מילישניות; 0 מהיר). אם 429/חנק — נסו 25–50
+ *   --concurrency 4                       כמה שורות במקביל (ברירת מחדל 4). 1 = רצף כמו קודם
  *   --no-split-notes                     פתק אחד לכל שורה (ללא פיצול לפי "ליד השאיר פרטים מחדש:")
  *
  * Vercel: CRM_HISTORICAL_IMPORT_TENANT_DATABASE_IDS=powercouple — בלי זה שרת מתעלם מ-createdAt/updatedAt בקליטה.
@@ -104,7 +105,8 @@ function parseArgs() {
     dryRun: false,
     limit: Infinity,
     offset: 0,
-    delayMs: 80,
+    delayMs: 0,
+    concurrency: 4,
     noSplitNotes: false,
   };
   const argv = process.argv.slice(2);
@@ -143,6 +145,9 @@ function parseArgs() {
       i++;
     } else if (a === "--delay-ms" && next) {
       out.delayMs = Number(next);
+      i++;
+    } else if (a === "--concurrency" && next) {
+      out.concurrency = Math.max(1, Number(next) || 1);
       i++;
     } else if (a === "--no-split-notes") {
       out.noSplitNotes = true;
@@ -360,7 +365,10 @@ async function main() {
   const start = args.offset;
   const end = Math.min(records.length, start + args.limit);
 
-  for (let idx = start; idx < end; idx++) {
+  /**
+   * @param {number} idx
+   */
+  async function importOneRow(idx) {
     const values = records[idx];
     /** @type {Record<string, string>} */
     const row = {};
@@ -384,12 +392,12 @@ async function main() {
         `שורה ${idx + 2}: חסר Contact ID / Opportunity ID או Pipeline (אחרי מיפוי; בדוק --pipeline-id / עמודת CSV) — דילוג`
       );
       errors++;
-      continue;
+      return;
     }
     if (!email && !phone) {
       console.warn(`שורה ${idx + 2}: חסר email וטלפון — דילוג`);
       errors++;
-      continue;
+      return;
     }
 
     const createdOn = trimKey(row["Created on"] ?? "");
@@ -515,7 +523,7 @@ async function main() {
       }
 
       done++;
-      if (done % 25 === 0) console.log(`... יובאו ${done} רשומות (שורות עד ${idx + 2})`);
+      if (done % 25 === 0) console.log(`... יובאו ${done} רשומות (אחרון: שורת CSV ~${idx + 2})`);
     } catch (e) {
       errors++;
       console.error(`שורה ${idx + 2}:`, e instanceof Error ? e.message : e);
@@ -523,6 +531,21 @@ async function main() {
 
     if (args.delayMs > 0) await sleep(args.delayMs);
   }
+
+  let nextIdx = start;
+  const workerCount = Math.min(
+    Math.max(1, args.concurrency),
+    Math.max(1, end - start)
+  );
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      for (;;) {
+        const idx = nextIdx++;
+        if (idx >= end) return;
+        await importOneRow(idx);
+      }
+    })
+  );
 
   console.log(`\nסיום. יובאו בהצלחה: ${done}, שגיאות/דילוגים: ${errors}`);
 }

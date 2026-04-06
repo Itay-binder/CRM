@@ -264,6 +264,7 @@ async function main() {
   }
 
   const raw = fs.readFileSync(path.resolve(args.file), "utf8");
+  const physicalLines = raw.split(/\r\n|\r|\n/).length;
   const matrix = parseCsv(raw);
   if (matrix.length < 2) {
     console.error("CSV ריק או ללא נתונים");
@@ -313,7 +314,15 @@ async function main() {
   }
 
   const records = matrix.slice(1).filter((r) => r.some((c) => String(c ?? "").trim() !== ""));
-  console.log(`\nסה"כ רשומות בקובץ (אחרי שורת כותרות): ${records.length}`);
+  console.log(
+    `\nשורות פיזיות בקובץ (כולל מעברי שורה בתוך תאים במרכאות, למשל Notes): ${physicalLines}`
+  );
+  console.log(`רשומות לוגיות אחרי פרסור CSV (הזדמנויות, בלי כותרות): ${records.length}`);
+  if (physicalLines > records.length * 2) {
+    console.log(
+      "(הפרש גדול תקין: הרבה שורות נמצאות בתוך שדה אחד מומלץ — לא כל שורה = רשומה חדשה.)"
+    );
+  }
 
   if (args.dryRun) {
     console.log("\n--dry-run: לא נשלחו בקשות.");

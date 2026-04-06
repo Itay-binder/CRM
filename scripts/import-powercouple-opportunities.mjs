@@ -237,6 +237,23 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/** מפתח עמודת הפנקים ב-CSV (רישיות לא משנה). */
+function notesColumnKeyFromHeaders(headerRow) {
+  const found = headerRow.find((h) => trimKey(h).toLowerCase() === "notes");
+  return found ?? null;
+}
+
+/**
+ * טקסט Notes מהשורה — נסה את עמודת הכותרת שזוהתה + תאים נפוצים אחרי פרסור שבור.
+ * @param {Record<string, string>} row
+ * @param {string | null} notesKey
+ */
+function getRowNotesText(row, notesKey) {
+  const fromKey = notesKey ? row[notesKey] : "";
+  const fallback = row.Notes ?? row.notes ?? row["NOTES"] ?? "";
+  return trimKey(fromKey || fallback || "");
+}
+
 /**
  * @param {string} fromCsv
  * @param {string | null} override
@@ -360,8 +377,17 @@ async function main() {
   }
 
   const headers = headerRow;
+  const csvNotesKey = notesColumnKeyFromHeaders(headerRow);
+  if (csvNotesKey) {
+    console.log(`מזוהה עמודת פתקים ב-CSV: "${csvNotesKey}"`);
+  } else {
+    console.warn('לא נמצאה כותרת "Notes" (בלי קשר לרישיות). מנסים שדות שמורים בלבד.');
+  }
+
   let done = 0;
   let errors = 0;
+  /** יובאו contact+opportunity אבל Notes ריק אחרי פרסור — אין POST לפתקים */
+  let doneWithoutNotes = 0;
   const start = args.offset;
   const end = Math.min(records.length, start + args.limit);
 
@@ -486,7 +512,7 @@ async function main() {
       const opportunityId = oj.opportunity?.id;
       if (!opportunityId) throw new Error("אין opportunity.id בתשובה");
 
-      const rawNotes = trimKey(row.Notes ?? "");
+      const rawNotes = getRowNotesText(row, csvNotesKey);
       if (rawNotes) {
         let entries = noteEntriesFromPowercoupleBlob(rawNotes, createdOn, args.noSplitNotes)
           .map((e, i) => ({ ...e, _i: i }))
@@ -520,6 +546,8 @@ async function main() {
             throw new Error(nj.error ?? nr.statusText);
           }
         }
+      } else {
+        doneWithoutNotes++;
       }
 
       done++;
@@ -548,6 +576,11 @@ async function main() {
   );
 
   console.log(`\nסיום. יובאו בהצלחה: ${done}, שגיאות/דילוגים: ${errors}`);
+  if (doneWithoutNotes > 0) {
+    console.warn(
+      `↓ ${doneWithoutNotes} רשומות נשמרו עם איש קשר+הזדמנות אבל בלי פתק: עמודת Notes יצאה ריקה אחרי פרסור CSV (לרוב שורה עם מרכאות לא תקינות שמזיזה עמודות, או תא Notes באמת ריק בייצוא).`
+    );
+  }
 }
 
 main().catch((e) => {

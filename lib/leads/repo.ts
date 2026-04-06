@@ -355,6 +355,8 @@ export async function appendLeadNote(
     { merge: true }
   );
 
+  await reconcileContactNotesAcrossEntities(docId);
+
   const again = await ref.get();
   return mapDocToLead(again.id, (again.data() ?? {}) as Record<string, unknown>);
 }

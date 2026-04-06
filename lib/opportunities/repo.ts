@@ -976,6 +976,22 @@ export async function updateOpportunity(
     payload.stage = stages.includes(currentStage) ? currentStage : stages[0];
   }
   if (input.status !== undefined) payload.status = input.status;
+  /** גרירה לשלב «זכיה» בלי לשלוח status — מיישרים את סטטוס ההזדמנות (עמודת הסטטוס בלוח הייתה נשארת «פתוח»). */
+  if (input.status === undefined && input.stage !== undefined) {
+    const stAfterStage = String(
+      payload.stage !== undefined ? payload.stage : existing.stage ?? ""
+    ).trim();
+    const existingStatusTri =
+      existing.status === "זכיה" || existing.status === "הפסד" || existing.status === "פתוח"
+        ? existing.status
+        : "פתוח";
+    if (
+      normalizeStageLabel(stAfterStage) === WON_PIPELINE_STAGE_LABEL &&
+      existingStatusTri !== "הפסד"
+    ) {
+      payload.status = "זכיה";
+    }
+  }
   if (input.value !== undefined) payload.value = input.value;
   if (input.email !== undefined) payload.email = input.email.trim();
   if (input.phone !== undefined) payload.phone = input.phone.trim();

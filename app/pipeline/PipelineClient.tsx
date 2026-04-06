@@ -2462,7 +2462,21 @@ export default function PipelineClient() {
                 </label>
                 <label style={{ display: "grid", gap: 4 }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>סטטוס</span>
-                  <select value={selectedOpp.status ?? "פתוח"} onChange={(e) => setSelectedOpp((x) => (x ? { ...x, status: e.target.value as "פתוח" | "זכיה" | "הפסד" } : x))} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+                  <select
+                    value={selectedOpp.status ?? "פתוח"}
+                    onChange={(e) => {
+                      const next = e.target.value as "פתוח" | "זכיה" | "הפסד";
+                      if (!selectedOpp) return;
+                      const prev = selectedOpp.status ?? "פתוח";
+                      setSelectedOpp((x) => (x ? { ...x, status: next } : x));
+                      void saveOpportunityPatch(
+                        selectedOpp.id,
+                        { status: next },
+                        { fromDetail: true, showSavedToast: true, prevStatusBeforeSave: prev }
+                      );
+                    }}
+                    style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+                  >
                     {["פתוח", "זכיה", "הפסד"].map((s) => (
                       <option key={s} value={s}>{s}</option>
                     ))}

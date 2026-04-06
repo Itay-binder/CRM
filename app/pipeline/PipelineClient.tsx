@@ -2640,6 +2640,24 @@ export default function PipelineClient() {
               <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
                 {oppNotes.map((n) => (
                   <div key={n.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, background: "#fff" }}>
+                    <div
+                      style={{
+                        marginBottom: 8,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "#111827",
+                        display: "flex",
+                        flexWrap: "wrap",
+                        alignItems: "baseline",
+                        gap: "4px 10px",
+                      }}
+                    >
+                      <span style={{ color: "#4b5563", fontWeight: 600 }}>תאריך (ב-CRM):</span>
+                      <span dir="ltr">{formatIsraelDateTime(n.createdAt)}</span>
+                      <span style={{ color: "#6b7280", fontWeight: 500 }}>
+                        · {n.createdBy ?? "משתמש CRM"}
+                      </span>
+                    </div>
                     <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{n.text}</div>
                     {(n.attachments ?? []).length > 0 ? (
                       <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -2656,9 +2674,6 @@ export default function PipelineClient() {
                         ))}
                       </div>
                     ) : null}
-                    <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
-                      נוצר על ידי: {n.createdBy ?? "CRM User"} · {formatIsraelDateTime(n.createdAt)}
-                    </div>
                   </div>
                 ))}
                 <input

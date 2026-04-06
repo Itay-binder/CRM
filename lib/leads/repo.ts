@@ -325,8 +325,8 @@ export async function appendLeadNote(
   const snap = await ref.get();
   if (!snap.exists) throw new Error("Contact not found");
 
-  const text = input.text.trim();
-  if (!text) throw new Error("Note text is required");
+  const rawText = typeof input.text === "string" ? input.text : "";
+  if (!rawText.trim()) throw new Error("Note text is required");
 
   const data = (snap.data() ?? {}) as Record<string, unknown>;
   const prev = Array.isArray(data.notes)
@@ -342,7 +342,7 @@ export async function appendLeadNote(
 
   const note = {
     id: input.id?.trim() || randomUUID(),
-    text,
+    text: rawText,
     createdAt: input.createdAt?.trim() || new Date().toISOString(),
     ...(input.createdBy?.trim() ? { createdBy: input.createdBy.trim() } : {}),
   };

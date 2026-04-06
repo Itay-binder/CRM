@@ -23,7 +23,9 @@
  *   --offset 100                          דילוג על רשומות ראשונות
  *   --delay-ms 0                          השהיה אחרי כל שורה (מילישניות; 0 מהיר). אם 429/חנק — נסו 25–50
  *   --concurrency 4                       כמה שורות במקביל (ברירת מחדל 4). 1 = רצף כמו קודם
- *   --no-split-notes                     פתק אחד לכל שורה (ללא פיצול לפי "ליד השאיר פרטים מחדש:")
+ *   --no-split-notes / --raw-notes        פתק אחד = כל תוכן עמודת Notes כפי שהוא ב-CSV (מומלץ להתאמה ל-Powercouple).
+ *                                         חותמת זמן בכותרת הפתק: רק אם יש "תאריך:" בגוף — Asia/Jerusalem כמו ב-CRM;
+ *                                         בלי שימוש ב-"Created on" של ה-CSV; אם אין תאריך בגוף — זמן העלאה (ברירת שרת).
  *
  * Vercel: CRM_HISTORICAL_IMPORT_TENANT_DATABASE_IDS=powercouple — בלי זה שרת מתעלם מ-createdAt/updatedAt בקליטה.
  *
@@ -34,7 +36,8 @@
  *   { "contact": { "תזלקוח": "contact_tz" }, "opportunity": { "מוצר לרכישה": "opportunity_product" } }
  *
  * תאריכים: "Created on" / "Updated on" נשלחים לשרת רק אם ב-Vercel הוגדר CRM_HISTORICAL_IMPORT_TENANT_DATABASE_IDS (למשל powercouple).
- * פתקים: Notes מפוצל לפי "ליד השאיר פרטים מחדש:"; בכל קטע — תאריך משורת "תאריך: dd/mm/yyyy" (האחרון בקטע) או Created on.
+ * פתקים: Notes מפוצל לפי "ליד השאיר פרטים מחדש:"; בכל קטע — createdAt רק אם יש "תאריך: …" בגוף (שעון Asia/Jerusalem).
+ *         בלי גיבוי ל-"Created on" של שורת ה-CSV (לא ממציאים חותמת זמן).
  *
  * הגבלה ידועה: ב-CRM קיימת הזדמנות אחת לכל זיווג (איש קשר + פייפליין). אם ב-CSV יש שתי
  * הזדמנויות לאותו איש קשר באותו pipeline — השורה השנייה תתמזג לתוך אותה הזדמנות.
@@ -43,6 +46,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { TZDate } from "@date-fns/tz";
+
+/** כמו formatIsraelDateTime ב-CRM — תאריך בשורת «תאריך:» בייצוא Powercouple הוא זמן ארץ-ישראל. */
+const NOTES_LINE_TIMEZONE = "Asia/Jerusalem";
 
 const EXTERNAL_PROVIDER = "powercouple-csv";
 
@@ -149,14 +156,17 @@ function parseArgs() {
     } else if (a === "--concurrency" && next) {
       out.concurrency = Math.max(1, Number(next) || 1);
       i++;
-    } else if (a === "--no-split-notes") {
+    } else if (a === "--no-split-notes" || a === "--raw-notes") {
       out.noSplitNotes = true;
     }
   }
   return out;
 }
 
-/** אחרון תאריך: בתוך "תאריך: dd/mm/yyyy [HH:mm]" (ייצוא Powercouple) */
+/**
+ * אחרון תאריך: בתוך "תאריך: dd/mm/yyyy [HH:mm]" (ייצוא Powercouple).
+ * day/month/year; שעה (אם חסרה — 12:00) בזמן ישראל — תואם ל-formatIsraelDateTime בלקוח.
+ */
 function lastHebrewDateLineToIso(segment) {
   const re = /תאריך:\s*(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/gi;
   let m;
@@ -168,36 +178,30 @@ function lastHebrewDateLineToIso(segment) {
   const year = Number.parseInt(last[3], 10);
   const hh = last[4] != null ? Number.parseInt(last[4], 10) : 12;
   const mm = last[5] != null ? Number.parseInt(last[5], 10) : 0;
-  const d = new Date(year, month, day, hh, mm, 0, 0);
+  const d = new TZDate(year, month, day, hh, mm, 0, 0, NOTES_LINE_TIMEZONE);
   if (Number.isNaN(d.getTime())) return null;
   return d.toISOString();
 }
 
 /**
- * מפצל את בלוב ה-Notes לפי "ליד השאיר פרטים מחדש:" ולכל קטע משייך תאריך משורת תאריך (או fallback מהשורה).
+ * מפצל את בלוב ה-Notes לפי "ליד השאיר פרטים מחדש:".
+ * טקסט: כמו ב-CSV (רק נרמול CRLF→LF). חותמת createdAt רק משורת "תאריך:" בגוף אותו קטע.
  * @param {string} blob
- * @param {string} [fallbackIso] מתוך "Created on" בשורת CSV
- * @param {boolean} noSplit
+ * @param {boolean} noSplit פתק בודד = כל העמודה בלי פיצול
  */
-function noteEntriesFromPowercoupleBlob(blob, fallbackIso, noSplit) {
-  const raw = String(blob ?? "")
-    .replace(/\r\n/g, "\n")
-    .trim();
-  if (!raw) return [];
-  const fallback =
-    fallbackIso && !Number.isNaN(Date.parse(fallbackIso)) ? fallbackIso : undefined;
+function noteEntriesFromPowercoupleBlob(blob, noSplit) {
+  const normalized = String(blob ?? "").replace(/\r\n/g, "\n");
+  if (!normalized.trim()) return [];
   if (noSplit) {
-    return [{ text: raw, createdAt: fallback }];
+    const fromBody = lastHebrewDateLineToIso(normalized);
+    return [{ text: normalized, ...(fromBody ? { createdAt: fromBody } : {}) }];
   }
-  const parts = raw.split(/\nליד השאיר פרטים מחדש:\s*\n/gi);
+  const parts = normalized.split(/\nליד השאיר פרטים מחדש:\s*\n/gi);
   const segments = parts.map((p) => p.trim()).filter(Boolean);
-  const toProcess = segments.length ? segments : [raw];
+  const toProcess = segments.length ? segments : [normalized.trim()];
   return toProcess.map((seg) => {
     const fromLine = lastHebrewDateLineToIso(seg);
-    return {
-      text: seg,
-      createdAt: fromLine ?? fallback,
-    };
+    return { text: seg, ...(fromLine ? { createdAt: fromLine } : {}) };
   });
 }
 
@@ -383,6 +387,11 @@ async function main() {
   } else {
     console.warn('לא נמצאה כותרת "Notes" (בלי קשר לרישיות). מנסים שדות שמורים בלבד.');
   }
+  if (args.noSplitNotes) {
+    console.log(
+      "מצב פתקים: טקסט מלא מעמודת Notes כמו ב-CSV (--raw-notes). חותמת זמן מתוך שורת «תאריך:» בגוף אם קיימת."
+    );
+  }
 
   let done = 0;
   let errors = 0;
@@ -514,7 +523,7 @@ async function main() {
 
       const rawNotes = getRowNotesText(row, csvNotesKey);
       if (rawNotes) {
-        let entries = noteEntriesFromPowercoupleBlob(rawNotes, createdOn, args.noSplitNotes)
+        let entries = noteEntriesFromPowercoupleBlob(rawNotes, args.noSplitNotes)
           .map((e, i) => ({ ...e, _i: i }))
           .filter((e) => e.text.trim());
         entries.sort((a, b) => {
@@ -524,6 +533,9 @@ async function main() {
           return a._i - b._i;
         });
         for (const e of entries) {
+          const noteId = args.noSplitNotes
+            ? `powercouple-import:${oppExt}:raw`
+            : `powercouple-import:${oppExt}:n${e._i}`;
           const nr = await fetch(
             `${args.baseUrl}/api/opportunities/${encodeURIComponent(opportunityId)}/notes`,
             {
@@ -534,7 +546,7 @@ async function main() {
                 "x-api-key": args.apiKey,
               },
               body: JSON.stringify({
-                id: `powercouple-import:${oppExt}:n${e._i}`,
+                id: noteId,
                 text: e.text,
                 createdBy: "ייבוא Powercouple",
                 ...(e.createdAt ? { createdAt: e.createdAt } : {}),

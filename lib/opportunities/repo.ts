@@ -763,8 +763,8 @@ export async function appendOpportunityNote(
   const snap = await ref.get();
   if (!snap.exists) throw new Error("Opportunity not found");
 
-  const text = input.text.trim();
-  if (!text) throw new Error("Note text is required");
+  const rawText = typeof input.text === "string" ? input.text : "";
+  if (!rawText.trim()) throw new Error("Note text is required");
 
   const existing = (snap.data() ?? {}) as Record<string, unknown>;
   const prev = Array.isArray(existing.notes)
@@ -780,7 +780,7 @@ export async function appendOpportunityNote(
 
   const note = {
     id: input.id?.trim() || randomUUID(),
-    text,
+    text: rawText,
     createdAt: input.createdAt?.trim() || new Date().toISOString(),
     ...(input.createdBy?.trim() ? { createdBy: input.createdBy.trim() } : {}),
   };

@@ -9,7 +9,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "import:powercouple": "node scripts/import-powercouple-opportunities.mjs"
   },
   "dependencies": {
     "@date-fns/tz": "^1.4.1",

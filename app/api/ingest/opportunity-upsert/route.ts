@@ -7,6 +7,10 @@ import {
   updateOpportunity,
 } from "@/lib/opportunities/repo";
 import { isValidIngestApiKeyAsync } from "@/lib/ingest/apiKey";
+import {
+  isHistoricalIngestAllowedForDatabaseId,
+  tenantDatabaseIdFromIngestRequest,
+} from "@/lib/tenant/historicalIngest";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -54,6 +58,15 @@ function pickStringArray(
         .map((x) => x.trim())
         .filter(Boolean);
     }
+  }
+  return undefined;
+}
+
+function pickOptionalBool(obj: Record<string, unknown>, keys: string[]): boolean | undefined {
+  for (const key of keys) {
+    const v = obj[key];
+    if (v === true) return true;
+    if (v === false) return false;
   }
   return undefined;
 }
@@ -127,6 +140,12 @@ export async function POST(req: NextRequest) {
       "assignedRep",
       "opportunity_assigned_rep",
       "opportunity_assignedRep",
+      "createdAt",
+      "opportunity_created_at",
+      "updatedAt",
+      "opportunity_updated_at",
+      "skipInitialAutoNote",
+      "opportunity_skip_initial_auto_note",
       "customValues",
     ]);
     const directFieldIdValues = Object.fromEntries(
@@ -156,6 +175,20 @@ export async function POST(req: NextRequest) {
       "opportunity_assigned_rep",
       "opportunity_assignedRep",
     ]);
+    const allowHistorical = isHistoricalIngestAllowedForDatabaseId(
+      tenantDatabaseIdFromIngestRequest(req)
+    );
+    const rawCreatedAt = pickString(o, ["createdAt", "opportunity_created_at"]);
+    const rawUpdatedAt = pickString(o, ["updatedAt", "opportunity_updated_at"]);
+    const oppCreatedAt = allowHistorical ? rawCreatedAt : undefined;
+    const oppUpdatedAt = allowHistorical ? rawUpdatedAt : undefined;
+    const skipAutoNoteFlag = pickOptionalBool(o, [
+      "skipInitialAutoNote",
+      "opportunity_skip_initial_auto_note",
+    ]);
+    const skipInitialAutoNote = allowHistorical
+      ? skipAutoNoteFlag === true || (oppCreatedAt != null && skipAutoNoteFlag !== false)
+      : skipAutoNoteFlag === true;
 
     let oppId: string | null = null;
     if (externalId) {
@@ -190,6 +223,8 @@ export async function POST(req: NextRequest) {
         ...(labelIds?.length ? { labelIds } : tags !== undefined ? { tags } : {}),
         assignedRep: assignedRep ?? undefined,
         customValues,
+        ...(oppCreatedAt ? { createdAt: oppCreatedAt } : {}),
+        ...(oppUpdatedAt ? { updatedAt: oppUpdatedAt } : {}),
       });
       if (externalId) {
         await upsertExternalRef({
@@ -226,6 +261,9 @@ export async function POST(req: NextRequest) {
       ...(labelIds?.length ? { labelIds } : { tags }),
       assignedRep,
       customValues: customValuesCreate,
+      ...(oppCreatedAt ? { createdAt: oppCreatedAt } : {}),
+      ...(oppUpdatedAt ? { updatedAt: oppUpdatedAt } : {}),
+      ...(skipInitialAutoNote ? { skipInitialAutoNote: true } : {}),
     });
 
     if (externalId) {

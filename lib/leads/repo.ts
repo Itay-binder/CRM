@@ -68,6 +68,8 @@ export type LeadUpsertInput = {
    * Accepts ISO date/time.
    */
   createdAt?: string;
+  /** ISO date/time; on update overrides server clock when backfilling imports */
+  updatedAt?: string;
 };
 
 function normalizeUniqueKey(raw: string): string {
@@ -199,6 +201,7 @@ export async function upsertLead(input: LeadUpsertInput): Promise<LeadRecord> {
   const docRef = db.collection("leads").doc(picked.docId);
 
   const createdAtDate = maybeParseDate(input.createdAt);
+  const updatedAtDate = maybeParseDate(input.updatedAt);
 
   const snap = await docRef.get();
   const nowUpdate = FieldValue.serverTimestamp();
@@ -209,7 +212,7 @@ export async function upsertLead(input: LeadUpsertInput): Promise<LeadRecord> {
       stage,
       contactCode,
       createdAt: createdAtDate ? createdAtDate : nowUpdate,
-      updatedAt: nowUpdate,
+      updatedAt: updatedAtDate ?? (createdAtDate ? createdAtDate : nowUpdate),
     };
     payload.status = input.status ?? "פתוח";
     if (picked.email) payload.email = picked.email;
@@ -237,8 +240,9 @@ export async function upsertLead(input: LeadUpsertInput): Promise<LeadRecord> {
     const prev = (snap.data() ?? {}) as Record<string, unknown>;
     const payload: Record<string, unknown> = {
       stage,
-      updatedAt: nowUpdate,
+      updatedAt: updatedAtDate ?? nowUpdate,
     };
+    if (createdAtDate) payload.createdAt = createdAtDate;
     if (typeof prev.contactCode !== "string" || !String(prev.contactCode).trim()) {
       payload.contactCode = await allocateRunningCode("contacts", "C-");
     }

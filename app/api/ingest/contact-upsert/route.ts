@@ -3,6 +3,10 @@ import { getExternalRef, upsertExternalRef } from "@/lib/externalRefs/repo";
 import { getLeadById, upsertLead } from "@/lib/leads/repo";
 import { validateCustomValues } from "@/lib/customFields/repo";
 import { isValidIngestApiKeyAsync } from "@/lib/ingest/apiKey";
+import {
+  isHistoricalIngestAllowedForDatabaseId,
+  tenantDatabaseIdFromIngestRequest,
+} from "@/lib/tenant/historicalIngest";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -69,6 +73,8 @@ export async function POST(req: NextRequest) {
       "contact_assignedRep",
     ]);
     const pipelineId = pickString(c, ["pipelineId", "contact_pipeline_id"]);
+    const createdAt = pickString(c, ["createdAt", "contact_created_at"]);
+    const updatedAt = pickString(c, ["updatedAt", "contact_updated_at"]);
 
     const systemKeys = new Set([
       "uniqueKey",
@@ -91,6 +97,10 @@ export async function POST(req: NextRequest) {
       "contact_assignedRep",
       "pipelineId",
       "contact_pipeline_id",
+      "createdAt",
+      "contact_created_at",
+      "updatedAt",
+      "contact_updated_at",
       "customValues",
       "customFields",
     ]);
@@ -116,6 +126,9 @@ export async function POST(req: NextRequest) {
       pipelineId: effectivePipe || null,
       previousValues: prevCustom,
     });
+    const allowHistorical = isHistoricalIngestAllowedForDatabaseId(
+      tenantDatabaseIdFromIngestRequest(req)
+    );
     const lead = await upsertLead({
       id: existingEntityId,
       uniqueKey,
@@ -131,6 +144,8 @@ export async function POST(req: NextRequest) {
       assignedRep,
       pipelineId,
       customFields: customValues,
+      ...(allowHistorical && createdAt ? { createdAt } : {}),
+      ...(allowHistorical && updatedAt ? { updatedAt } : {}),
     });
 
     if (externalId) {

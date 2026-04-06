@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { FieldValue, type Firestore } from "firebase-admin/firestore";
+import { FieldValue, Timestamp, type Firestore } from "firebase-admin/firestore";
 import { getAdminDb, getRequestTenantDatabaseId } from "@/lib/firebase/admin";
 import { invalidateTenantCachePrefix, withTenantTtlCache } from "@/lib/server/tenantMemoryCache";
 import { allocateRunningCode } from "@/lib/counters/repo";
@@ -99,7 +99,20 @@ export type CreateOpportunityInput = {
   tags?: string[];
   customValues?: Record<string, unknown>;
   assignedRep?: string;
+  /** ISO — היסטוריית ייבוא: תאריך יצירה במסמך */
+  createdAt?: string;
+  /** ISO — אם ריק נגזר מ-createdAt או שעת שרת */
+  updatedAt?: string;
+  /** כאשר true — לא נוספת הפתק האוטומטי "ליד חדש" (למשל ייבוא עם פתקים מהמקור) */
+  skipInitialAutoNote?: boolean;
 };
+
+function parseIsoFirestoreTimestamp(iso: string | undefined): Timestamp | null {
+  if (!iso?.trim()) return null;
+  const d = new Date(iso.trim());
+  if (Number.isNaN(d.getTime())) return null;
+  return Timestamp.fromDate(d);
+}
 
 function readStringIdArray(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
@@ -485,6 +498,9 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
   const contactId = input.contactId.trim();
   if (!contactId) throw new Error("contactId is required");
 
+  const importCreated = parseIsoFirestoreTimestamp(input.createdAt);
+  const importUpdated = parseIsoFirestoreTimestamp(input.updatedAt);
+
   let pipelineId = input.pipelineId?.trim() ?? "";
   if (!pipelineId) {
     if (await shouldSeedDefaultPipeline()) {
@@ -547,8 +563,9 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
         assignedRep:
           input.assignedRep?.trim() ||
           (typeof cd.assignedRep === "string" ? cd.assignedRep : ""),
-        lastLeadAt: now,
-        updatedAt: now,
+        ...(importCreated ? { createdAt: importCreated } : {}),
+        lastLeadAt: importCreated ?? importUpdated ?? now,
+        updatedAt: importUpdated ?? importCreated ?? now,
       },
       { merge: true }
     );
@@ -612,24 +629,30 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
   const utmCa = input.utmCampaign?.trim() || "";
   const utmMe = input.utmMedium?.trim() || "";
   const utmCo = input.utmContent?.trim() || "";
-  const noteInstant = new Date();
+  const noteInstant = importCreated ? importCreated.toDate() : new Date();
   const createdAtLabel = formatIsraelDateTime(noteInstant);
-  const initialNote = {
-    id: randomUUID(),
-    text: buildNewOpportunityLeadNoteText({
-      opportunityName: oppName,
-      fullName: resolvedFullName,
-      phone: resolvedPhone,
-      email: resolvedEmail,
-      utmSource: utmS,
-      utmCampaign: utmCa,
-      utmMedium: utmMe,
-      utmContent: utmCo,
-      createdAtLabel,
-    }),
-    createdAt: noteInstant.toISOString(),
-    createdBy: "המערכת",
-  };
+  const initialNote = input.skipInitialAutoNote
+    ? null
+    : {
+        id: randomUUID(),
+        text: buildNewOpportunityLeadNoteText({
+          opportunityName: oppName,
+          fullName: resolvedFullName,
+          phone: resolvedPhone,
+          email: resolvedEmail,
+          utmSource: utmS,
+          utmCampaign: utmCa,
+          utmMedium: utmMe,
+          utmContent: utmCo,
+          createdAtLabel,
+        }),
+        createdAt: noteInstant.toISOString(),
+        createdBy: "המערכת",
+      };
+
+  const createdAtField = importCreated ?? now;
+  const updatedAtField = importUpdated ?? importCreated ?? now;
+  const lastLeadField = importCreated ?? now;
 
   const ref = await db.collection("opportunities").add({
     opportunityCode,
@@ -650,15 +673,15 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
     utmContent: utmCo,
     landingpage: input.landingpage?.trim() || "",
     labelIds: resolvedLabelIds,
-    lastLeadAt: now,
+    lastLeadAt: lastLeadField,
     customValues: input.customValues ?? {},
     assignedRep:
       input.assignedRep?.trim() ||
       (typeof cd.assignedRep === "string" ? cd.assignedRep : ""),
-    notes: [initialNote],
+    notes: initialNote ? [initialNote] : [],
     tasks: [],
-    createdAt: now,
-    updatedAt: now,
+    createdAt: createdAtField,
+    updatedAt: updatedAtField,
   });
 
   await reconcileContactNotesAcrossEntities(contactId);
@@ -875,6 +898,10 @@ export async function updateOpportunity(
     stage?: string;
     status?: "פתוח" | "זכיה" | "הפסד";
     value?: number | null;
+    /** ISO — ייבוא היסטורי */
+    createdAt?: string;
+    /** ISO — ייבוא היסטורי */
+    updatedAt?: string;
     /** עדכון «ליד אחרון» (למשל אחרי שליחת התאמת הזמנה) */
     lastLeadAt?: Date | null;
     email?: string;
@@ -912,7 +939,12 @@ export async function updateOpportunity(
   const snap = await ref.get();
   if (!snap.exists) throw new Error("Opportunity not found");
   const existing = (snap.data() ?? {}) as Record<string, unknown>;
-  const payload: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
+  const parsedUpd = parseIsoFirestoreTimestamp(input.updatedAt);
+  const parsedCre = parseIsoFirestoreTimestamp(input.createdAt);
+  const payload: Record<string, unknown> = {
+    updatedAt: parsedUpd ?? FieldValue.serverTimestamp(),
+  };
+  if (parsedCre) payload.createdAt = parsedCre;
   if (input.name !== undefined) payload.name = input.name.trim();
   if (input.contactId !== undefined) {
     const nextContactId = input.contactId.trim();

@@ -255,9 +255,12 @@ function MoverMatchTable({
                 <td style={{ ...tdStyle, width: 36 }}>
                   <input
                     type="checkbox"
-                    checked={!blocked && isChecked(id)}
-                    disabled={!canAct || blocked}
-                    onChange={(e) => onToggleCheck(id, e.target.checked)}
+                    checked={isChecked(id)}
+                    disabled={!canAct}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      onToggleCheck(id, e.target.checked);
+                    }}
                     style={{ marginTop: 4 }}
                   />
                 </td>

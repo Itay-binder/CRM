@@ -95,12 +95,22 @@ async function rematchMovingOrderDrivers(input: {
     const issues = driverMatchIssues[id] ?? [];
     if (issues.some((x) => x.includes("זמינות"))) excludedDriverIds.push(id);
   }
+  const ex = new Set(excludedDriverIds);
+  /** ברירת מחדל בלשונית התאמה: רק התאמה ירוקה (ok) נבחרת; כתום/אדום לא */
+  const markNonOkExcluded = (id: string) => {
+    if (!knownIds.has(id)) return;
+    const flag = driverMatchFlags[id] ?? "ok";
+    if (flag === "orange" || flag === "red") ex.add(id);
+  };
+  for (const id of matchedDriverIds) markNonOkExcluded(id);
+  for (const id of optionalDriverIds) markNonOkExcluded(id);
+  for (const id of manualSet) markNonOkExcluded(id);
   return {
     matchedDriverIds,
     optionalDriverIds,
     driverMatchFlags,
     driverMatchIssues,
-    excludedDriverIds: Array.from(new Set(excludedDriverIds)),
+    excludedDriverIds: Array.from(ex),
   };
 }
 

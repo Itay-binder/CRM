@@ -116,22 +116,31 @@ export default function OrdersClient() {
     setTab(next);
   }, []);
 
-  async function setExcluded(order: MovingOrderRecord, leadId: string, checked: boolean) {
-    const ex = new Set(order.excludedDriverIds);
-    if (checked) ex.delete(leadId);
-    else ex.add(leadId);
-    const excludedDriverIds = [...ex];
-    setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, excludedDriverIds } : o)));
+  async function setExcluded(orderId: string, leadId: string, checked: boolean) {
+    let payload: string[] | undefined;
+    setOrders((prev) =>
+      prev.map((o) => {
+        if (o.id !== orderId) return o;
+        const ex = new Set(o.excludedDriverIds);
+        const currentlySelected = !ex.has(leadId);
+        if (checked === currentlySelected) return o;
+        if (checked) ex.delete(leadId);
+        else ex.add(leadId);
+        payload = [...ex];
+        return { ...o, excludedDriverIds: payload };
+      })
+    );
+    if (payload === undefined) return;
     try {
-      const res = await fetch(`/api/moving-orders/${encodeURIComponent(order.id)}`, {
+      const res = await fetch(`/api/moving-orders/${encodeURIComponent(orderId)}`, {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ excludedDriverIds }),
+        body: JSON.stringify({ excludedDriverIds: payload }),
       });
       const j = (await res.json()) as { ok?: boolean; order?: MovingOrderRecord };
       if (res.ok && j.ok && j.order) {
-        setOrders((prev) => prev.map((o) => (o.id === order.id ? j.order! : o)));
+        setOrders((prev) => prev.map((o) => (o.id === orderId ? j.order! : o)));
       }
     } catch {
       void mutateOrders();
@@ -362,7 +371,7 @@ export default function OrdersClient() {
                 dispatching={dispatching === order.id}
                 deleting={deletingOrderId === order.id}
                 isChecked={(id) => isChecked(order, id)}
-                onToggleCheck={(id, c) => void setExcluded(order, id, c)}
+                onToggleCheck={(id, c) => void setExcluded(order.id, id, c)}
                 onSendMatch={() => void sendMatch(order)}
                 onCancelMatch={(reason) => void cancelMatch(order, reason)}
                 onDelete={() => void deleteOrder(order)}

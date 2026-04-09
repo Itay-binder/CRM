@@ -1,5 +1,5 @@
-import Link from "next/link";
 import UserMenu from "@/app/components/UserMenu";
+import CrmNavLink from "@/app/components/CrmNavLink";
 import { isMovingOrdersTenant } from "@/lib/tenant/movingOrders";
 
 export type CrmTenantOption = { id: string; label: string };
@@ -11,24 +11,6 @@ type Props = {
   tenantForbidden?: boolean;
   children: React.ReactNode;
 };
-
-function NavItem({ href, label }: { href: string; label: string }) {
-  return (
-    <Link
-      href={href}
-      style={{
-        display: "block",
-        padding: "10px 12px",
-        borderRadius: 12,
-        color: "#111827",
-        textDecoration: "none",
-        fontWeight: 600,
-      }}
-    >
-      {label}
-    </Link>
-  );
-}
 
 export default function CrmShell({
   email,
@@ -74,16 +56,31 @@ export default function CrmShell({
         </div>
 
         <nav style={{ display: "grid", gap: 8, marginTop: 8 }}>
-          <NavItem href="/dashboard" label={'דשבורד מנכ"ל'} />
-          <NavItem href="/contacts" label="אנשי קשר" />
-          <NavItem href="/pipeline" label="ניהול הזדמנויות" />
-          <NavItem href="/tasks" label="משימות" />
-          <NavItem href="/calendar" label="לוח שנה" />
+          <CrmNavLink href="/dashboard" label={'דשבורד מנכ"ל'} />
+          <CrmNavLink href="/contacts" label="אנשי קשר" />
+          <CrmNavLink href="/pipeline" label="ניהול הזדמנויות" />
+          <CrmNavLink href="/tasks" label="משימות" />
+          <CrmNavLink href="/calendar" label="לוח שנה" />
           {isMovingOrdersTenant(currentTenantId) ? (
-            <NavItem href="/orders" label="ניהול הזמנות" />
+            <CrmNavLink href="/orders" label="ניהול הזמנות" />
           ) : null}
-          <NavItem href="/billing" label="סליקה" />
-          <NavItem href="/settings" label="הגדרות" />
+          <CrmNavLink href="/billing" label="סליקה" />
+          <div
+            style={{
+              marginTop: 6,
+              paddingTop: 10,
+              borderTop: "1px solid #e5e7eb",
+              fontSize: 11,
+              fontWeight: 700,
+              color: "#9ca3af",
+              letterSpacing: "0.02em",
+            }}
+          >
+            סוכן SEO
+          </div>
+          <CrmNavLink href="/seo" label="יצירת מאמר SEO" />
+          <CrmNavLink href="/seo/dashboard" label="דשבורד SEO" />
+          <CrmNavLink href="/settings" label="הגדרות" />
         </nav>
       </aside>
 

@@ -9,11 +9,13 @@ const AUTH_REDIRECT = "CRM_SEO_AUTH_REDIRECT";
 type ArticleFull = {
   id: string;
   title: string;
+  slug?: string;
   idea: string;
   keywords: string[];
   html: string;
   createdAt: string | null;
   publishedAt: string | null;
+  publicUrl?: string | null;
 };
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -158,6 +160,24 @@ export default function SeoArticleViewClient({ id }: { id: string }) {
             >
               חוזר
             </Link>
+            {isPublished && article.publicUrl ? (
+              <Link
+                href={article.publicUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  padding: "10px 16px",
+                  borderRadius: 12,
+                  border: "1px solid #bfdbfe",
+                  textDecoration: "none",
+                  color: "#1d4ed8",
+                  fontWeight: 700,
+                  background: "#eff6ff",
+                }}
+              >
+                פתח פוסט ציבורי
+              </Link>
+            ) : null}
             <button
               type="button"
               onClick={() => void togglePublished()}
@@ -172,7 +192,11 @@ export default function SeoArticleViewClient({ id }: { id: string }) {
                 color: isPublished ? "#92400e" : "#fff",
               }}
             >
-              {publishBusy ? "מעדכן…" : isPublished ? "בטל סימון פורסם" : "סמן כפורסם"}
+              {publishBusy
+                ? "מעדכן…"
+                : isPublished
+                  ? "הסר מהאתר (בטל פרסום)"
+                  : "פרסם באתר"}
             </button>
           </div>
         </div>

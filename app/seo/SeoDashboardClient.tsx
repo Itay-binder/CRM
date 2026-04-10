@@ -13,7 +13,13 @@ type SummaryOk = {
   competitorsNote: string;
   articlesThisWeek: number;
   articlesThisMonth: number;
-  publishedArticles: Array<{ id: string; title: string; publishedAt: string | null }>;
+  publishedArticles: Array<{
+    id: string;
+    title: string;
+    slug: string;
+    publishedAt: string | null;
+    publicUrl: string | null;
+  }>;
   keywordLift: Array<{ keyword: string; count: number }>;
   note: string;
 };
@@ -266,6 +272,19 @@ export default function SeoDashboardClient() {
                     >
                       {a.title}
                     </Link>
+                    {a.publicUrl ? (
+                      <>
+                        {" · "}
+                        <Link
+                          href={a.publicUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ fontSize: 13, color: "#059669", fontWeight: 600 }}
+                        >
+                          פוסט ציבורי
+                        </Link>
+                      </>
+                    ) : null}
                     <span style={{ fontSize: 13, color: "#6b7280", marginRight: 8 }}>
                       {a.publishedAt ? formatIsraelDateTime(a.publishedAt) : ""}
                     </span>
@@ -274,7 +293,7 @@ export default function SeoDashboardClient() {
               </ul>
             ) : (
               <p style={{ marginTop: 12, color: "#6b7280" }}>
-                אין מאמרים מסומנים כפורסמו. בדף המאמר סמנו &quot;פורסם&quot;.
+                אין מאמרים פעילים באתר. שמירה מ־SEO מפרסמת אוטומטית; אפשר להסיר פרסום מדף המאמר.
               </p>
             )}
           </>

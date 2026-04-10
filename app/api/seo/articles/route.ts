@@ -9,13 +9,16 @@ export const revalidate = 0;
 type ApiErr = { ok: false; error: string };
 
 function serializeArticle(a: Awaited<ReturnType<typeof listSeoArticles>>[number]) {
+  const slug = a.slug.trim();
   return {
     id: a.id,
     title: a.title,
+    slug,
     idea: a.idea,
     keywords: a.keywords,
     createdAt: a.createdAt ? a.createdAt.toISOString() : null,
     publishedAt: a.publishedAt ? a.publishedAt.toISOString() : null,
+    publicUrl: slug ? `/blog/${encodeURIComponent(slug)}` : null,
   };
 }
 
@@ -50,6 +53,8 @@ export async function POST(req: NextRequest) {
       idea?: string;
       keywords?: string[];
       html?: string;
+      /** ברירת מחדל true — המאמר עולה מיד כפוסט ציבורי עם סלאג */
+      autoPublish?: boolean;
     };
     const idea = String(body.idea ?? "").trim();
     const keywords = Array.isArray(body.keywords) ? body.keywords.map(String) : [];
@@ -57,11 +62,13 @@ export async function POST(req: NextRequest) {
     const html =
       body.html?.trim() ||
       (await buildArticleHtml({ title, idea: idea || title, keywords }));
+    const autoPublish = body.autoPublish !== false;
     const article = await createSeoArticle({
       title,
       idea: idea || title,
       keywords,
       html,
+      autoPublish,
     });
     return NextResponse.json({
       ok: true,

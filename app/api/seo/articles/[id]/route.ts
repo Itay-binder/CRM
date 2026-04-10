@@ -8,14 +8,17 @@ export const revalidate = 0;
 type ApiErr = { ok: false; error: string };
 
 function fullArticle(a: NonNullable<Awaited<ReturnType<typeof getSeoArticle>>>) {
+  const slug = a.slug.trim();
   return {
     id: a.id,
     title: a.title,
+    slug,
     idea: a.idea,
     keywords: a.keywords,
     html: a.html,
     createdAt: a.createdAt ? a.createdAt.toISOString() : null,
     publishedAt: a.publishedAt ? a.publishedAt.toISOString() : null,
+    publicUrl: slug ? `/blog/${encodeURIComponent(slug)}` : null,
   };
 }
 

@@ -10,10 +10,12 @@ const AUTH_REDIRECT = "CRM_SEO_AUTH_REDIRECT";
 type ArticleListItem = {
   id: string;
   title: string;
+  slug?: string;
   idea: string;
   keywords: string[];
   createdAt: string | null;
   publishedAt: string | null;
+  publicUrl?: string | null;
 };
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -147,7 +149,8 @@ export default function SeoArticlesClient() {
       <h1 style={{ margin: "0 0 8px", fontSize: 26, fontWeight: 800 }}>יצירת מאמר SEO</h1>
       <p style={{ margin: "0 0 22px", color: "#6b7280", lineHeight: 1.5 }}>
         רעיון ומילות מפתח לפי הקשר העסקי (ניתן להגדיר ב־CRM_SEO_BUSINESS_CONTEXT). התוכן כרגע מוקאפ —
-        אחרי שתגדירו קו עיצובי ומידע, נחבר את הסוכן האמיתי.
+        אחרי שתגדירו קו עיצובי ומידע, נחבר את הסוכן האמיתי. שמירת מאמר מפרסמת אותו מיד כפוסט ציבורי בכתובת{" "}
+        <code style={{ fontSize: 13 }}>/blog/…</code> עם סלאג שנבחר אוטומטית (ניתן לבטל פרסום מדף המאמר).
       </p>
 
       {err ? (
@@ -339,7 +342,15 @@ export default function SeoArticlesClient() {
                 <div style={{ fontWeight: 700 }}>{a.title || "ללא כותרת"}</div>
                 <div style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
                   {formatIsraelDateTime(a.createdAt)}
-                  {a.publishedAt ? " · פורסם" : ""}
+                  {a.publishedAt ? " · פורסם" : " · טיוטה"}
+                  {a.slug ? (
+                    <>
+                      {" · "}
+                      <span dir="ltr" style={{ fontSize: 12 }}>
+                        /blog/{a.slug}
+                      </span>
+                    </>
+                  ) : null}
                 </div>
                 {a.keywords?.length ? (
                   <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>

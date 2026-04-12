@@ -1,6 +1,6 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { FieldValue } from "firebase-admin/firestore";
-import { getFirestoreForDatabaseId } from "../firebase/admin";
+import { fallbackTenantDatabaseId, getFirestoreForDatabaseId } from "../firebase/admin";
 import { normalizePhone } from "./repo";
 
 function normalizeUniqueKey(raw: string): string {
@@ -178,7 +178,7 @@ export async function resolveMigrateContactParams(input: {
   fromContactId?: string;
   matchName?: string;
 }): Promise<{ db: Firestore; fromId: string; toId: string }> {
-  const dbId = (input.databaseId ?? "").trim() || "(default)";
+  const dbId = (input.databaseId ?? "").trim() || fallbackTenantDatabaseId();
   const db = getFirestoreForDatabaseId(dbId);
 
   let fromId = (input.fromContactId ?? "").trim();

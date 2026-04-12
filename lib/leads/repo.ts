@@ -97,16 +97,18 @@ function pickUniqueKey(input: LeadUpsertInput): { docId: string; email?: string;
     return { docId, email: input.email, phone: normalizePhone(input.phone) };
   }
 
+  // Phone before email: stable id for automations / integrations that key on mobile.
+  if (input.phone && input.phone.trim()) {
+    const phone = normalizePhone(input.phone);
+    if (phone) {
+      const email = input.email?.trim() ? input.email.trim().toLowerCase() : undefined;
+      return { docId: normalizeUniqueKey(phone), phone, ...(email ? { email } : {}) };
+    }
+  }
+
   if (input.email && input.email.trim()) {
     const email = input.email.trim().toLowerCase();
     return { docId: normalizeUniqueKey(email), email };
-  }
-
-  if (input.phone && input.phone.trim()) {
-    // Store phones in normalized format to keep deduplication stable.
-    const phone = normalizePhone(input.phone);
-    if (!phone) return null;
-    return { docId: normalizeUniqueKey(phone), phone };
   }
 
   return null;

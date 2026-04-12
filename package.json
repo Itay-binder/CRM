@@ -10,7 +10,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "import:powercouple": "node scripts/import-powercouple-opportunities.mjs"
+    "import:powercouple": "node scripts/import-powercouple-opportunities.mjs",
+    "migrate:contact-phone": "tsx scripts/migrate-contact-to-phone.ts"
   },
   "dependencies": {
     "@date-fns/tz": "^1.4.1",
@@ -30,6 +31,7 @@
     "@types/react-dom": "^19.0.0",
     "eslint": "^9.16.0",
     "eslint-config-next": "^15.1.0",
+    "tsx": "^4.19.3",
     "typescript": "^5.7.0"
   }
 }

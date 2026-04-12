@@ -1,7 +1,7 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { FieldValue } from "firebase-admin/firestore";
-import { getFirestoreForDatabaseId } from "@/lib/firebase/admin";
-import { normalizePhone } from "@/lib/leads/repo";
+import { getFirestoreForDatabaseId } from "../firebase/admin";
+import { normalizePhone } from "./repo";
 
 function normalizeUniqueKey(raw: string): string {
   return raw.trim().toLowerCase();

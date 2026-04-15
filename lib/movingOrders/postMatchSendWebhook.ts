@@ -13,6 +13,19 @@ import type { MovingOrderRecord } from "@/lib/movingOrders/types";
 import { displayPhoneIsraeliLocal } from "@/lib/phoneIsraeliDisplay";
 import { postWebhookForEvent } from "@/lib/webhooks/dispatchServerWebhooks";
 
+export type MatchSendWebhookPayload = {
+  movingOrderId: string;
+  orderId: string;
+  order: {
+    payload: MovingOrderRecord["payload"];
+    customValues: Record<string, unknown>;
+  };
+  movers: MatchWebhookMover[];
+  customer_message_text: string;
+  "הודעת טקסט למזמין": string;
+  "שליחת הודעה למזמין": "כן" | "לא";
+} & Record<string, unknown>;
+
 function moversWithIsraeliPhoneDisplay(movers: MatchWebhookMover[]): MatchWebhookMover[] {
   return movers.map((m) => ({
     ...m,
@@ -38,7 +51,17 @@ export async function postMatchSendWebhookForDrivers(
   driverIds: string[],
   notifyCustomer: boolean
 ): Promise<boolean> {
-  if (driverIds.length === 0) return false;
+  const payload = await buildMatchSendWebhookPayloadForDrivers(order, driverIds, notifyCustomer);
+  if (!payload) return false;
+  return postWebhookForEvent(db, "moving_order_match_send", payload);
+}
+
+export async function buildMatchSendWebhookPayloadForDrivers(
+  order: MovingOrderRecord,
+  driverIds: string[],
+  notifyCustomer: boolean
+): Promise<MatchSendWebhookPayload | null> {
+  if (driverIds.length === 0) return null;
 
   const leadById = new Map<string, NonNullable<Awaited<ReturnType<typeof getLeadById>>>>();
   await Promise.all(
@@ -54,13 +77,13 @@ export async function postMatchSendWebhookForDrivers(
   );
 
   const moversRaw = await buildMatchWebhookMovers(driverIds, order.driverMatchFlags, leadById, oppByContact);
-  if (moversRaw.length === 0) return false;
+  if (moversRaw.length === 0) return null;
 
   const movers = moversWithIsraeliPhoneDisplay(moversRaw);
   const textForCustomer = customerFacingMoversMessageText(movers);
   const notifyCustomerWebhook = notifyCustomer ? "כן" : "לא";
 
-  return postWebhookForEvent(db, "moving_order_match_send", {
+  return {
     movingOrderId: order.id,
     orderId: order.orderId,
     order: {
@@ -72,5 +95,5 @@ export async function postMatchSendWebhookForDrivers(
     "הודעת טקסט למזמין": textForCustomer,
     "שליחת הודעה למזמין": notifyCustomerWebhook,
     ...flatMatchSendOpportunityFields(movers),
-  });
+  };
 }

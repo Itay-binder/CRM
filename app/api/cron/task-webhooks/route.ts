@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAdminDb } from "@/lib/firebase/admin";
+import { sweepMatchSendFollowupWebhooks } from "@/lib/movingOrders/matchSendFollowupWebhook";
 import { sweepTaskWebhooks } from "@/lib/tasks/webhookSweep";
 
 export const dynamic = "force-dynamic";
@@ -19,8 +21,12 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const result = await sweepTaskWebhooks();
-    return NextResponse.json({ ok: true, ...result });
+    const db = await getAdminDb();
+    const [taskResult, matchFollowupResult] = await Promise.all([
+      sweepTaskWebhooks(),
+      sweepMatchSendFollowupWebhooks(db),
+    ]);
+    return NextResponse.json({ ok: true, tasks: taskResult, movingOrderMatchFollowups: matchFollowupResult });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "Unknown error" },

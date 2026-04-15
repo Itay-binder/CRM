@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { getLeadById } from "@/lib/leads/repo";
 import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
+import { enqueueMatchSendFollowupWebhook } from "@/lib/movingOrders/matchSendFollowupWebhook";
 import { getMovingOrder, updateMovingOrder } from "@/lib/movingOrders/repo";
 import { MOVING_ORDER_STAGES } from "@/lib/movingOrders/pipelineConstants";
 import type { MovingOrderRecord } from "@/lib/movingOrders/types";
@@ -78,6 +79,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
 
   const dispatchedAt = new Date().toISOString();
+  await enqueueMatchSendFollowupWebhook({
+    db: g.db,
+    movingOrderId: id,
+    orderId: order.orderId,
+    driverIds,
+    notifyCustomer: false,
+    sentAt: dispatchedAt,
+  });
   const updated = await updateMovingOrder(
     id,
     { stage: MOVING_ORDER_STAGES[1], dispatchedAt },

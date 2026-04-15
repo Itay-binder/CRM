@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
+import { enqueueMatchSendFollowupWebhook } from "@/lib/movingOrders/matchSendFollowupWebhook";
 import { applyMatchSendSideEffects } from "@/lib/movingOrders/matchOrderActions";
 import { postMatchSendWebhookForDrivers } from "@/lib/movingOrders/postMatchSendWebhook";
 import { getMovingOrder, updateMovingOrder } from "@/lib/movingOrders/repo";
@@ -83,6 +84,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     orderCustomerName: on,
     orderId: order.orderId,
     transportNoteLines,
+  });
+
+  await enqueueMatchSendFollowupWebhook({
+    db: g.db,
+    movingOrderId: id,
+    orderId: order.orderId,
+    driverIds: [driverId],
+    notifyCustomer: false,
   });
 
   await updateMovingOrder(id, { appendSentMatchDriverIds: [driverId] }, g.db);

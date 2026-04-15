@@ -4,7 +4,7 @@ import { getAdminDb } from "@/lib/firebase/admin";
 import { getMovingOrder } from "@/lib/movingOrders/repo";
 import { buildMatchSendWebhookPayloadForDrivers } from "@/lib/movingOrders/postMatchSendWebhook";
 
-const FOLLOWUP_DELAY_MS = 1 * 60 * 1000;
+const FOLLOWUP_DELAY_MS = 2 * 60 * 60 * 1000;
 const FOLLOWUP_COLLECTION = "scheduledMatchSendFollowups";
 const MAKE_FOLLOWUP_URL = "https://hook.us1.make.com/kgtwapbvijifymfdyltt6jag1a2qb557";
 

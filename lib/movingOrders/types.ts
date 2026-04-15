@@ -109,6 +109,8 @@ export type MoverMatchEnrichment = {
   opportunityId?: string;
   /** שם ההזדמנות בפייפליין לקוחות (לתצוגה וקישורים) */
   opportunityName?: string;
+  /** הערת הזדמנות רלוונטית (שדה מותאם/פתק אחרון) */
+  opportunityNotes?: string;
   regions: string;
   workAvailability: string;
   activityDays: string;

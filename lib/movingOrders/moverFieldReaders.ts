@@ -230,10 +230,18 @@ export function readApartmentMoverAnswer(merged: Record<string, unknown> | undef
 }
 
 export function readCrane(merged: Record<string, unknown> | undefined): string {
-  const raw = readFirstTruthyField(merged, [MOVER_FIELD_IDS.crane]);
+  const raw = readFirstTruthyField(merged, [
+    MOVER_FIELD_IDS.crane,
+    "opportunity_crane",
+    "opportunity_mover_crane",
+    "opportunity_mover_welcome_crane",
+    "mover_crane",
+  ]);
   const t = triStateYesNo(raw);
   if (t === true) return "כן";
   if (t === false) return "לא";
+  const services = readStrFirst(merged, [MOVER_WELCOME_OPPORTUNITY_FIELD_IDS.moverServices]);
+  if (services && /מנוף/i.test(services)) return "כן";
   return readBoolYes(merged, [MOVER_FIELD_IDS.crane]) ? "כן" : "לא";
 }
 
@@ -250,6 +258,22 @@ export function opportunityLastLeadReceivedIso(opp: OpportunityRecord | undefine
   return opp.lastLeadAt.toISOString();
 }
 
+function latestOpportunityNoteText(opp: OpportunityRecord | undefined): string {
+  if (!opp) return "";
+  const custom = readStrFirst(opp.customValues as Record<string, unknown> | undefined, [
+    MOVER_WELCOME_OPPORTUNITY_FIELD_IDS.notes,
+    "opportunity_notes",
+    "opportunity_note",
+  ]);
+  if (custom) return custom;
+  const notes = Array.isArray(opp.notes) ? opp.notes : [];
+  if (!notes.length) return "";
+  const latest = [...notes]
+    .filter((n) => typeof n?.text === "string" && n.text.trim())
+    .sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")))[0];
+  return latest?.text?.trim() || "";
+}
+
 export function buildMoverEnrichment(
   lead: LeadRecord,
   opp: OpportunityRecord | undefined
@@ -259,6 +283,7 @@ export function buildMoverEnrichment(
   return {
     opportunityId: opp?.id,
     opportunityName: opp?.name?.trim() || undefined,
+    opportunityNotes: latestOpportunityNoteText(opp) || undefined,
     regions,
     workAvailability: readWorkAvailabilityDisplay(merged),
     activityDays: readActivityDaysText(merged),

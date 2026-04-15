@@ -107,6 +107,12 @@ function orderItemsBlock(order: MovingOrderRecord): string {
   return [...new Set(chunks)].join("\n\n").trim();
 }
 
+function orderItemsInline(order: MovingOrderRecord): string {
+  const block = orderItemsBlock(order);
+  if (!block) return "";
+  return block.replace(/\s*\n+\s*/g, " · ").trim();
+}
+
 function flagLabelHe(flag: "ok" | "orange" | "red" | undefined): string {
   if (flag === "red") return "לא מתאים (אדום)";
   if (flag === "orange") return "התאמה חלקית (כתום)";
@@ -225,7 +231,8 @@ function MoverMatchTable({
             <th style={{ ...thStyle, width: 96, whiteSpace: "normal" }}>שליחת ליד</th>
             <th style={thStyle}>מוביל</th>
             <th style={thStyle}>התאמה</th>
-            <th style={{ ...thStyle, minWidth: 140 }}>הערות</th>
+            <th style={{ ...thStyle, minWidth: 140 }}>הערות התאמה</th>
+            <th style={{ ...thStyle, minWidth: 180 }}>הערות הזדמנות</th>
             <th style={thStyle}>אזורי פעילות</th>
             <th style={thStyle}>זמינות לעבודה</th>
             <th style={thStyle}>ימי פעילות</th>
@@ -288,6 +295,9 @@ function MoverMatchTable({
                 <td style={tdStyle}>{flagLabelHe(flag)}</td>
                 <td style={{ ...tdStyle, color: issues.length ? "#9a3412" : "#6b7280", fontSize: 11 }}>
                   {issues.length ? issues.join(" · ") : "—"}
+                </td>
+                <td style={{ ...tdStyle, fontSize: 11, whiteSpace: "pre-wrap" }}>
+                  {en?.opportunityNotes?.trim() || "—"}
                 </td>
                 <td style={tdStyle}>{en?.regions?.trim() || "—"}</td>
                 <td style={tdStyle}>{en?.workAvailability?.trim() || "—"}</td>
@@ -432,6 +442,11 @@ export function MatchOrderCard({
         <div style={{ fontSize: 14, color: "#374151", marginBottom: 4 }}>
           <strong>תאריך הובלה:</strong> {moveDateLabel(order, matchUi)}
         </div>
+        {orderItemsInline(order) ? (
+          <div style={{ fontSize: 13, color: "#374151", marginBottom: 4, lineHeight: 1.45 }}>
+            <strong>פירוט הובלה:</strong> {orderItemsInline(order)}
+          </div>
+        ) : null}
         {matchUi?.transportRegionsLine ? (
           <div style={{ fontSize: 13, color: "#374151", marginBottom: 4, lineHeight: 1.45 }}>
             <strong>אזורי פעילות להובלה:</strong> {matchUi.transportRegionsLine}

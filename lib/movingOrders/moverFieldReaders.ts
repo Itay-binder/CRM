@@ -262,16 +262,11 @@ function latestOpportunityNoteText(opp: OpportunityRecord | undefined): string {
   if (!opp) return "";
   const custom = readStrFirst(opp.customValues as Record<string, unknown> | undefined, [
     MOVER_WELCOME_OPPORTUNITY_FIELD_IDS.notes,
-    "opportunity_notes",
-    "opportunity_note",
+    "opportunity_mover_notes",
+    "opportunity_mover_note",
+    "opportunity_driver_notes",
   ]);
-  if (custom) return custom;
-  const notes = Array.isArray(opp.notes) ? opp.notes : [];
-  if (!notes.length) return "";
-  const latest = [...notes]
-    .filter((n) => typeof n?.text === "string" && n.text.trim())
-    .sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")))[0];
-  return latest?.text?.trim() || "";
+  return custom || "";
 }
 
 export function buildMoverEnrichment(

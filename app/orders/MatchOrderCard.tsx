@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { WhatsAppIconLink } from "@/app/components/InlineFieldShell";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 import { moverExcludedAsInactiveForWork } from "@/lib/movingOrders/matchInactiveWork";
@@ -107,10 +107,27 @@ function orderItemsBlock(order: MovingOrderRecord): string {
   return [...new Set(chunks)].join("\n\n").trim();
 }
 
-function orderItemsInline(order: MovingOrderRecord): string {
-  const block = orderItemsBlock(order);
-  if (!block) return "";
-  return block.replace(/\s*\n+\s*/g, " · ").trim();
+function truncateToMaxChars(input: string, maxChars: number): string {
+  const t = input.trim();
+  if (t.length <= maxChars) return t;
+  return `${t.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
+}
+
+function orderRoomsText(order: MovingOrderRecord): string {
+  const cv = order.customValues ?? {};
+  const raw = cv.moving_order_rooms ?? cv.apartment_rooms;
+  if (raw === undefined || raw === null) return "";
+  const rooms = String(raw).trim();
+  if (!rooms) return "";
+  return `חדרים: ${rooms}`;
+}
+
+function orderShortSummary(order: MovingOrderRecord): string {
+  const cv = order.customValues ?? {};
+  const moveType = String(cv.moving_order_move_type ?? order.payload.move_type ?? "").trim();
+  const rooms = orderRoomsText(order);
+  const parts = [moveType, rooms].filter(Boolean);
+  return truncateToMaxChars(parts.join(" | "), 100);
 }
 
 function flagLabelHe(flag: "ok" | "orange" | "red" | undefined): string {
@@ -165,6 +182,7 @@ type MoverMatchTableProps = {
   issueList: (id: string) => string[];
   availabilityBlocked: (id: string) => boolean;
   showOpportunityLinks?: boolean;
+  compact?: boolean;
   sendingLeadDriverId: string | null;
   onSendLeadClick: (driverId: string) => void;
 };
@@ -182,6 +200,7 @@ function MoverMatchTable({
   issueList,
   availabilityBlocked,
   showOpportunityLinks,
+  compact,
   sendingLeadDriverId,
   onSendLeadClick,
 }: MoverMatchTableProps) {
@@ -216,11 +235,20 @@ function MoverMatchTable({
   }
 
   return (
-    <div style={{ width: "100%", overflowX: "auto", WebkitOverflowScrolling: "touch", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+    <div
+      style={{
+        width: "100%",
+        maxWidth: "100%",
+        overflowX: "auto",
+        WebkitOverflowScrolling: "touch",
+        borderRadius: 10,
+        border: "1px solid #e5e7eb",
+      }}
+    >
       <table
         style={{
           width: "100%",
-          minWidth: showOpportunityLinks ? 1200 : 1060,
+          minWidth: compact ? 880 : showOpportunityLinks ? 1200 : 1060,
           borderCollapse: "collapse",
           background: "#fff",
         }}
@@ -378,6 +406,15 @@ export function MatchOrderCard({
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [sendLeadConfirmId, setSendLeadConfirmId] = useState<string | null>(null);
+  const [compact, setCompact] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 900px)");
+    const apply = () => setCompact(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
 
   const p = order.payload;
   const driverIdsRaw = allMatchDriverIdsRaw(order);
@@ -411,6 +448,8 @@ export function MatchOrderCard({
       <article
         style={{
           padding: 18,
+          maxWidth: "100%",
+          overflow: "hidden",
           borderRadius: 16,
           border: `1px solid ${shell.borderColor}`,
           background: shell.background,
@@ -442,9 +481,9 @@ export function MatchOrderCard({
         <div style={{ fontSize: 14, color: "#374151", marginBottom: 4 }}>
           <strong>תאריך הובלה:</strong> {moveDateLabel(order, matchUi)}
         </div>
-        {orderItemsInline(order) ? (
+        {orderShortSummary(order) ? (
           <div style={{ fontSize: 13, color: "#374151", marginBottom: 4, lineHeight: 1.45 }}>
-            <strong>פירוט הובלה:</strong> {orderItemsInline(order)}
+            <strong>פירוט הובלה:</strong> {orderShortSummary(order)}
           </div>
         ) : null}
         {matchUi?.transportRegionsLine ? (
@@ -514,6 +553,7 @@ export function MatchOrderCard({
           rowLabel={rowLabel}
           issueList={issueList}
           availabilityBlocked={availabilityBlocked}
+          compact={compact}
           sendingLeadDriverId={sendingLeadDriverId}
           onSendLeadClick={(id) => setSendLeadConfirmId(id)}
         />
@@ -709,6 +749,7 @@ export function MatchOrderCard({
               issueList={issueList}
               availabilityBlocked={availabilityBlocked}
               showOpportunityLinks
+              compact={compact}
               sendingLeadDriverId={sendingLeadDriverId}
               onSendLeadClick={(id) => setSendLeadConfirmId(id)}
             />

@@ -37,6 +37,11 @@ const KEYS: (keyof MovingOrderPayload)[] = [
   "drive_folder_name",
 ];
 
+const KNOWN_PAYLOAD_KEYS = new Set<string>([...KEYS, "items_list", "drive_files_count"]);
+const DYNAMIC_KEY_ALIASES: Record<string, string> = {
+  apartment_rooms: "rooms",
+};
+
 function pickStr(body: Record<string, unknown>, ...keys: string[]): string | undefined {
   for (const k of keys) {
     const v = body[k];
@@ -45,10 +50,28 @@ function pickStr(body: Record<string, unknown>, ...keys: string[]): string | und
   return undefined;
 }
 
+function pickNonEmpty(body: Record<string, unknown>, ...keys: string[]): unknown {
+  for (const k of keys) {
+    const v = body[k];
+    if (!isEffectivelyEmpty(v)) return v;
+  }
+  return undefined;
+}
+
 function isEffectivelyEmpty(v: unknown): boolean {
   if (v === undefined || v === null) return true;
   if (typeof v === "string" && !v.trim()) return true;
   return false;
+}
+
+function normalizeDynamicFieldIdPart(raw: string): string {
+  const key = raw.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+  if (!key) return "";
+  return DYNAMIC_KEY_ALIASES[key] ?? key;
+}
+
+function serializeForCustomValue(v: unknown): unknown {
+  return typeof v === "object" ? JSON.stringify(v) : v;
 }
 
 /**
@@ -114,7 +137,13 @@ export function normalizePayloadForStorage(body: Record<string, unknown>): Movin
     ...(dropoff_city ? { dropoff_city } : {}),
     ...(day_order ? { day_order } : {}),
   };
-  return hydratePayloadFromMovingOrderKeys(body, merged);
+  const out = { ...merged } as Record<string, unknown>;
+  // Backward compatibility: external forms that still send apartment_rooms.
+  const roomsValue = pickNonEmpty(body, "moving_order_rooms", "rooms", "apartment_rooms");
+  if (!isEffectivelyEmpty(roomsValue) && isEffectivelyEmpty(out.moving_order_rooms)) {
+    out.moving_order_rooms = roomsValue;
+  }
+  return hydratePayloadFromMovingOrderKeys(body, out as MovingOrderPayload);
 }
 
 export function rawCustomValuesFromPayload(payload: MovingOrderPayload): Record<string, unknown> {
@@ -122,7 +151,7 @@ export function rawCustomValuesFromPayload(payload: MovingOrderPayload): Record<
   for (const k of KEYS) {
     const v = payload[k];
     if (v === undefined || v === null) continue;
-    out[`moving_order_${k}`] = typeof v === "object" ? JSON.stringify(v) : v;
+    out[`moving_order_${k}`] = serializeForCustomValue(v);
   }
   if (payload.items_list !== undefined && payload.items_list !== "") {
     out.moving_order_items_list =
@@ -133,5 +162,21 @@ export function rawCustomValuesFromPayload(payload: MovingOrderPayload): Record<
   if (typeof payload.drive_files_count === "number" && Number.isFinite(payload.drive_files_count)) {
     out.moving_order_drive_files_count = payload.drive_files_count;
   }
+
+  const payloadObj = payload as unknown as Record<string, unknown>;
+  for (const [key, value] of Object.entries(payloadObj)) {
+    if (isEffectivelyEmpty(value)) continue;
+    if (key.startsWith("moving_order_")) {
+      out[key] = serializeForCustomValue(value);
+      continue;
+    }
+    if (KNOWN_PAYLOAD_KEYS.has(key)) continue;
+    const normalized = normalizeDynamicFieldIdPart(key);
+    if (!normalized) continue;
+    const customKey = `moving_order_${normalized}`;
+    if (Object.prototype.hasOwnProperty.call(out, customKey)) continue;
+    out[customKey] = serializeForCustomValue(value);
+  }
+
   return out;
 }

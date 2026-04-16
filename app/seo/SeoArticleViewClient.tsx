@@ -36,6 +36,9 @@ export default function SeoArticleViewClient({ id }: { id: string }) {
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [publishBusy, setPublishBusy] = useState(false);
+  const [wpBusy, setWpBusy] = useState(false);
+  const [wpLink, setWpLink] = useState<string | null>(null);
+  const [wpErr, setWpErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -58,6 +61,31 @@ export default function SeoArticleViewClient({ id }: { id: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const publishToWordPress = useCallback(async () => {
+    setWpErr(null);
+    setWpLink(null);
+    setWpBusy(true);
+    try {
+      const j = await fetchJson<{
+        ok: boolean;
+        wordpress?: { id: number; link: string };
+        error?: string;
+      }>(`/api/seo/articles/${id}/wordpress-publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "publish" }),
+      });
+      if (!j.ok) throw new Error(j.error || "שגיאה בפרסום לוורדפרס");
+      setWpLink(j.wordpress?.link?.trim() || null);
+    } catch (e) {
+      if ((e as Error).message !== AUTH_REDIRECT) {
+        setWpErr((e as Error).message || "שגיאה");
+      }
+    } finally {
+      setWpBusy(false);
+    }
+  }, [id]);
 
   const togglePublished = useCallback(async () => {
     if (!article) return;
@@ -198,8 +226,56 @@ export default function SeoArticleViewClient({ id }: { id: string }) {
                   ? "הסר מהאתר (בטל פרסום)"
                   : "פרסם באתר"}
             </button>
+            <button
+              type="button"
+              onClick={() => void publishToWordPress()}
+              disabled={wpBusy}
+              style={{
+                padding: "10px 16px",
+                borderRadius: 12,
+                border: "1px solid #c4b5fd",
+                fontWeight: 700,
+                cursor: wpBusy ? "wait" : "pointer",
+                background: "#f5f3ff",
+                color: "#5b21b6",
+              }}
+              title="דורש WORDPRESS_REST_BASE, WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD בשרת"
+            >
+              {wpBusy ? "שולח…" : "פרסם לוורדפרס"}
+            </button>
           </div>
         </div>
+        {wpLink ? (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 10,
+              borderRadius: 10,
+              fontSize: 14,
+              background: "#ecfdf5",
+              color: "#065f46",
+            }}
+          >
+            פורסם בוורדפרס:{" "}
+            <a href={wpLink} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 700 }}>
+              פתח פוסט
+            </a>
+          </div>
+        ) : null}
+        {wpErr ? (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 10,
+              borderRadius: 10,
+              fontSize: 14,
+              background: "#fef2f2",
+              color: "#991b1b",
+            }}
+          >
+            {wpErr}
+          </div>
+        ) : null}
       </div>
 
       <div

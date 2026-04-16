@@ -1,6 +1,5 @@
 import UserMenu from "@/app/components/UserMenu";
 import CrmNavLink from "@/app/components/CrmNavLink";
-import CrmSeoSubmenu from "@/app/components/CrmSeoSubmenu";
 import { isMovingOrdersTenant } from "@/lib/tenant/movingOrders";
 
 export type CrmTenantOption = { id: string; label: string };
@@ -67,7 +66,7 @@ export default function CrmShell({
           ) : null}
           <CrmNavLink href="/billing" label="סליקה" />
           <CrmNavLink href="/whatsapp-automations" label="אוטומציות ווצאפ" />
-          <CrmSeoSubmenu />
+          <CrmNavLink href="/seo" label="סוכן SEO" />
           <CrmNavLink href="/settings" label="הגדרות" />
         </nav>
       </aside>

@@ -41,6 +41,7 @@ export async function PUT(req: NextRequest) {
       businessName: string;
       businessBlurb: string;
       defaultKeywordSeeds: string;
+      knowledgeDocs: Array<{ id: string; title: string; content: string }>;
     }>;
     const db = await getAdminDb();
     const settings = await saveSeoAgentSettings(db, {
@@ -49,6 +50,7 @@ export async function PUT(req: NextRequest) {
       businessName: body.businessName,
       businessBlurb: body.businessBlurb,
       defaultKeywordSeeds: body.defaultKeywordSeeds,
+      knowledgeDocs: body.knowledgeDocs,
     });
     return NextResponse.json({ ok: true, settings });
   } catch (e) {

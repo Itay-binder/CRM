@@ -31,7 +31,12 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+type IdeaMode = "agent" | "from_seed" | "from_keywords";
+
 export default function SeoArticlesClient() {
+  const [ideaMode, setIdeaMode] = useState<IdeaMode>("agent");
+  const [seedIdea, setSeedIdea] = useState("");
+  const [seedKeywords, setSeedKeywords] = useState("");
   const [idea, setIdea] = useState("");
   const [keywords, setKeywords] = useState<string[]>([]);
   const [keywordDraft, setKeywordDraft] = useState("");
@@ -39,6 +44,7 @@ export default function SeoArticlesClient() {
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [ideaApproved, setIdeaApproved] = useState(false);
 
   const {
     data: listData,
@@ -60,10 +66,16 @@ export default function SeoArticlesClient() {
   const onIdea = useCallback(async () => {
     setErr(null);
     setBusy("idea");
+    setIdeaApproved(false);
     try {
+      const body = JSON.stringify({
+        mode: ideaMode,
+        seedIdea: ideaMode === "from_seed" ? seedIdea : undefined,
+        seedKeywords: ideaMode === "from_keywords" ? seedKeywords : undefined,
+      });
       const j = await fetchJson<{ ok: boolean; idea?: string; keywords?: string[]; error?: string }>(
         "/api/seo/idea",
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }
+        { method: "POST", headers: { "Content-Type": "application/json" }, body }
       );
       if (!j.ok || !j.idea) throw new Error(j.error || "שגיאה ביצירת רעיון");
       setIdea(j.idea);
@@ -77,12 +89,16 @@ export default function SeoArticlesClient() {
     } finally {
       setBusy(null);
     }
-  }, []);
+  }, [ideaMode, seedIdea, seedKeywords]);
 
   const onGenerate = useCallback(async () => {
     setErr(null);
     if (!idea.trim()) {
       setErr("קודם צרו רעיון או הדביקו רעיון בשדה.");
+      return;
+    }
+    if (!ideaApproved) {
+      setErr('לחצו קודם על "אישרתי את הרעיון והמילים" לפני יצירת המאמר.');
       return;
     }
     setBusy("gen");
@@ -107,7 +123,7 @@ export default function SeoArticlesClient() {
     } finally {
       setBusy(null);
     }
-  }, [idea, keywords, draftTitle]);
+  }, [idea, keywords, draftTitle, ideaApproved]);
 
   const onSave = useCallback(async () => {
     setErr(null);
@@ -136,6 +152,7 @@ export default function SeoArticlesClient() {
       setIdea("");
       setKeywords([]);
       setDraftTitle("");
+      setIdeaApproved(false);
     } catch (e) {
       if ((e as Error).message !== AUTH_REDIRECT) {
         setErr((e as Error).message || "שגיאה");
@@ -150,24 +167,112 @@ export default function SeoArticlesClient() {
     if (!t) return;
     setKeywords((prev) => (prev.includes(t) ? prev : [...prev, t]));
     setKeywordDraft("");
+    setIdeaApproved(false);
   }, [keywordDraft]);
 
   const removeKeywordAt = useCallback((index: number) => {
     setKeywords((prev) => prev.filter((_, i) => i !== index));
+    setIdeaApproved(false);
   }, []);
 
   return (
     <div style={{ maxWidth: 960, margin: "0 auto" }}>
-      <h1 style={{ margin: "0 0 8px", fontSize: 26, fontWeight: 800 }}>יצירת מאמר SEO</h1>
-      <p style={{ margin: "0 0 22px", color: "#6b7280", lineHeight: 1.5 }}>
-        הרעיונות והמילים מבוססים על{" "}
+      <h1 style={{ margin: "0 0 8px", fontSize: 22, fontWeight: 800 }}>יצירת מאמר</h1>
+      <p style={{ margin: "0 0 18px", color: "#6b7280", lineHeight: 1.5 }}>
+        הקשר מגיע מ־
         <Link href="/seo/settings" style={{ color: "#2563eb", fontWeight: 600 }}>
-          הגדרות סוכן SEO
-        </Link>{" "}
-        (אתר, תיאור עסק, מה לסרוק ברשת, מילות מפתח ברירת מחדל). אפשר לערוך כאן את הרעיון ואת רשימת המילים לפני
-        יצירת המאמר. התוכן כרגע מוקאפ — שמירת מאמר מפרסמת אותו כפוסט ציבורי בכתובת{" "}
-        <code style={{ fontSize: 13 }}>/blog/…</code> (ניתן לבטל פרסום מדף המאמר).
+          הגדרות + מאגר ידע
+        </Link>
+        , ומתוך שליפת טקסט מהאתר (אם הוגדר). בחרו מצב רעיון, ערכו במידת הצורך,{" "}
+        <strong>אשרו</strong> ואז צרו מאמר. פרסום לוורדפרס — מדף המאמר אחרי שמירה (משתני סביבה בשרת).
       </p>
+
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 8,
+          marginBottom: 16,
+          padding: 10,
+          background: "#f9fafb",
+          borderRadius: 12,
+          border: "1px solid #e5e7eb",
+        }}
+      >
+        {(
+          [
+            { id: "agent" as const, label: "סוכן לפי העסק והאתר" },
+            { id: "from_seed" as const, label: "מתוך הרעיון שלי" },
+            { id: "from_keywords" as const, label: "מתוך מילות קידום" },
+          ] as const
+        ).map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            onClick={() => {
+              setIdeaMode(m.id);
+              setIdeaApproved(false);
+            }}
+            style={{
+              padding: "8px 14px",
+              borderRadius: 10,
+              border: ideaMode === m.id ? "2px solid #2563eb" : "1px solid #e5e7eb",
+              background: ideaMode === m.id ? "#eff6ff" : "#fff",
+              fontWeight: 700,
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      {ideaMode === "from_seed" ? (
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ fontWeight: 600, fontSize: 14 }}>הרעיון שלי (טקסט חופשי)</label>
+          <textarea
+            value={seedIdea}
+            onChange={(e) => {
+              setSeedIdea(e.target.value);
+              setIdeaApproved(false);
+            }}
+            rows={3}
+            placeholder="למשל: מאמר על מחירון הובלות בקיץ 2026…"
+            style={{
+              width: "100%",
+              marginTop: 6,
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid #e5e7eb",
+              fontFamily: "inherit",
+            }}
+          />
+        </div>
+      ) : null}
+
+      {ideaMode === "from_keywords" ? (
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ fontWeight: 600, fontSize: 14 }}>מילות קידום (פסיקים או שורות)</label>
+          <textarea
+            value={seedKeywords}
+            onChange={(e) => {
+              setSeedKeywords(e.target.value);
+              setIdeaApproved(false);
+            }}
+            rows={2}
+            placeholder="הובלות דירה, מחירון אריזה…"
+            style={{
+              width: "100%",
+              marginTop: 6,
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid #e5e7eb",
+              fontFamily: "inherit",
+            }}
+          />
+        </div>
+      ) : null}
 
       {err ? (
         <div
@@ -197,7 +302,11 @@ export default function SeoArticlesClient() {
           <button
             type="button"
             onClick={() => void onIdea()}
-            disabled={busy !== null}
+            disabled={
+              busy !== null ||
+              (ideaMode === "from_seed" && !seedIdea.trim()) ||
+              (ideaMode === "from_keywords" && !seedKeywords.trim())
+            }
             style={{
               padding: "10px 18px",
               borderRadius: 12,
@@ -212,19 +321,35 @@ export default function SeoArticlesClient() {
           </button>
           <button
             type="button"
+            onClick={() => setIdeaApproved(true)}
+            disabled={!idea.trim()}
+            style={{
+              padding: "10px 18px",
+              borderRadius: 12,
+              border: ideaApproved ? "2px solid #059669" : "1px solid #6ee7b7",
+              background: ideaApproved ? "#ecfdf5" : "#fff",
+              fontWeight: 700,
+              cursor: !idea.trim() ? "not-allowed" : "pointer",
+              color: !idea.trim() ? "#94a3b8" : "#065f46",
+            }}
+          >
+            {ideaApproved ? "✓ אושר — אפשר ליצור מאמר" : "אישרתי את הרעיון והמילים"}
+          </button>
+          <button
+            type="button"
             onClick={() => void onGenerate()}
-            disabled={busy !== null || !idea.trim()}
+            disabled={busy !== null || !idea.trim() || !ideaApproved}
             style={{
               padding: "10px 18px",
               borderRadius: 12,
               border: "1px solid #cbd5e1",
-              background: idea.trim() ? "#f8fafc" : "#f1f5f9",
+              background: idea.trim() && ideaApproved ? "#f8fafc" : "#f1f5f9",
               fontWeight: 700,
-              cursor: busy || !idea.trim() ? "not-allowed" : "pointer",
-              color: idea.trim() ? "#0f172a" : "#94a3b8",
+              cursor: busy || !idea.trim() || !ideaApproved ? "not-allowed" : "pointer",
+              color: idea.trim() && ideaApproved ? "#0f172a" : "#94a3b8",
             }}
           >
-            {busy === "gen" ? "יוצר מאמר…" : "צור מאמר מתוך מה שהציע"}
+            {busy === "gen" ? "יוצר מאמר…" : "צור מאמר"}
           </button>
           {previewHtml ? (
             <button
@@ -268,7 +393,10 @@ export default function SeoArticlesClient() {
         </label>
         <textarea
           value={idea}
-          onChange={(e) => setIdea(e.target.value)}
+          onChange={(e) => {
+            setIdea(e.target.value);
+            setIdeaApproved(false);
+          }}
           rows={5}
           style={{
             width: "100%",

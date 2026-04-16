@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
-import Link from "next/link";
 
 const AUTH_REDIRECT = "CRM_SEO_AUTH_REDIRECT";
+
+type KnowledgeDoc = { id: string; title: string; content: string };
 
 type Settings = {
   siteUrl: string;
@@ -11,6 +12,7 @@ type Settings = {
   businessName: string;
   businessBlurb: string;
   defaultKeywordSeeds: string;
+  knowledgeDocs: KnowledgeDoc[];
   updatedAt: string;
 };
 
@@ -48,6 +50,7 @@ export default function SeoSettingsClient() {
     businessName: "",
     businessBlurb: "",
     defaultKeywordSeeds: "",
+    knowledgeDocs: [],
     updatedAt: "",
   });
 
@@ -58,7 +61,11 @@ export default function SeoSettingsClient() {
       try {
         const j = await fetchJson<{ ok: boolean; settings?: Settings; error?: string }>("/api/seo/settings");
         if (!j.ok || !j.settings) throw new Error(j.error || "שגיאה בטעינה");
-        if (!cancelled) setForm(j.settings);
+        if (!cancelled)
+          setForm({
+            ...j.settings,
+            knowledgeDocs: Array.isArray(j.settings.knowledgeDocs) ? j.settings.knowledgeDocs : [],
+          });
       } catch (e) {
         if ((e as Error).message !== AUTH_REDIRECT && !cancelled) {
           setErr((e as Error).message || "שגיאה");
@@ -86,6 +93,7 @@ export default function SeoSettingsClient() {
           businessName: form.businessName,
           businessBlurb: form.businessBlurb,
           defaultKeywordSeeds: form.defaultKeywordSeeds,
+          knowledgeDocs: form.knowledgeDocs,
         }),
       });
       if (!j.ok || !j.settings) throw new Error(j.error || "שגיאה בשמירה");
@@ -102,15 +110,11 @@ export default function SeoSettingsClient() {
 
   return (
     <div style={{ maxWidth: 720, margin: "0 auto" }}>
-      <div style={{ marginBottom: 18 }}>
-        <Link href="/seo" style={{ fontSize: 14, color: "#2563eb", textDecoration: "none", fontWeight: 600 }}>
-          ← חזרה ליצירת מאמר
-        </Link>
-      </div>
       <h1 style={{ margin: "0 0 8px", fontSize: 26, fontWeight: 800 }}>הגדרות סוכן SEO</h1>
       <p style={{ margin: "0 0 22px", color: "#6b7280", lineHeight: 1.6 }}>
-        הגדירו את האתר, תיאור העסק, ומה הסוכן צריך &quot;לחפש&quot; ברשת כדי שהרעיונות יהיו רלוונטיים. מילות מפתח
-        ברירת מחדל (מופרדות בפסיק) משולבות ברעיונות ובמאמרים.
+        הגדירו את האתר, תיאור העסק, ומה הסוכן צריך &quot;לחפש&quot; ברשת. מילות מפתח ברירת מחדל (פסיקים) משולבות
+        ברעיונות ובמאמרים. ניתן להוסיף מסמכי ידע — הם נכנסים לקונטקסט של יצירת רעיונות יחד עם תמצית טקסט שאוחזרת
+        מכתובת האתר (אם זמינה). לכיבוי שליפת אתר: משתנה סביבה <code dir="ltr">SEO_AGENT_FETCH_SITE=false</code>.
       </p>
 
       {err ? (
@@ -201,6 +205,101 @@ export default function SeoSettingsClient() {
               style={fieldStyle}
             />
           </div>
+
+          <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 14 }}>
+            <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 8 }}>מאגר ידע (מסמכים)</div>
+            <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>
+              הוסיפו טקסט חופשי (מדיניות, שירותים, FAQ פנימי וכו׳). עד 12 מסמכים; כל אחד עד ~8000 תווים.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                const id =
+                  typeof crypto !== "undefined" && crypto.randomUUID
+                    ? crypto.randomUUID()
+                    : `doc-${Date.now()}`;
+                setForm((f) => ({
+                  ...f,
+                  knowledgeDocs: [...f.knowledgeDocs, { id, title: "", content: "" }],
+                }));
+              }}
+              disabled={form.knowledgeDocs.length >= 12}
+              style={{
+                marginBottom: 12,
+                padding: "8px 14px",
+                borderRadius: 10,
+                border: "1px dashed #cbd5e1",
+                background: "#f8fafc",
+                fontWeight: 700,
+                cursor: form.knowledgeDocs.length >= 12 ? "not-allowed" : "pointer",
+              }}
+            >
+              + מסמך
+            </button>
+            <div style={{ display: "grid", gap: 14 }}>
+              {form.knowledgeDocs.map((doc, idx) => (
+                <div
+                  key={doc.id}
+                  style={{
+                    padding: 14,
+                    borderRadius: 12,
+                    border: "1px solid #e5e7eb",
+                    background: "#fafafa",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: "#6b7280" }}>מסמך {idx + 1}</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setForm((f) => ({
+                          ...f,
+                          knowledgeDocs: f.knowledgeDocs.filter((d) => d.id !== doc.id),
+                        }))
+                      }
+                      style={{
+                        padding: "4px 10px",
+                        fontSize: 13,
+                        borderRadius: 8,
+                        border: "1px solid #fecaca",
+                        background: "#fff",
+                        color: "#b91c1c",
+                        cursor: "pointer",
+                      }}
+                    >
+                      הסר
+                    </button>
+                  </div>
+                  <input
+                    value={doc.title}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setForm((f) => ({
+                        ...f,
+                        knowledgeDocs: f.knowledgeDocs.map((d) => (d.id === doc.id ? { ...d, title: v } : d)),
+                      }));
+                    }}
+                    placeholder="כותרת (אופציונלי)"
+                    style={{ ...fieldStyle, marginTop: 10 }}
+                  />
+                  <textarea
+                    value={doc.content}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setForm((f) => ({
+                        ...f,
+                        knowledgeDocs: f.knowledgeDocs.map((d) => (d.id === doc.id ? { ...d, content: v } : d)),
+                      }));
+                    }}
+                    placeholder="תוכן המסמך…"
+                    rows={5}
+                    style={{ ...fieldStyle, resize: "vertical", marginTop: 8 }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
           {form.updatedAt ? (
             <div style={{ fontSize: 12, color: "#9ca3af" }}>עודכן לאחרונה: {form.updatedAt}</div>
           ) : null}

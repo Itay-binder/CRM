@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
-import { generateIdeaPayload } from "@/lib/seoAgent/mockEngine";
+import { generateIdeaForMode, type SeoIdeaMode } from "@/lib/seoAgent/ideaModes";
+import type { SeoIdeaContext } from "@/lib/seoAgent/mockEngine";
 import { getMergedSeoContextForIdeas } from "@/lib/seoAgent/seoSettingsRepo";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +17,34 @@ export async function POST(req: NextRequest) {
     });
   }
   try {
-    const ctx = await getMergedSeoContextForIdeas();
-    const payload = await generateIdeaPayload(ctx);
+    const merged = await getMergedSeoContextForIdeas();
+    const ctx: SeoIdeaContext = {
+      name: merged.name,
+      blurb: merged.blurb,
+      siteUrl: merged.siteUrl,
+      scanFocus: merged.scanFocus,
+      defaultKeywordSeeds: merged.defaultKeywordSeeds,
+      knowledgeSummary: merged.knowledgeSummary,
+    };
+    let body: { mode?: string; seedIdea?: string; seedKeywords?: string };
+    try {
+      body = (await req.json()) as typeof body;
+    } catch {
+      body = {};
+    }
+    const modeRaw = String(body.mode ?? "agent").trim();
+    const mode: SeoIdeaMode =
+      modeRaw === "from_seed" || modeRaw === "from_keywords" ? modeRaw : "agent";
+    const payload = await generateIdeaForMode(ctx, mode, {
+      seedIdea: body.seedIdea,
+      seedKeywords: body.seedKeywords,
+    });
+    if (!payload.idea.trim()) {
+      return NextResponse.json(
+        { ok: false, error: "חסר טקסט לפי מצב שנבחר (רעיון / מילות קידום)" } satisfies ApiErr,
+        { status: 400 }
+      );
+    }
     return NextResponse.json({ ok: true, ...payload });
   } catch (e) {
     return NextResponse.json(

@@ -8,6 +8,8 @@ export type SeoIdeaContext = {
   siteUrl: string;
   scanFocus: string;
   defaultKeywordSeeds: string[];
+  /** תמצית מאגר ידע / דף אינטרנט — לא חובה */
+  knowledgeSummary?: string;
 };
 
 function hashString(s: string): number {
@@ -87,6 +89,10 @@ export async function generateIdeaPayload(ctx: SeoIdeaContext): Promise<{
   }
   if (siteUrl.trim()) {
     idea += `\nאתר עסקי ליישור תוכן: ${siteUrl.trim()}`;
+  }
+  const ks = (ctx.knowledgeSummary ?? "").trim();
+  if (ks) {
+    idea += `\n\nתמצית מהאתר/מאגר ידע (ללמידת הקשר): ${ks.slice(0, 900)}${ks.length > 900 ? "…" : ""}`;
   }
 
   const base = name.split(/\s+/)[0] || name;

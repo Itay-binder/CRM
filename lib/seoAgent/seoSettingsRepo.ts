@@ -1,9 +1,16 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { getTenantConfigs } from "@/lib/tenant/config";
+import { fetchPublicSiteTextSnippet } from "@/lib/seoAgent/siteSnippet";
 
 const COLLECTION = "integrationSettings";
 const DOC_ID = "seoAgentSettings";
+
+export type SeoKnowledgeDoc = {
+  id: string;
+  title: string;
+  content: string;
+};
 
 export type SeoAgentSettingsStored = {
   siteUrl: string;
@@ -13,6 +20,8 @@ export type SeoAgentSettingsStored = {
   businessBlurb: string;
   /** מילות מפתח ברירת מחדל (פסיקים) — משולבות ברעיון ובמאמר */
   defaultKeywordSeeds: string;
+  /** מסמכי טקסט חופשי — נכנסים ל"מאגר ידע" של הסוכן */
+  knowledgeDocs: SeoKnowledgeDoc[];
   updatedAt: string;
 };
 
@@ -22,11 +31,56 @@ const DEFAULTS: SeoAgentSettingsStored = {
   businessName: "",
   businessBlurb: "",
   defaultKeywordSeeds: "",
+  knowledgeDocs: [],
   updatedAt: "",
 };
 
 function asString(v: unknown): string {
   return typeof v === "string" ? v : "";
+}
+
+function parseKnowledgeDocs(raw: unknown): SeoKnowledgeDoc[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SeoKnowledgeDoc[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    const id = asString(o.id).trim();
+    const title = asString(o.title).trim().slice(0, 200);
+    const content = asString(o.content).trim().slice(0, 8000);
+    if (!content) continue;
+    out.push({
+      id: id || `doc-${out.length + 1}`,
+      title,
+      content,
+    });
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
+function normalizeKnowledgeDocs(docs: SeoKnowledgeDoc[]): SeoKnowledgeDoc[] {
+  return parseKnowledgeDocs(docs);
+}
+
+async function buildKnowledgeSummary(stored: SeoAgentSettingsStored): Promise<string> {
+  const parts: string[] = [];
+  for (const d of stored.knowledgeDocs ?? []) {
+    const head = d.title.trim() ? `# ${d.title.trim()}\n` : "";
+    parts.push(`${head}${d.content.trim()}`);
+  }
+  let merged = parts.join("\n\n").trim();
+  if (merged.length > 18000) merged = merged.slice(0, 18000);
+
+  const allowFetch = process.env.SEO_AGENT_FETCH_SITE !== "false";
+  if (allowFetch && stored.siteUrl.trim()) {
+    const snip = await fetchPublicSiteTextSnippet(stored.siteUrl.trim(), 3200);
+    if (snip) {
+      merged = [merged, `## טקסט שאוחזר מהאתר (אוטומטי)\n${snip}`].filter(Boolean).join("\n\n").trim();
+    }
+  }
+  if (merged.length > 20000) merged = merged.slice(0, 20000);
+  return merged;
 }
 
 export async function getSeoAgentSettings(db: Firestore): Promise<SeoAgentSettingsStored> {
@@ -39,6 +93,7 @@ export async function getSeoAgentSettings(db: Firestore): Promise<SeoAgentSettin
     businessName: asString(d.businessName),
     businessBlurb: asString(d.businessBlurb),
     defaultKeywordSeeds: asString(d.defaultKeywordSeeds),
+    knowledgeDocs: parseKnowledgeDocs(d.knowledgeDocs),
     updatedAt: asString(d.updatedAt),
   };
 }
@@ -56,6 +111,8 @@ export async function saveSeoAgentSettings(
     businessBlurb: input.businessBlurb !== undefined ? input.businessBlurb.trim() : prev.businessBlurb,
     defaultKeywordSeeds:
       input.defaultKeywordSeeds !== undefined ? input.defaultKeywordSeeds.trim() : prev.defaultKeywordSeeds,
+    knowledgeDocs:
+      input.knowledgeDocs !== undefined ? normalizeKnowledgeDocs(input.knowledgeDocs) : prev.knowledgeDocs,
     updatedAt: now,
   };
   await db.collection(COLLECTION).doc(DOC_ID).set(next, { merge: true });
@@ -69,6 +126,7 @@ export async function getMergedSeoContextForIdeas(): Promise<{
   siteUrl: string;
   scanFocus: string;
   defaultKeywordSeeds: string[];
+  knowledgeSummary: string;
 }> {
   const db = await getAdminDb();
   const stored = await getSeoAgentSettings(db);
@@ -97,11 +155,14 @@ export async function getMergedSeoContextForIdeas(): Promise<{
     .map((s) => s.trim())
     .filter(Boolean);
 
+  const knowledgeSummary = await buildKnowledgeSummary(stored);
+
   return {
     name,
     blurb,
     siteUrl: stored.siteUrl.trim(),
     scanFocus: stored.scanFocus.trim(),
     defaultKeywordSeeds: seeds,
+    knowledgeSummary,
   };
 }

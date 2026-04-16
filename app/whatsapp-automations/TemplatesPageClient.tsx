@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
+import { countBodyPlaceholders, type TemplateParamSource } from "@/lib/whatsapp/templateParams";
 
 type TemplateVm = {
   id: string;
@@ -11,6 +12,8 @@ type TemplateVm = {
   language: string;
   bodyText: string;
   exampleValues: string[];
+  parameterSources?: TemplateParamSource[];
+  buttonRows?: Array<{ type: "QUICK_REPLY" | "URL"; text: string; url?: string }>;
   status: "draft" | "submitted" | "approved" | "rejected";
   metaTemplateId?: string;
   metaStatus?: string;
@@ -18,6 +21,18 @@ type TemplateVm = {
   createdAt: string;
   updatedAt: string;
 };
+
+type BtnRow = { type: "QUICK_REPLY" | "URL"; text: string; url: string };
+
+const SOURCE_LABELS: { value: TemplateParamSource; label: string }[] = [
+  { value: "manual", label: "ידני (מהדיוור / דוגמה)" },
+  { value: "name", label: "שם איש קשר" },
+  { value: "phone", label: "טלפון" },
+  { value: "email", label: "אימייל" },
+  { value: "status", label: "סטטוס מכירה" },
+  { value: "contactCode", label: "קוד איש קשר" },
+  { value: "assignedRep", label: "נציג" },
+];
 
 async function parseJson<T>(res: Response): Promise<T> {
   return (await res.json().catch(() => ({}))) as T;
@@ -35,7 +50,28 @@ export default function TemplatesPageClient() {
   const [tplLanguage, setTplLanguage] = useState("he");
   const [tplBodyText, setTplBodyText] = useState("");
   const [tplExampleValues, setTplExampleValues] = useState("");
+  const [tplParameterSources, setTplParameterSources] = useState<TemplateParamSource[]>([]);
+  const [tplButtonRows, setTplButtonRows] = useState<BtnRow[]>([]);
   const [tplSearch, setTplSearch] = useState("");
+
+  const paramSlotCount = countBodyPlaceholders(tplBodyText);
+
+  useEffect(() => {
+    setTplParameterSources((prev) => {
+      const n = countBodyPlaceholders(tplBodyText);
+      const next = [...prev];
+      while (next.length < n) next.push("manual");
+      return next.slice(0, n);
+    });
+  }, [tplBodyText]);
+
+  function insertBodyToken(n: number) {
+    setTplBodyText((t) => `${t}{{${n}}}`);
+  }
+
+  function patchButtonRow(i: number, patch: Partial<BtnRow>) {
+    setTplButtonRows((rows) => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,6 +101,19 @@ export default function TemplatesPageClient() {
     setErr(null);
     setOkMsg(null);
     try {
+      const buttonRows = tplButtonRows
+        .map((b) => ({
+          type: b.type,
+          text: b.text.trim().slice(0, 25),
+          url: b.url.trim(),
+        }))
+        .filter((b) => {
+          if (!b.text) return false;
+          if (b.type === "URL") return Boolean(b.url);
+          return true;
+        })
+        .slice(0, 3);
+
       const res = await fetch("/api/whatsapp/templates", {
         method: "POST",
         credentials: "include",
@@ -78,6 +127,8 @@ export default function TemplatesPageClient() {
             .split(",")
             .map((x) => x.trim())
             .filter(Boolean),
+          parameterSources: tplParameterSources.slice(0, paramSlotCount),
+          buttonRows,
         }),
       });
       const j = await parseJson<{ ok?: boolean; error?: string }>(res);
@@ -85,6 +136,8 @@ export default function TemplatesPageClient() {
       setTplName("");
       setTplBodyText("");
       setTplExampleValues("");
+      setTplParameterSources([]);
+      setTplButtonRows([]);
       setOkMsg("הטמפלט נשמר. ניתן לשלוח לאישור במטא או לבחור בברודקאסט.");
       await load();
     } catch (e) {
@@ -157,7 +210,8 @@ export default function TemplatesPageClient() {
       >
         <div style={{ fontWeight: 900, fontSize: 16 }}>+ תבנית חדשה</div>
         <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>
-          שם באנגלית בפורמט snake_case מומלץ. גוף ההודעה יכול לכלול {"{{1}}"}, {"{{2}}"} — הוסיפו ערכי דוגמה מופרדים בפסיק.
+          שם באנגלית בפורמט snake_case מומלץ. גוף ההודעה יכול לכלול {"{{1}}"}, {"{{2}}"} — הוסיפו ערכי דוגמה מופרדים בפסיק
+          (לאישור במטא). למטה אפשר לבחור מאיזה שדה ב-CRM נמלא כל מקום — או ידני מהדיוור.
         </p>
         <input
           value={tplName}
@@ -182,6 +236,27 @@ export default function TemplatesPageClient() {
             style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb", width: 120 }}
           />
         </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+          <span style={{ fontSize: 12, color: "#6b7280", fontWeight: 600 }}>הוסף מציין מיקום:</span>
+          {[1, 2, 3, 4, 5, 6].map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => insertBodyToken(n)}
+              style={{
+                padding: "4px 10px",
+                borderRadius: 8,
+                border: "1px solid #cbd5e1",
+                background: "#f8fafc",
+                fontSize: 13,
+                cursor: "pointer",
+                fontWeight: 600,
+              }}
+            >
+              {`{{${n}}}`}
+            </button>
+          ))}
+        </div>
         <textarea
           value={tplBodyText}
           onChange={(e) => setTplBodyText(e.target.value)}
@@ -195,12 +270,128 @@ export default function TemplatesPageClient() {
             fontFamily: "inherit",
           }}
         />
+        {paramSlotCount > 0 ? (
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ fontWeight: 700, fontSize: 13 }}>מקור נתונים לכל {"{{n}}"} (CRM)</div>
+            {Array.from({ length: paramSlotCount }, (_, i) => (
+              <label
+                key={i}
+                style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", fontSize: 13 }}
+              >
+                <span style={{ minWidth: 72, fontWeight: 600 }}>{`{{${i + 1}}}`}</span>
+                <select
+                  value={tplParameterSources[i] ?? "manual"}
+                  onChange={(e) => {
+                    const v = e.target.value as TemplateParamSource;
+                    setTplParameterSources((prev) => {
+                      const next = [...prev];
+                      while (next.length <= i) next.push("manual");
+                      next[i] = v;
+                      return next;
+                    });
+                  }}
+                  style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e5e7eb", minWidth: 220 }}
+                >
+                  {SOURCE_LABELS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+        ) : null}
         <input
           value={tplExampleValues}
           onChange={(e) => setTplExampleValues(e.target.value)}
-          placeholder="ערכי דוגמה לפלייסהולדרים (פסיק)"
+          placeholder="ערכי דוגמה לפלייסהולדרים (פסיק) — נדרש לאישור במטא"
           style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb" }}
         />
+        <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>כפתורים (עד 3 — Quick Reply / URL)</div>
+          <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>
+            טקסט כפתור עד 25 תווים. URL מלא לכפתור קישור (ללא משתני דינמיקה בכתובת בגרסה זו).
+          </p>
+          {tplButtonRows.map((row, i) => (
+            <div
+              key={i}
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
+                alignItems: "center",
+                padding: 10,
+                borderRadius: 10,
+                border: "1px solid #e5e7eb",
+                background: "#fafafa",
+              }}
+            >
+              <select
+                value={row.type}
+                onChange={(e) =>
+                  patchButtonRow(i, {
+                    type: e.target.value as "QUICK_REPLY" | "URL",
+                    url: e.target.value === "URL" ? row.url : "",
+                  })
+                }
+                style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e5e7eb" }}
+              >
+                <option value="QUICK_REPLY">Quick Reply</option>
+                <option value="URL">URL</option>
+              </select>
+              <input
+                value={row.text}
+                onChange={(e) => patchButtonRow(i, { text: e.target.value })}
+                placeholder="טקסט הכפתור"
+                maxLength={25}
+                style={{ flex: "1 1 160px", padding: "8px 10px", borderRadius: 8, border: "1px solid #e5e7eb" }}
+              />
+              {row.type === "URL" ? (
+                <input
+                  value={row.url}
+                  onChange={(e) => patchButtonRow(i, { url: e.target.value })}
+                  placeholder="https://..."
+                  dir="ltr"
+                  style={{ flex: "2 1 220px", padding: "8px 10px", borderRadius: 8, border: "1px solid #e5e7eb" }}
+                />
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setTplButtonRows((rows) => rows.filter((_, j) => j !== i))}
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 8,
+                  border: "1px solid #fecaca",
+                  background: "#fff",
+                  color: "#b91c1c",
+                  cursor: "pointer",
+                  fontSize: 13,
+                }}
+              >
+                הסר
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            disabled={tplButtonRows.length >= 3}
+            onClick={() =>
+              setTplButtonRows((rows) => [...rows, { type: "QUICK_REPLY", text: "", url: "" }])
+            }
+            style={{
+              justifySelf: "start",
+              padding: "8px 14px",
+              borderRadius: 10,
+              border: "1px dashed #cbd5e1",
+              background: "#f8fafc",
+              fontWeight: 700,
+              cursor: tplButtonRows.length >= 3 ? "not-allowed" : "pointer",
+            }}
+          >
+            + כפתור
+          </button>
+        </div>
         <button
           type="button"
           onClick={() => void saveTemplate()}

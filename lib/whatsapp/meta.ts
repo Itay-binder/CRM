@@ -1,4 +1,5 @@
 import type { WhatsAppMetaConfig, WhatsAppTemplateRecord } from "@/lib/whatsapp/repo";
+import { countBodyPlaceholders } from "@/lib/whatsapp/templateParams";
 
 function graphBaseUrl(): string {
   return process.env.WHATSAPP_GRAPH_API_BASE?.trim() || "https://graph.facebook.com/v22.0";
@@ -43,16 +44,30 @@ export async function submitTemplateToMeta(
   config: WhatsAppMetaConfig,
   template: WhatsAppTemplateRecord
 ): Promise<MetaTemplateCreateResponse> {
-  const bodyExamples = template.exampleValues
-    .map((v) => v.trim())
-    .filter(Boolean);
+  const bodyExamples = template.exampleValues.map((v) => v.trim()).filter(Boolean);
+  const slotCount = countBodyPlaceholders(template.bodyText);
+  const row: string[] = [];
+  for (let i = 0; i < slotCount; i++) {
+    row.push(bodyExamples[i] ?? "דוגמה");
+  }
   const components: Array<Record<string, unknown>> = [
     {
       type: "BODY",
       text: template.bodyText,
-      ...(bodyExamples.length > 0 ? { example: { body_text: [bodyExamples] } } : {}),
+      ...(row.length > 0 ? { example: { body_text: [row] } } : {}),
     },
   ];
+  const buttons = template.buttonRows?.slice(0, 3) ?? [];
+  if (buttons.length > 0) {
+    const buttonsPayload = buttons.map((b) => {
+      if (b.type === "URL") {
+        const url = (b.url ?? "").trim() || "https://example.com";
+        return { type: "URL", text: b.text, url };
+      }
+      return { type: "QUICK_REPLY", text: b.text };
+    });
+    components.push({ type: "BUTTONS", buttons: buttonsPayload });
+  }
   return callMeta<MetaTemplateCreateResponse>(`/${config.wabaId}/message_templates`, config.systemUserToken, {
     method: "POST",
     body: JSON.stringify({

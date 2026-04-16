@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { AudienceCondition, AudienceLogic } from "@/lib/whatsapp/audienceFilter";
+import { countBodyPlaceholders } from "@/lib/whatsapp/templateParams";
 
 type TemplateVm = {
   id: string;
@@ -11,6 +12,8 @@ type TemplateVm = {
   category: string;
   language: string;
   status: string;
+  bodyText?: string;
+  parameterSources?: string[];
 };
 
 type LabelOpt = { id: string; name: string };
@@ -22,6 +25,14 @@ type DraftVm = {
   parameterValues: string[];
   conditions: AudienceCondition[];
   logic: AudienceLogic;
+};
+
+type AudienceContactRow = {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  status: string;
 };
 
 async function parseJson<T>(res: Response): Promise<T> {
@@ -70,6 +81,10 @@ export default function BroadcastNewClient() {
   const [conditions, setConditions] = useState<AudienceCondition[]>([]);
   const [previewCount, setPreviewCount] = useState<number | null>(null);
   const [draftId, setDraftId] = useState<string | null>(null);
+  const [audienceContacts, setAudienceContacts] = useState<AudienceContactRow[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [audienceLoading, setAudienceLoading] = useState(false);
+  const [audienceTruncated, setAudienceTruncated] = useState(false);
 
   const loadBase = useCallback(async () => {
     const [tRes, lRes] = await Promise.all([
@@ -116,6 +131,44 @@ export default function BroadcastNewClient() {
     })();
   }, [loadBase, loadDraft]);
 
+  const refreshAudience = useCallback(async () => {
+    setErr(null);
+    setAudienceLoading(true);
+    try {
+      const res = await fetch("/api/whatsapp/audience/preview", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conditions, logic }),
+      });
+      const j = await parseJson<{
+        ok?: boolean;
+        count?: number;
+        contacts?: AudienceContactRow[];
+        truncated?: boolean;
+        error?: string;
+      }>(res);
+      if (!res.ok || !j.ok) throw new Error(j.error || "תצוגה מקדימה נכשלה");
+      const list = j.contacts ?? [];
+      setAudienceContacts(list);
+      setSelectedIds(new Set(list.map((c) => c.id)));
+      setPreviewCount(typeof j.count === "number" ? j.count : list.length);
+      setAudienceTruncated(Boolean(j.truncated));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "שגיאה");
+    } finally {
+      setAudienceLoading(false);
+    }
+  }, [conditions, logic]);
+
+  useEffect(() => {
+    if (loading) return;
+    const t = window.setTimeout(() => {
+      void refreshAudience();
+    }, 450);
+    return () => window.clearTimeout(t);
+  }, [loading, conditions, logic, refreshAudience]);
+
   const filteredTemplates = useMemo(() => {
     const q = tplSearch.trim().toLowerCase();
     if (!q) return templates;
@@ -129,22 +182,32 @@ export default function BroadcastNewClient() {
 
   const selectedTpl = templates.find((t) => t.id === templateId);
 
-  async function runPreview() {
-    setErr(null);
-    setPreviewCount(null);
-    try {
-      const res = await fetch("/api/whatsapp/audience/preview", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conditions, logic }),
-      });
-      const j = await parseJson<{ ok?: boolean; count?: number; error?: string }>(res);
-      if (!res.ok || !j.ok) throw new Error(j.error || "תצוגה מקדימה נכשלה");
-      setPreviewCount(typeof j.count === "number" ? j.count : 0);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "שגיאה");
+  const hasManualTemplateParams = useMemo(() => {
+    if (!selectedTpl?.bodyText) return true;
+    const n = countBodyPlaceholders(selectedTpl.bodyText);
+    if (n === 0) return false;
+    const src = selectedTpl.parameterSources ?? [];
+    for (let i = 0; i < n; i++) {
+      if ((src[i] ?? "manual") === "manual") return true;
     }
+    return false;
+  }, [selectedTpl]);
+
+  function toggleContact(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAllVisible() {
+    setSelectedIds(new Set(audienceContacts.map((c) => c.id)));
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
   }
 
   async function saveDraft() {
@@ -191,12 +254,16 @@ export default function BroadcastNewClient() {
         .split(",")
         .map((x) => x.trim())
         .filter(Boolean);
+      if (selectedIds.size === 0) {
+        throw new Error("בחרו לפחות איש קשר אחד מהרשימה.");
+      }
       const body: Record<string, unknown> = {
         broadcastName: broadcastName.trim() || undefined,
         templateId,
         parameterValues,
         conditions,
         logic,
+        recipientIds: Array.from(selectedIds),
       };
       if (draftId) {
         body.draftId = draftId;
@@ -288,12 +355,27 @@ export default function BroadcastNewClient() {
                 כל התבניות / יצירת תבנית חדשה
               </Link>
             </div>
-            <label style={{ display: "block", fontWeight: 700, fontSize: 13, marginBottom: 6 }}>פרמטרים לגוף התבנית (פסיקים לפי {"{{1}}"}, {"{{2}}"}…)</label>
+            <label style={{ display: "block", fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
+              פרמטרים לגוף התבנית (פסיקים לפי {"{{1}}"}, {"{{2}}"}…)
+            </label>
+            <p style={{ margin: "0 0 8px", fontSize: 12, color: "#6b7280", lineHeight: 1.45 }}>
+              אם בתבנית הגדרתם מקור לכל פרמטר (שם, טלפון וכו׳) — הערכים ימולאו אוטומטית לכל איש קשר. פרמטרים
+              שמוגדרים כ&quot;ידני&quot; נלקחים מהשדה למטה.
+            </p>
             <input
               value={parameterValuesStr}
               onChange={(e) => setParameterValuesStr(e.target.value)}
-              placeholder="למשל: ישראל, 100"
-              style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+              placeholder={
+                hasManualTemplateParams ? "למשל: ישראל, 100 (לפרמטרים ידניים בלבד)" : "אין פרמטרים ידניים בתבנית"
+              }
+              disabled={!hasManualTemplateParams}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #e5e7eb",
+                background: hasManualTemplateParams ? "#fff" : "#f3f4f6",
+              }}
             />
             {selectedTpl && selectedTpl.status !== "approved" ? (
               <p style={{ fontSize: 12, color: "#b45309", marginTop: 8 }}>
@@ -312,7 +394,8 @@ export default function BroadcastNewClient() {
           >
             <h2 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 900 }}>קהל יעד</h2>
             <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>
-              הוסף תנאים (תגית, שם, טלפון וכו׳). בלי תנאים — נשלח לכל אנשי הקשר (עד מגבלת המערכת). לוגיקה בין תנאים:
+              הוסף תנאים (תגית, שם, טלפון וכו׳). בלי תנאים — נכללים כל אנשי הקשר. הרשימה והצ&apos;קבוקסים מתעדכנים
+              אוטומטית כשמשנים תנאים. ניתן לבטל סימון ליחידים לפני שליחה.
             </p>
             <select
               value={logic}
@@ -428,7 +511,7 @@ export default function BroadcastNewClient() {
               </button>
               <button
                 type="button"
-                onClick={() => void runPreview()}
+                onClick={() => void refreshAudience()}
                 style={{
                   padding: "8px 14px",
                   borderRadius: 10,
@@ -439,11 +522,101 @@ export default function BroadcastNewClient() {
                   color: "#0369a1",
                 }}
               >
-                תצוגה מקדימה: כמה אנשי קשר
+                רענן רשימה
+              </button>
+              <button
+                type="button"
+                onClick={selectAllVisible}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: 10,
+                  border: "1px solid #e5e7eb",
+                  background: "#fff",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                סמן הכל ברשימה
+              </button>
+              <button
+                type="button"
+                onClick={clearSelection}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: 10,
+                  border: "1px solid #e5e7eb",
+                  background: "#fff",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                נקה בחירה
               </button>
               {previewCount !== null ? (
-                <span style={{ fontWeight: 800, color: "#0f766e" }}>{previewCount} אנשי קשר תואמים</span>
+                <span style={{ fontWeight: 800, color: "#0f766e" }}>
+                  {previewCount} תואמים · נבחרו {selectedIds.size}
+                </span>
               ) : null}
+              {audienceLoading ? <span style={{ color: "#6b7280", fontSize: 13 }}>מעדכן רשימה…</span> : null}
+            </div>
+
+            {audienceTruncated ? (
+              <p style={{ fontSize: 12, color: "#b45309", marginTop: 10 }}>
+                מוצגים עד 500 אנשי קשר ברשימה — סה״כ התאמות: {previewCount ?? "—"}.
+              </p>
+            ) : null}
+
+            <div
+              style={{
+                marginTop: 14,
+                maxHeight: 380,
+                overflow: "auto",
+                border: "1px solid #e5e7eb",
+                borderRadius: 12,
+                background: "#fafafa",
+              }}
+            >
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: "#f3f4f6", position: "sticky", top: 0 }}>
+                    <th style={{ padding: 8, width: 36, textAlign: "center" as const }}>בחר</th>
+                    <th style={{ padding: 8, textAlign: "right" as const }}>שם</th>
+                    <th style={{ padding: 8, textAlign: "right" as const }}>טלפון</th>
+                    <th style={{ padding: 8, textAlign: "right" as const }}>אימייל</th>
+                    <th style={{ padding: 8, textAlign: "right" as const }}>סטטוס</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {audienceContacts.length === 0 && !audienceLoading ? (
+                    <tr>
+                      <td colSpan={5} style={{ padding: 16, textAlign: "center", color: "#6b7280" }}>
+                        אין אנשי קשר להצגה.
+                      </td>
+                    </tr>
+                  ) : (
+                    audienceContacts.map((c) => (
+                      <tr key={c.id} style={{ borderTop: "1px solid #eee", background: "#fff" }}>
+                        <td style={{ padding: 8, textAlign: "center" }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(c.id)}
+                            onChange={() => toggleContact(c.id)}
+                            aria-label={`בחר ${c.name || c.id}`}
+                          />
+                        </td>
+                        <td style={{ padding: 8 }}>{c.name || "—"}</td>
+                        <td style={{ padding: 8 }} dir="ltr">
+                          {c.phone || "—"}
+                        </td>
+                        <td style={{ padding: 8 }} dir="ltr">
+                          {c.email || "—"}
+                        </td>
+                        <td style={{ padding: 8 }}>{c.status || "—"}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </section>
 
@@ -466,7 +639,7 @@ export default function BroadcastNewClient() {
             <button
               type="button"
               onClick={() => void sendBroadcast()}
-              disabled={sending || !templateId}
+              disabled={sending || !templateId || selectedIds.size === 0}
               style={{
                 padding: "12px 22px",
                 borderRadius: 10,

@@ -1,5 +1,10 @@
 import type { Firestore } from "firebase-admin/firestore";
 import type { AudienceCondition, AudienceLogic } from "@/lib/whatsapp/audienceFilter";
+import {
+  countBodyPlaceholders,
+  normalizeParameterSources,
+  type TemplateParamSource,
+} from "@/lib/whatsapp/templateParams";
 
 const COLLECTION = "integrationSettings";
 const CONFIG_DOC_ID = "whatsappMetaConfig";
@@ -19,6 +24,13 @@ export type WhatsAppMetaConfig = {
 export type WhatsAppTemplateStatus = "draft" | "submitted" | "approved" | "rejected";
 export type WhatsAppTemplateCategory = "MARKETING" | "UTILITY" | "AUTHENTICATION";
 
+export type WhatsAppTemplateButton = {
+  type: "QUICK_REPLY" | "URL";
+  text: string;
+  /** לכפתור URL — כתובת מלאה (ללא משתנים דינמיים בגרסה זו) */
+  url?: string;
+};
+
 export type WhatsAppTemplateRecord = {
   id: string;
   name: string;
@@ -26,6 +38,10 @@ export type WhatsAppTemplateRecord = {
   language: string;
   bodyText: string;
   exampleValues: string[];
+  /** מיפוי {{1}}, {{2}}… — manual = מהדיוור או ערכי דוגמה */
+  parameterSources?: TemplateParamSource[];
+  /** עד 3 כפתורים (Quick Reply / URL) לאישור במטא */
+  buttonRows?: WhatsAppTemplateButton[];
   status: WhatsAppTemplateStatus;
   metaTemplateId?: string;
   metaStatus?: string;
@@ -80,6 +96,27 @@ function asStringArray(v: unknown): string[] {
   return v
     .map((x) => String(x ?? "").trim())
     .filter(Boolean);
+}
+
+function parseButtonRows(raw: unknown): WhatsAppTemplateRecord["buttonRows"] {
+  if (!Array.isArray(raw)) return undefined;
+  const out: NonNullable<WhatsAppTemplateRecord["buttonRows"]> = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    const type = asString(o.type).trim().toUpperCase();
+    const text = asString(o.text).trim().slice(0, 25);
+    if (!text) continue;
+    if (type === "URL") {
+      const url = asString(o.url).trim();
+      if (!url) continue;
+      out.push({ type: "URL", text, url });
+    } else {
+      out.push({ type: "QUICK_REPLY", text });
+    }
+    if (out.length >= 3) break;
+  }
+  return out.length ? out : undefined;
 }
 
 export async function getWhatsAppMetaConfig(db: Firestore): Promise<WhatsAppMetaConfig | null> {
@@ -139,6 +176,11 @@ export async function listWhatsAppTemplates(db: Firestore): Promise<WhatsAppTemp
         statusRaw === "submitted" || statusRaw === "approved" || statusRaw === "rejected"
           ? statusRaw
           : "draft";
+      const slots = countBodyPlaceholders(bodyText);
+      const parameterSources =
+        Array.isArray(row.parameterSources) && row.parameterSources.length && slots > 0
+          ? normalizeParameterSources(row.parameterSources, slots)
+          : undefined;
       return {
         id,
         name,
@@ -146,6 +188,8 @@ export async function listWhatsAppTemplates(db: Firestore): Promise<WhatsAppTemp
         language,
         bodyText,
         exampleValues: asStringArray(row.exampleValues),
+        parameterSources,
+        buttonRows: parseButtonRows(row.buttonRows),
         status,
         metaTemplateId: asString(row.metaTemplateId).trim() || undefined,
         metaStatus: asString(row.metaStatus).trim() || undefined,
@@ -171,6 +215,7 @@ export async function saveWhatsAppTemplate(
   const idx = templates.findIndex((t) => t.id === input.id);
   if (idx >= 0) {
     const prev = templates[idx];
+    const slots = countBodyPlaceholders(input.bodyText.trim());
     const updated: WhatsAppTemplateRecord = {
       ...prev,
       name: input.name.trim(),
@@ -178,6 +223,11 @@ export async function saveWhatsAppTemplate(
       language: input.language.trim() || "he",
       bodyText: input.bodyText.trim(),
       exampleValues: input.exampleValues.map((x) => x.trim()).filter(Boolean),
+      parameterSources:
+        input.parameterSources !== undefined
+          ? normalizeParameterSources(input.parameterSources, slots)
+          : prev.parameterSources,
+      buttonRows: input.buttonRows !== undefined ? parseButtonRows(input.buttonRows) : prev.buttonRows,
       status: input.status ?? prev.status,
       updatedAt: now,
     };
@@ -185,6 +235,7 @@ export async function saveWhatsAppTemplate(
     await db.collection(COLLECTION).doc(TEMPLATES_DOC_ID).set({ templates }, { merge: true });
     return updated;
   }
+  const slots = countBodyPlaceholders(input.bodyText.trim());
   const created: WhatsAppTemplateRecord = {
     id: input.id,
     name: input.name.trim(),
@@ -192,6 +243,11 @@ export async function saveWhatsAppTemplate(
     language: input.language.trim() || "he",
     bodyText: input.bodyText.trim(),
     exampleValues: input.exampleValues.map((x) => x.trim()).filter(Boolean),
+    parameterSources:
+      input.parameterSources !== undefined
+        ? normalizeParameterSources(input.parameterSources, slots)
+        : undefined,
+    buttonRows: input.buttonRows !== undefined ? parseButtonRows(input.buttonRows) : undefined,
     status: input.status ?? "draft",
     createdAt: now,
     updatedAt: now,

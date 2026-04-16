@@ -6,6 +6,7 @@ import { getLeadById, listLeadsFiltered, normalizePhone } from "@/lib/leads/repo
 import type { AudienceCondition, AudienceLogic } from "@/lib/whatsapp/audienceFilter";
 import { filterLeadsByAudience } from "@/lib/whatsapp/audienceFilter";
 import { sendTemplateMessageViaMeta } from "@/lib/whatsapp/meta";
+import { buildTemplateParametersForLead } from "@/lib/whatsapp/templateParams";
 import {
   appendWhatsAppCampaign,
   getWhatsAppMetaConfig,
@@ -45,6 +46,7 @@ export async function POST(req: NextRequest) {
   let body: {
     broadcastName?: string;
     templateId?: string;
+    /** אם הוגדר קהל בתנאים — מצמצם לרשימה זו (צ'קבוקסים) */
     recipientIds?: string[];
     parameterValues?: string[];
     conditions?: AudienceCondition[];
@@ -68,6 +70,10 @@ export async function POST(req: NextRequest) {
   try {
     const db = await getAdminDb();
 
+    let useAudienceFilter = false;
+    let audienceConditions: AudienceCondition[] = [];
+    let audienceLogic: AudienceLogic = "and";
+
     if (draftId) {
       const drafts = await listWhatsAppBroadcastDrafts(db);
       const draft = drafts.find((d) => d.id === draftId);
@@ -77,20 +83,30 @@ export async function POST(req: NextRequest) {
       templateId = draft.templateId;
       parameterValues = draft.parameterValues;
       if (!broadcastName) broadcastName = draft.name;
-      const leads = await listLeadsFiltered(null, null);
-      const matched = filterLeadsByAudience(leads, draft.conditions, draft.logic);
-      recipientIds = matched.map((l) => l.id).slice(0, MAX_RECIPIENTS);
+      useAudienceFilter = true;
+      audienceConditions = draft.conditions;
+      audienceLogic = draft.logic;
     } else if (body.conditions !== undefined) {
-      const logic: AudienceLogic = body.logic === "or" ? "or" : "and";
-      const conds = Array.isArray(body.conditions) ? body.conditions : [];
-      const leads = await listLeadsFiltered(null, null);
-      const matched = filterLeadsByAudience(leads, conds, logic);
-      recipientIds = matched.map((l) => l.id).slice(0, MAX_RECIPIENTS);
-    } else {
-      recipientIds = Array.isArray(body.recipientIds)
-        ? Array.from(new Set(body.recipientIds.map((x) => String(x).trim()).filter(Boolean)))
-        : [];
+      useAudienceFilter = true;
+      audienceConditions = Array.isArray(body.conditions) ? body.conditions : [];
+      audienceLogic = body.logic === "or" ? "or" : "and";
     }
+
+    const selectedRaw = Array.isArray(body.recipientIds)
+      ? Array.from(new Set(body.recipientIds.map((x) => String(x).trim()).filter(Boolean)))
+      : [];
+
+    if (useAudienceFilter) {
+      const leads = await listLeadsFiltered(null, null);
+      const matched = filterLeadsByAudience(leads, audienceConditions, audienceLogic);
+      const matchedIds = matched.map((l) => l.id);
+      recipientIds =
+        selectedRaw.length > 0 ? matchedIds.filter((id) => selectedRaw.includes(id)) : matchedIds;
+    } else {
+      recipientIds = selectedRaw;
+    }
+
+    recipientIds = recipientIds.slice(0, MAX_RECIPIENTS);
 
     if (!templateId) {
       return NextResponse.json({ ok: false, error: "templateId is required" }, { status: 400 });
@@ -148,11 +164,12 @@ export async function POST(req: NextRequest) {
         continue;
       }
       try {
+        const paramValuesForLead = buildTemplateParametersForLead(lead, template, parameterValues);
         const sent = await sendTemplateMessageViaMeta(config, {
           to: normalized,
           templateName: template.name,
           language: template.language,
-          parameterValues,
+          parameterValues: paramValuesForLead,
         });
         dispatches.push({
           contactId: lead.id,

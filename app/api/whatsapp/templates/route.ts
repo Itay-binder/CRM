@@ -6,8 +6,10 @@ import { getAdminDb } from "@/lib/firebase/admin";
 import {
   listWhatsAppTemplates,
   saveWhatsAppTemplate,
+  type WhatsAppTemplateButton,
   type WhatsAppTemplateCategory,
 } from "@/lib/whatsapp/repo";
+import type { TemplateParamSource } from "@/lib/whatsapp/templateParams";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +49,8 @@ export async function POST(req: NextRequest) {
     language?: string;
     bodyText?: string;
     exampleValues?: string[];
+    parameterSources?: string[];
+    buttonRows?: Array<{ type?: string; text?: string; url?: string }>;
   };
   try {
     body = (await req.json()) as typeof body;
@@ -69,6 +73,12 @@ export async function POST(req: NextRequest) {
       language: body.language?.trim() || "he",
       bodyText,
       exampleValues: Array.isArray(body.exampleValues) ? body.exampleValues : [],
+      parameterSources: Array.isArray(body.parameterSources)
+        ? (body.parameterSources as TemplateParamSource[])
+        : undefined,
+      buttonRows: Array.isArray(body.buttonRows)
+        ? (body.buttonRows as WhatsAppTemplateButton[])
+        : undefined,
       status: "draft",
     });
     return NextResponse.json({ ok: true, template: saved });

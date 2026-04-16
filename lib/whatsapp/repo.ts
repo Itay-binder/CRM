@@ -9,6 +9,11 @@ import {
 const COLLECTION = "integrationSettings";
 const CONFIG_DOC_ID = "whatsappMetaConfig";
 const TEMPLATES_DOC_ID = "whatsappTemplates";
+
+/** Firestore לא מקבל ערך undefined בשדות — JSON מדלג על מפתחות כאלה */
+function stripUndefinedForFirestore<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
 const CAMPAIGNS_DOC_ID = "whatsappCampaigns";
 const DRAFTS_DOC_ID = "whatsappBroadcastDrafts";
 
@@ -279,7 +284,10 @@ export async function saveWhatsAppTemplate(
     };
     const normalized = normalizeTemplateHeaderFooter(updated);
     templates[idx] = normalized;
-    await db.collection(COLLECTION).doc(TEMPLATES_DOC_ID).set({ templates }, { merge: true });
+    await db
+      .collection(COLLECTION)
+      .doc(TEMPLATES_DOC_ID)
+      .set(stripUndefinedForFirestore({ templates }), { merge: true });
     return normalized;
   }
   const slots = countBodyPlaceholders(input.bodyText.trim());
@@ -325,7 +333,10 @@ export async function patchWhatsAppTemplateMeta(
     updatedAt: new Date().toISOString(),
   };
   templates[idx] = next;
-  await db.collection(COLLECTION).doc(TEMPLATES_DOC_ID).set({ templates }, { merge: true });
+  await db
+    .collection(COLLECTION)
+    .doc(TEMPLATES_DOC_ID)
+    .set(stripUndefinedForFirestore({ templates }), { merge: true });
   return next;
 }
 

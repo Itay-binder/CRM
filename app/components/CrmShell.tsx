@@ -65,6 +65,7 @@ export default function CrmShell({
             <CrmNavLink href="/orders" label="ניהול הזמנות" />
           ) : null}
           <CrmNavLink href="/billing" label="סליקה" />
+          <CrmNavLink href="/whatsapp-automations" label="אוטומציות ווצאפ" />
           <div
             style={{
               marginTop: 6,

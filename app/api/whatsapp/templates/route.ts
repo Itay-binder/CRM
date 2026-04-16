@@ -6,6 +6,7 @@ import { getAdminDb } from "@/lib/firebase/admin";
 import {
   listWhatsAppTemplates,
   saveWhatsAppTemplate,
+  type WhatsAppHeaderFormat,
   type WhatsAppTemplateButton,
   type WhatsAppTemplateCategory,
 } from "@/lib/whatsapp/repo";
@@ -51,6 +52,10 @@ export async function POST(req: NextRequest) {
     exampleValues?: string[];
     parameterSources?: string[];
     buttonRows?: Array<{ type?: string; text?: string; url?: string }>;
+    headerFormat?: WhatsAppHeaderFormat;
+    headerText?: string;
+    headerMediaUrl?: string;
+    footerText?: string;
   };
   try {
     body = (await req.json()) as typeof body;
@@ -73,6 +78,10 @@ export async function POST(req: NextRequest) {
       language: body.language?.trim() || "he",
       bodyText,
       exampleValues: Array.isArray(body.exampleValues) ? body.exampleValues : [],
+      headerFormat: body.headerFormat,
+      headerText: body.headerText,
+      headerMediaUrl: body.headerMediaUrl,
+      footerText: body.footerText,
       parameterSources: Array.isArray(body.parameterSources)
         ? (body.parameterSources as TemplateParamSource[])
         : undefined,

@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
+import type { WhatsAppHeaderFormat } from "@/lib/whatsapp/repo";
+import { LIMITS, validateTemplateDraft } from "@/lib/whatsapp/templateLimits";
 import { countBodyPlaceholders, type TemplateParamSource } from "@/lib/whatsapp/templateParams";
 
 type TemplateVm = {
@@ -12,6 +14,10 @@ type TemplateVm = {
   language: string;
   bodyText: string;
   exampleValues: string[];
+  headerFormat?: WhatsAppHeaderFormat;
+  headerText?: string;
+  headerMediaUrl?: string;
+  footerText?: string;
   parameterSources?: TemplateParamSource[];
   buttonRows?: Array<{ type: "QUICK_REPLY" | "URL"; text: string; url?: string }>;
   status: "draft" | "submitted" | "approved" | "rejected";
@@ -53,8 +59,46 @@ export default function TemplatesPageClient() {
   const [tplParameterSources, setTplParameterSources] = useState<TemplateParamSource[]>([]);
   const [tplButtonRows, setTplButtonRows] = useState<BtnRow[]>([]);
   const [tplSearch, setTplSearch] = useState("");
+  const [tplHeaderFormat, setTplHeaderFormat] = useState<WhatsAppHeaderFormat>("NONE");
+  const [tplHeaderText, setTplHeaderText] = useState("");
+  const [tplHeaderMediaUrl, setTplHeaderMediaUrl] = useState("");
+  const [tplFooterText, setTplFooterText] = useState("");
 
   const paramSlotCount = countBodyPlaceholders(tplBodyText);
+
+  const buttonRowsForValidation = useMemo(
+    () =>
+      tplButtonRows
+        .map((b) => ({
+          type: b.type,
+          text: b.text.trim(),
+          url: b.type === "URL" ? b.url.trim() : undefined,
+        }))
+        .filter((b) => {
+          if (!b.text) return false;
+          if (b.type === "URL") return Boolean(b.url);
+          return true;
+        })
+        .slice(0, 3),
+    [tplButtonRows]
+  );
+
+  const validationIssues = useMemo(
+    () =>
+      validateTemplateDraft({
+        bodyText: tplBodyText,
+        footerText: tplFooterText,
+        headerFormat: tplHeaderFormat,
+        headerText: tplHeaderText,
+        headerMediaUrl: tplHeaderMediaUrl,
+        buttonRows: buttonRowsForValidation,
+      }),
+    [tplBodyText, tplFooterText, tplHeaderFormat, tplHeaderText, tplHeaderMediaUrl, buttonRowsForValidation]
+  );
+
+  const hasBlockingValidation = validationIssues.some((i) => i.level === "error");
+
+  const hasUrlButton = tplButtonRows.some((r) => r.type === "URL");
 
   useEffect(() => {
     setTplParameterSources((prev) => {
@@ -101,18 +145,15 @@ export default function TemplatesPageClient() {
     setErr(null);
     setOkMsg(null);
     try {
-      const buttonRows = tplButtonRows
-        .map((b) => ({
-          type: b.type,
-          text: b.text.trim().slice(0, 25),
-          url: b.url.trim(),
-        }))
-        .filter((b) => {
-          if (!b.text) return false;
-          if (b.type === "URL") return Boolean(b.url);
-          return true;
-        })
-        .slice(0, 3);
+      if (hasBlockingValidation) {
+        setErr("יש לתקן את השגיאות לפני השמירה (ראו התראות למטה).");
+        return;
+      }
+      const buttonRows = buttonRowsForValidation.map((b) => ({
+        type: b.type,
+        text: b.text.slice(0, LIMITS.buttonLabelMax),
+        ...(b.type === "URL" && b.url ? { url: b.url } : {}),
+      }));
 
       const res = await fetch("/api/whatsapp/templates", {
         method: "POST",
@@ -127,6 +168,13 @@ export default function TemplatesPageClient() {
             .split(",")
             .map((x) => x.trim())
             .filter(Boolean),
+          headerFormat: tplHeaderFormat,
+          headerText: tplHeaderFormat === "TEXT" ? tplHeaderText : undefined,
+          headerMediaUrl:
+            tplHeaderFormat === "IMAGE" || tplHeaderFormat === "VIDEO" || tplHeaderFormat === "DOCUMENT"
+              ? tplHeaderMediaUrl
+              : undefined,
+          footerText: tplFooterText.trim() || undefined,
           parameterSources: tplParameterSources.slice(0, paramSlotCount),
           buttonRows,
         }),
@@ -138,6 +186,10 @@ export default function TemplatesPageClient() {
       setTplExampleValues("");
       setTplParameterSources([]);
       setTplButtonRows([]);
+      setTplHeaderFormat("NONE");
+      setTplHeaderText("");
+      setTplHeaderMediaUrl("");
+      setTplFooterText("");
       setOkMsg("הטמפלט נשמר. ניתן לשלוח לאישור במטא או לבחור בברודקאסט.");
       await load();
     } catch (e) {
@@ -236,6 +288,50 @@ export default function TemplatesPageClient() {
             style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb", width: 120 }}
           />
         </div>
+        <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>כותרת (אופציונלי)</div>
+          <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>
+            תמונה / וידאו / מסמך — קישור HTTPS ציבורי (ישמש גם לדוגמה לאישור במטא). לשמע: בחרו &quot;מסמך&quot;
+            וקישור לקובץ אודיו (למשל mp3).
+          </p>
+          <select
+            value={tplHeaderFormat}
+            onChange={(e) => {
+              const v = e.target.value as WhatsAppHeaderFormat;
+              setTplHeaderFormat(v);
+            }}
+            style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb", maxWidth: 280 }}
+          >
+            <option value="NONE">ללא כותרת</option>
+            <option value="TEXT">טקסט (עד 60 תווים)</option>
+            <option value="IMAGE">תמונה</option>
+            <option value="VIDEO">וידאו</option>
+            <option value="DOCUMENT">מסמך / שמע</option>
+          </select>
+          {tplHeaderFormat === "TEXT" ? (
+            <div>
+              <input
+                value={tplHeaderText}
+                onChange={(e) => setTplHeaderText(e.target.value.slice(0, LIMITS.headerTextMax))}
+                placeholder="טקסט כותרת"
+                maxLength={LIMITS.headerTextMax}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+              />
+              <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>
+                {tplHeaderText.length}/{LIMITS.headerTextMax}
+              </div>
+            </div>
+          ) : null}
+          {tplHeaderFormat === "IMAGE" || tplHeaderFormat === "VIDEO" || tplHeaderFormat === "DOCUMENT" ? (
+            <input
+              value={tplHeaderMediaUrl}
+              onChange={(e) => setTplHeaderMediaUrl(e.target.value)}
+              placeholder="https://... (קישור ישיר לקובץ)"
+              dir="ltr"
+              style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+            />
+          ) : null}
+        </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
           <span style={{ fontSize: 12, color: "#6b7280", fontWeight: 600 }}>הוסף מציין מיקום:</span>
           {[1, 2, 3, 4, 5, 6].map((n) => (
@@ -270,6 +366,22 @@ export default function TemplatesPageClient() {
             fontFamily: "inherit",
           }}
         />
+        <div style={{ fontSize: 11, color: "#9ca3af", textAlign: "left" as const }} dir="ltr">
+          {tplBodyText.length}/{LIMITS.bodyTextMax} characters
+        </div>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>פוטר (אופציונלי)</div>
+          <input
+            value={tplFooterText}
+            onChange={(e) => setTplFooterText(e.target.value.slice(0, LIMITS.footerMax))}
+            placeholder="טקסט קטן בתחתית (עד 60 תווים)"
+            maxLength={LIMITS.footerMax}
+            style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+          />
+          <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>
+            {tplFooterText.length}/{LIMITS.footerMax}
+          </div>
+        </div>
         {paramSlotCount > 0 ? (
           <div style={{ display: "grid", gap: 8 }}>
             <div style={{ fontWeight: 700, fontSize: 13 }}>מקור נתונים לכל {"{{n}}"} (CRM)</div>
@@ -308,10 +420,31 @@ export default function TemplatesPageClient() {
           placeholder="ערכי דוגמה לפלייסהולדרים (פסיק) — נדרש לאישור במטא"
           style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb" }}
         />
+        {validationIssues.length > 0 ? (
+          <div style={{ display: "grid", gap: 6 }}>
+            {validationIssues.map((issue, i) => (
+              <div
+                key={i}
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  fontSize: 13,
+                  background: issue.level === "error" ? "#fef2f2" : "#fffbeb",
+                  color: issue.level === "error" ? "#991b1b" : "#92400e",
+                  border: issue.level === "error" ? "1px solid #fecaca" : "1px solid #fde68a",
+                }}
+              >
+                {issue.level === "error" ? "שגיאה: " : "אזהרה: "}
+                {issue.message}
+              </div>
+            ))}
+          </div>
+        ) : null}
         <div style={{ display: "grid", gap: 8 }}>
           <div style={{ fontWeight: 700, fontSize: 13 }}>כפתורים (עד 3 — Quick Reply / URL)</div>
           <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>
-            טקסט כפתור עד 25 תווים. URL מלא לכפתור קישור (ללא משתני דינמיקה בכתובת בגרסה זו).
+            עד 3 כפתורים בסך הכול, ולכל היותר כפתור URL אחד. טקסט כפתור עד {LIMITS.buttonLabelMax} תווים (מטא).
+            URL מלא לכפתור קישור (ללא משתני דינמיקה בכתובת בגרסה זו).
           </p>
           {tplButtonRows.map((row, i) => (
             <div
@@ -338,15 +471,20 @@ export default function TemplatesPageClient() {
                 style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e5e7eb" }}
               >
                 <option value="QUICK_REPLY">Quick Reply</option>
-                <option value="URL">URL</option>
+                <option value="URL" disabled={hasUrlButton && row.type !== "URL"}>
+                  URL (מקסימום 1)
+                </option>
               </select>
               <input
                 value={row.text}
                 onChange={(e) => patchButtonRow(i, { text: e.target.value })}
                 placeholder="טקסט הכפתור"
-                maxLength={25}
+                maxLength={LIMITS.buttonLabelMax}
                 style={{ flex: "1 1 160px", padding: "8px 10px", borderRadius: 8, border: "1px solid #e5e7eb" }}
               />
+              <span style={{ fontSize: 11, color: row.text.length > LIMITS.buttonLabelMax ? "#b91c1c" : "#9ca3af" }}>
+                {row.text.length}/{LIMITS.buttonLabelMax}
+              </span>
               {row.type === "URL" ? (
                 <input
                   value={row.url}
@@ -376,9 +514,7 @@ export default function TemplatesPageClient() {
           <button
             type="button"
             disabled={tplButtonRows.length >= 3}
-            onClick={() =>
-              setTplButtonRows((rows) => [...rows, { type: "QUICK_REPLY", text: "", url: "" }])
-            }
+            onClick={() => setTplButtonRows((rows) => [...rows, { type: "QUICK_REPLY", text: "", url: "" }])}
             style={{
               justifySelf: "start",
               padding: "8px 14px",
@@ -392,10 +528,119 @@ export default function TemplatesPageClient() {
             + כפתור
           </button>
         </div>
+        <div style={{ fontWeight: 800, fontSize: 14, marginTop: 4 }}>תצוגה מקדימה</div>
+        <div
+          style={{
+            maxWidth: 360,
+            borderRadius: 12,
+            overflow: "hidden",
+            border: "1px solid #d1d5db",
+            background: "#ece5dd",
+            padding: 12,
+          }}
+        >
+          <div
+            style={{
+              background: "#dcf8c6",
+              borderRadius: "10px 10px 2px 10px",
+              padding: "10px 12px",
+              boxShadow: "0 1px 0.5px rgba(0,0,0,0.13)",
+              textAlign: "right" as const,
+              direction: "rtl" as const,
+            }}
+          >
+            {tplHeaderFormat === "IMAGE" ? (
+              <div
+                style={{
+                  height: 120,
+                  borderRadius: 8,
+                  background: "#cfe9ba",
+                  marginBottom: 8,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#3d6b28",
+                  fontSize: 13,
+                  fontWeight: 700,
+                }}
+              >
+                תמונה
+              </div>
+            ) : null}
+            {tplHeaderFormat === "VIDEO" ? (
+              <div
+                style={{
+                  height: 100,
+                  borderRadius: 8,
+                  background: "#b8d4a8",
+                  marginBottom: 8,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#2f4d22",
+                  fontSize: 13,
+                  fontWeight: 700,
+                }}
+              >
+                וידאו
+              </div>
+            ) : null}
+            {tplHeaderFormat === "DOCUMENT" ? (
+              <div
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: 8,
+                  background: "#f5f5f5",
+                  marginBottom: 8,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: "#374151",
+                }}
+                dir="ltr"
+              >
+                📎 מסמך / שמע
+              </div>
+            ) : null}
+            {tplHeaderFormat === "TEXT" && tplHeaderText.trim() ? (
+              <div style={{ fontWeight: 800, marginBottom: 8, fontSize: 15, color: "#111" }}>{tplHeaderText}</div>
+            ) : null}
+            <div style={{ whiteSpace: "pre-wrap", fontSize: 14, color: "#111", lineHeight: 1.45 }}>
+              {tplBodyText || "— גוף ההודעה —"}
+            </div>
+            {tplFooterText.trim() ? (
+              <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>{tplFooterText}</div>
+            ) : null}
+            {buttonRowsForValidation.length > 0 ? (
+              <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                {buttonRowsForValidation.map((b, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      padding: "8px 10px",
+                      borderRadius: 8,
+                      background: "#fff",
+                      border: "1px solid #cbd5e1",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: "#1e40af",
+                      textAlign: "center" as const,
+                    }}
+                  >
+                    {b.text || "כפתור"}
+                    {b.type === "URL" ? <span style={{ fontSize: 11, display: "block", color: "#64748b" }}>↗ URL</span> : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <p style={{ margin: "8px 0 0", fontSize: 11, color: "#6b7280", textAlign: "center" }}>
+            הדמיה בלבד — המראה בווצאפ תלוי במכשיר ובאישור מטא.
+          </p>
+        </div>
         <button
           type="button"
           onClick={() => void saveTemplate()}
-          disabled={savingTemplate}
+          disabled={savingTemplate || hasBlockingValidation}
           style={{
             justifySelf: "start",
             padding: "10px 18px",
@@ -404,10 +649,11 @@ export default function TemplatesPageClient() {
             background: "#2563eb",
             color: "#fff",
             fontWeight: 800,
-            cursor: "pointer",
+            cursor: savingTemplate || hasBlockingValidation ? "not-allowed" : "pointer",
+            opacity: hasBlockingValidation ? 0.65 : 1,
           }}
         >
-          {savingTemplate ? "שומר..." : "שמור תבנית"}
+          {savingTemplate ? "שומר..." : hasBlockingValidation ? "תקנו שגיאות לשמירה" : "שמור תבנית"}
         </button>
       </div>
 

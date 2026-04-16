@@ -167,9 +167,8 @@ export async function POST(req: NextRequest) {
         const paramValuesForLead = buildTemplateParametersForLead(lead, template, parameterValues);
         const sent = await sendTemplateMessageViaMeta(config, {
           to: normalized,
-          templateName: template.name,
-          language: template.language,
-          parameterValues: paramValuesForLead,
+          template,
+          bodyParameterValues: paramValuesForLead,
         });
         dispatches.push({
           contactId: lead.id,

@@ -31,6 +31,9 @@ export type WhatsAppTemplateButton = {
   url?: string;
 };
 
+/** כותרת תבנית. שימו לב: שמע — בפועל כ־DOCUMENT ב־WhatsApp */
+export type WhatsAppHeaderFormat = "NONE" | "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT";
+
 export type WhatsAppTemplateRecord = {
   id: string;
   name: string;
@@ -38,6 +41,13 @@ export type WhatsAppTemplateRecord = {
   language: string;
   bodyText: string;
   exampleValues: string[];
+  headerFormat?: WhatsAppHeaderFormat;
+  /** כותרת טקסט (עד 60 תווים; ללא משתנים בגרסה זו) */
+  headerText?: string;
+  /** קישור HTTPS ציבורי לדוגמת מדיה בכותרת (תמונה/וידאו/מסמך) */
+  headerMediaUrl?: string;
+  /** פוטר (עד 60 תווים, טקסט סטטי) */
+  footerText?: string;
   /** מיפוי {{1}}, {{2}}… — manual = מהדיוור או ערכי דוגמה */
   parameterSources?: TemplateParamSource[];
   /** עד 3 כפתורים (Quick Reply / URL) לאישור במטא */
@@ -101,6 +111,7 @@ function asStringArray(v: unknown): string[] {
 function parseButtonRows(raw: unknown): WhatsAppTemplateRecord["buttonRows"] {
   if (!Array.isArray(raw)) return undefined;
   const out: NonNullable<WhatsAppTemplateRecord["buttonRows"]> = [];
+  let urlUsed = 0;
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
     const o = item as Record<string, unknown>;
@@ -108,15 +119,37 @@ function parseButtonRows(raw: unknown): WhatsAppTemplateRecord["buttonRows"] {
     const text = asString(o.text).trim().slice(0, 25);
     if (!text) continue;
     if (type === "URL") {
+      if (urlUsed >= 1) continue;
       const url = asString(o.url).trim();
       if (!url) continue;
       out.push({ type: "URL", text, url });
+      urlUsed += 1;
     } else {
       out.push({ type: "QUICK_REPLY", text });
     }
     if (out.length >= 3) break;
   }
   return out.length ? out : undefined;
+}
+
+function parseHeaderFormat(raw: unknown): WhatsAppHeaderFormat {
+  const s = asString(raw).trim().toUpperCase();
+  if (s === "TEXT" || s === "IMAGE" || s === "VIDEO" || s === "DOCUMENT") return s;
+  return "NONE";
+}
+
+function normalizeTemplateHeaderFooter(t: WhatsAppTemplateRecord): WhatsAppTemplateRecord {
+  const hf = t.headerFormat ?? "NONE";
+  const next = { ...t };
+  if (hf === "NONE") {
+    next.headerText = undefined;
+    next.headerMediaUrl = undefined;
+  } else if (hf === "TEXT") {
+    next.headerMediaUrl = undefined;
+  } else {
+    next.headerText = undefined;
+  }
+  return next;
 }
 
 export async function getWhatsAppMetaConfig(db: Firestore): Promise<WhatsAppMetaConfig | null> {
@@ -188,6 +221,10 @@ export async function listWhatsAppTemplates(db: Firestore): Promise<WhatsAppTemp
         language,
         bodyText,
         exampleValues: asStringArray(row.exampleValues),
+        headerFormat: parseHeaderFormat(row.headerFormat),
+        headerText: asString(row.headerText).trim().slice(0, 60) || undefined,
+        headerMediaUrl: asString(row.headerMediaUrl).trim() || undefined,
+        footerText: asString(row.footerText).trim().slice(0, 60) || undefined,
         parameterSources,
         buttonRows: parseButtonRows(row.buttonRows),
         status,
@@ -223,6 +260,15 @@ export async function saveWhatsAppTemplate(
       language: input.language.trim() || "he",
       bodyText: input.bodyText.trim(),
       exampleValues: input.exampleValues.map((x) => x.trim()).filter(Boolean),
+      headerFormat: input.headerFormat !== undefined ? parseHeaderFormat(input.headerFormat) : prev.headerFormat,
+      headerText:
+        input.headerText !== undefined ? asString(input.headerText).trim().slice(0, 60) : prev.headerText,
+      headerMediaUrl:
+        input.headerMediaUrl !== undefined
+          ? asString(input.headerMediaUrl).trim() || undefined
+          : prev.headerMediaUrl,
+      footerText:
+        input.footerText !== undefined ? asString(input.footerText).trim().slice(0, 60) : prev.footerText,
       parameterSources:
         input.parameterSources !== undefined
           ? normalizeParameterSources(input.parameterSources, slots)
@@ -231,9 +277,10 @@ export async function saveWhatsAppTemplate(
       status: input.status ?? prev.status,
       updatedAt: now,
     };
-    templates[idx] = updated;
+    const normalized = normalizeTemplateHeaderFooter(updated);
+    templates[idx] = normalized;
     await db.collection(COLLECTION).doc(TEMPLATES_DOC_ID).set({ templates }, { merge: true });
-    return updated;
+    return normalized;
   }
   const slots = countBodyPlaceholders(input.bodyText.trim());
   const created: WhatsAppTemplateRecord = {
@@ -243,6 +290,10 @@ export async function saveWhatsAppTemplate(
     language: input.language.trim() || "he",
     bodyText: input.bodyText.trim(),
     exampleValues: input.exampleValues.map((x) => x.trim()).filter(Boolean),
+    headerFormat: input.headerFormat !== undefined ? parseHeaderFormat(input.headerFormat) : "NONE",
+    headerText: input.headerText !== undefined ? asString(input.headerText).trim().slice(0, 60) : undefined,
+    headerMediaUrl: input.headerMediaUrl !== undefined ? asString(input.headerMediaUrl).trim() || undefined : undefined,
+    footerText: input.footerText !== undefined ? asString(input.footerText).trim().slice(0, 60) : undefined,
     parameterSources:
       input.parameterSources !== undefined
         ? normalizeParameterSources(input.parameterSources, slots)
@@ -252,9 +303,10 @@ export async function saveWhatsAppTemplate(
     createdAt: now,
     updatedAt: now,
   };
-  const next = [created, ...templates];
+  const normalizedCreated = normalizeTemplateHeaderFooter(created);
+  const next = [normalizedCreated, ...templates];
   await db.collection(COLLECTION).doc(TEMPLATES_DOC_ID).set({ templates: next }, { merge: true });
-  return created;
+  return normalizedCreated;
 }
 
 export async function patchWhatsAppTemplateMeta(

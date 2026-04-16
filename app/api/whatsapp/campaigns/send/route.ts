@@ -2,17 +2,22 @@ import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { getAdminDb } from "@/lib/firebase/admin";
-import { getLeadById, normalizePhone } from "@/lib/leads/repo";
+import { getLeadById, listLeadsFiltered, normalizePhone } from "@/lib/leads/repo";
+import type { AudienceCondition, AudienceLogic } from "@/lib/whatsapp/audienceFilter";
+import { filterLeadsByAudience } from "@/lib/whatsapp/audienceFilter";
 import { sendTemplateMessageViaMeta } from "@/lib/whatsapp/meta";
 import {
   appendWhatsAppCampaign,
   getWhatsAppMetaConfig,
+  listWhatsAppBroadcastDrafts,
   listWhatsAppCampaigns,
   listWhatsAppTemplates,
   type WhatsAppCampaignDispatch,
 } from "@/lib/whatsapp/repo";
 
 export const dynamic = "force-dynamic";
+
+const MAX_RECIPIENTS = 500;
 
 export async function GET(req: NextRequest) {
   const auth = await requireApprovedUser(req);
@@ -38,9 +43,13 @@ export async function POST(req: NextRequest) {
   }
 
   let body: {
+    broadcastName?: string;
     templateId?: string;
     recipientIds?: string[];
     parameterValues?: string[];
+    conditions?: AudienceCondition[];
+    logic?: AudienceLogic;
+    draftId?: string;
   };
   try {
     body = (await req.json()) as typeof body;
@@ -48,25 +57,57 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
 
-  const templateId = body.templateId?.trim() ?? "";
-  const recipientIds = Array.isArray(body.recipientIds)
-    ? Array.from(new Set(body.recipientIds.map((x) => String(x).trim()).filter(Boolean)))
+  const draftId = body.draftId?.trim() ?? "";
+  let templateId = body.templateId?.trim() ?? "";
+  let parameterValues = Array.isArray(body.parameterValues)
+    ? body.parameterValues.map((x) => String(x ?? "").trim())
     : [];
-  if (!templateId) {
-    return NextResponse.json({ ok: false, error: "templateId is required" }, { status: 400 });
-  }
-  if (recipientIds.length === 0) {
-    return NextResponse.json({ ok: false, error: "recipientIds is required" }, { status: 400 });
-  }
-  if (recipientIds.length > 200) {
-    return NextResponse.json(
-      { ok: false, error: "For safety, one campaign is limited to 200 recipients." },
-      { status: 400 }
-    );
-  }
+  let broadcastName = body.broadcastName?.trim() ?? "";
+  let recipientIds: string[] = [];
 
   try {
     const db = await getAdminDb();
+
+    if (draftId) {
+      const drafts = await listWhatsAppBroadcastDrafts(db);
+      const draft = drafts.find((d) => d.id === draftId);
+      if (!draft) {
+        return NextResponse.json({ ok: false, error: "Draft not found" }, { status: 404 });
+      }
+      templateId = draft.templateId;
+      parameterValues = draft.parameterValues;
+      if (!broadcastName) broadcastName = draft.name;
+      const leads = await listLeadsFiltered(null, null);
+      const matched = filterLeadsByAudience(leads, draft.conditions, draft.logic);
+      recipientIds = matched.map((l) => l.id).slice(0, MAX_RECIPIENTS);
+    } else if (body.conditions !== undefined) {
+      const logic: AudienceLogic = body.logic === "or" ? "or" : "and";
+      const conds = Array.isArray(body.conditions) ? body.conditions : [];
+      const leads = await listLeadsFiltered(null, null);
+      const matched = filterLeadsByAudience(leads, conds, logic);
+      recipientIds = matched.map((l) => l.id).slice(0, MAX_RECIPIENTS);
+    } else {
+      recipientIds = Array.isArray(body.recipientIds)
+        ? Array.from(new Set(body.recipientIds.map((x) => String(x).trim()).filter(Boolean)))
+        : [];
+    }
+
+    if (!templateId) {
+      return NextResponse.json({ ok: false, error: "templateId is required" }, { status: 400 });
+    }
+    if (recipientIds.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: "No recipients match (empty list or filters)." },
+        { status: 400 }
+      );
+    }
+    if (recipientIds.length > MAX_RECIPIENTS) {
+      return NextResponse.json(
+        { ok: false, error: `For safety, one campaign is limited to ${MAX_RECIPIENTS} recipients.` },
+        { status: 400 }
+      );
+    }
+
     const [config, templates] = await Promise.all([
       getWhatsAppMetaConfig(db),
       listWhatsAppTemplates(db),
@@ -81,10 +122,6 @@ export async function POST(req: NextRequest) {
     if (!template) {
       return NextResponse.json({ ok: false, error: "Template not found" }, { status: 404 });
     }
-
-    const parameterValues = Array.isArray(body.parameterValues)
-      ? body.parameterValues.map((x) => String(x ?? "").trim())
-      : [];
 
     const dispatches: WhatsAppCampaignDispatch[] = [];
     for (const id of recipientIds) {
@@ -139,6 +176,7 @@ export async function POST(req: NextRequest) {
     const failedCount = dispatches.length - sentCount;
     const campaign = {
       id: randomUUID(),
+      broadcastName: broadcastName || undefined,
       templateId: template.id,
       templateName: template.name,
       templateLanguage: template.language,

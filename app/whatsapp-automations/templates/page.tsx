@@ -3,14 +3,14 @@ import { authDisabled } from "@/lib/auth/session";
 import { redirect } from "next/navigation";
 import CrmShell from "@/app/components/CrmShell";
 import WhatsAppSectionShell from "@/app/whatsapp-automations/WhatsAppSectionShell";
-import BroadcastsHomeClient from "@/app/whatsapp-automations/BroadcastsHomeClient";
+import TemplatesPageClient from "@/app/whatsapp-automations/TemplatesPageClient";
 
 export const dynamic = "force-dynamic";
 
-export default async function WhatsAppAutomationsPage() {
+export default async function WhatsAppTemplatesPage() {
   if (authDisabled()) redirect("/login");
   const ctx = await getCrmSession();
-  if (ctx.kind === "anon") redirect("/login?returnTo=/whatsapp-automations");
+  if (ctx.kind === "anon") redirect("/login?returnTo=/whatsapp-automations/templates");
   if (ctx.kind === "forbidden") {
     return (
       <CrmShell
@@ -31,10 +31,10 @@ export default async function WhatsAppAutomationsPage() {
       currentTenantId={ctx.tenant.id}
     >
       <WhatsAppSectionShell
-        title="ברודקאסטים"
-        subtitle="טיוטות דיוור, היסטוריית שליחות, ויצירת ברודקאסט חדש לפי תבנית וקהל."
+        title="תבניות הודעה"
+        subtitle="יצירה ושליחה לאישור מטא. אחרי אישור — בחרו בברודקאסט."
       >
-        <BroadcastsHomeClient />
+        <TemplatesPageClient />
       </WhatsAppSectionShell>
     </CrmShell>
   );

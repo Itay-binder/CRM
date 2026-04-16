@@ -1,9 +1,11 @@
 import type { Firestore } from "firebase-admin/firestore";
+import type { AudienceCondition, AudienceLogic } from "@/lib/whatsapp/audienceFilter";
 
 const COLLECTION = "integrationSettings";
 const CONFIG_DOC_ID = "whatsappMetaConfig";
 const TEMPLATES_DOC_ID = "whatsappTemplates";
 const CAMPAIGNS_DOC_ID = "whatsappCampaigns";
+const DRAFTS_DOC_ID = "whatsappBroadcastDrafts";
 
 export type WhatsAppMetaConfig = {
   appId: string;
@@ -43,6 +45,8 @@ export type WhatsAppCampaignDispatch = {
 
 export type WhatsAppCampaignRecord = {
   id: string;
+  /** שם הדיוור להצגה בהיסטוריה */
+  broadcastName?: string;
   templateId: string;
   templateName: string;
   templateLanguage: string;
@@ -53,6 +57,18 @@ export type WhatsAppCampaignRecord = {
   createdBy: string;
   createdAt: string;
   dispatches: WhatsAppCampaignDispatch[];
+};
+
+export type WhatsAppBroadcastDraftRecord = {
+  id: string;
+  name: string;
+  templateId: string;
+  parameterValues: string[];
+  conditions: AudienceCondition[];
+  logic: AudienceLogic;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
 };
 
 function asString(v: unknown): string {
@@ -233,6 +249,7 @@ export async function listWhatsAppCampaigns(db: Firestore): Promise<WhatsAppCamp
         .filter((x): x is WhatsAppCampaignDispatch => Boolean(x));
       return {
         id,
+        broadcastName: asString(row.broadcastName).trim() || undefined,
         templateId: asString(row.templateId),
         templateName: asString(row.templateName),
         templateLanguage: asString(row.templateLanguage),
@@ -256,4 +273,94 @@ export async function appendWhatsAppCampaign(
   const prev = await listWhatsAppCampaigns(db);
   const next = [campaign, ...prev].slice(0, 100);
   await db.collection(COLLECTION).doc(CAMPAIGNS_DOC_ID).set({ campaigns: next }, { merge: true });
+}
+
+function parseAudienceConditions(raw: unknown): AudienceCondition[] {
+  if (!Array.isArray(raw)) return [];
+  const out: AudienceCondition[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    const id = asString(o.id).trim();
+    const field = asString(o.field).trim() as AudienceCondition["field"];
+    const op = asString(o.op).trim() as AudienceCondition["op"];
+    const value = asString(o.value);
+    if (!id) continue;
+    if (!["tag", "name", "phone", "email", "status"].includes(field)) continue;
+    out.push({ id, field, op, value });
+  }
+  return out;
+}
+
+export async function listWhatsAppBroadcastDrafts(db: Firestore): Promise<WhatsAppBroadcastDraftRecord[]> {
+  const snap = await db.collection(COLLECTION).doc(DRAFTS_DOC_ID).get();
+  if (!snap.exists) return [];
+  const raw = (snap.data() as { drafts?: unknown } | undefined)?.drafts;
+  if (!Array.isArray(raw)) return [];
+  const rows = raw
+    .map((item): WhatsAppBroadcastDraftRecord | null => {
+      if (!item || typeof item !== "object") return null;
+      const row = item as Record<string, unknown>;
+      const id = asString(row.id).trim();
+      if (!id) return null;
+      const logicRaw = asString(row.logic).trim();
+      const logic: AudienceLogic = logicRaw === "or" ? "or" : "and";
+      return {
+        id,
+        name: asString(row.name).trim() || "ללא שם",
+        templateId: asString(row.templateId),
+        parameterValues: asStringArray(row.parameterValues),
+        conditions: parseAudienceConditions(row.conditions),
+        logic,
+        createdAt: asString(row.createdAt),
+        updatedAt: asString(row.updatedAt),
+        createdBy: asString(row.createdBy),
+      };
+    })
+    .filter((x): x is WhatsAppBroadcastDraftRecord => Boolean(x));
+  return rows.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export async function saveWhatsAppBroadcastDraft(
+  db: Firestore,
+  input: Omit<WhatsAppBroadcastDraftRecord, "createdAt" | "updatedAt"> &
+    Partial<Pick<WhatsAppBroadcastDraftRecord, "createdAt">>
+): Promise<WhatsAppBroadcastDraftRecord> {
+  const drafts = await listWhatsAppBroadcastDrafts(db);
+  const now = new Date().toISOString();
+  const idx = drafts.findIndex((d) => d.id === input.id);
+  if (idx >= 0) {
+    const prev = drafts[idx];
+    const updated: WhatsAppBroadcastDraftRecord = {
+      ...prev,
+      name: input.name.trim() || prev.name,
+      templateId: input.templateId.trim(),
+      parameterValues: input.parameterValues.map((x) => x.trim()).filter(Boolean),
+      conditions: input.conditions,
+      logic: input.logic,
+      updatedAt: now,
+    };
+    drafts[idx] = updated;
+    await db.collection(COLLECTION).doc(DRAFTS_DOC_ID).set({ drafts }, { merge: true });
+    return updated;
+  }
+  const created: WhatsAppBroadcastDraftRecord = {
+    id: input.id,
+    name: input.name.trim() || "דיוור חדש",
+    templateId: input.templateId.trim(),
+    parameterValues: input.parameterValues.map((x) => x.trim()).filter(Boolean),
+    conditions: input.conditions,
+    logic: input.logic,
+    createdAt: input.createdAt ?? now,
+    updatedAt: now,
+    createdBy: input.createdBy,
+  };
+  await db.collection(COLLECTION).doc(DRAFTS_DOC_ID).set({ drafts: [created, ...drafts] }, { merge: true });
+  return created;
+}
+
+export async function deleteWhatsAppBroadcastDraft(db: Firestore, id: string): Promise<void> {
+  const drafts = await listWhatsAppBroadcastDrafts(db);
+  const next = drafts.filter((d) => d.id !== id);
+  await db.collection(COLLECTION).doc(DRAFTS_DOC_ID).set({ drafts: next }, { merge: true });
 }

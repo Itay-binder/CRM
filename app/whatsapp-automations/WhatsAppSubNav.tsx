@@ -1,0 +1,48 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+
+const items = [
+  { href: "/whatsapp-automations", label: "ברודקאסטים", match: (p: string) => p === "/whatsapp-automations" || p.startsWith("/whatsapp-automations/broadcasts") },
+  { href: "/whatsapp-automations/templates", label: "תבניות הודעה", match: (p: string) => p.startsWith("/whatsapp-automations/templates") },
+  { href: "/whatsapp-automations/account", label: "חשבון WhatsApp", match: (p: string) => p.startsWith("/whatsapp-automations/account") },
+];
+
+export default function WhatsAppSubNav() {
+  const pathname = usePathname() || "";
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 8,
+        marginBottom: 20,
+        flexWrap: "wrap",
+        borderBottom: "1px solid #e5e7eb",
+        paddingBottom: 12,
+      }}
+    >
+      {items.map((item) => {
+        const active = item.match(pathname);
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            style={{
+              padding: "8px 14px",
+              borderRadius: 10,
+              fontWeight: 800,
+              fontSize: 14,
+              textDecoration: "none",
+              background: active ? "#ede9fe" : "transparent",
+              color: active ? "#4c1d95" : "#374151",
+              border: active ? "1px solid #ddd6fe" : "1px solid transparent",
+            }}
+          >
+            {item.label}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}

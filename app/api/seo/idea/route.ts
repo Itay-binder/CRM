@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { generateIdeaPayload } from "@/lib/seoAgent/mockEngine";
+import { getMergedSeoContextForIdeas } from "@/lib/seoAgent/seoSettingsRepo";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -15,7 +16,8 @@ export async function POST(req: NextRequest) {
     });
   }
   try {
-    const payload = await generateIdeaPayload();
+    const ctx = await getMergedSeoContextForIdeas();
+    const payload = await generateIdeaPayload(ctx);
     return NextResponse.json({ ok: true, ...payload });
   } catch (e) {
     return NextResponse.json(

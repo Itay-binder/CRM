@@ -3,9 +3,20 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-export default function CrmNavLink({ href, label }: { href: string; label: string }) {
+export default function CrmNavLink({
+  href,
+  label,
+  exact,
+}: {
+  href: string;
+  label: string;
+  /** אם true — רק התאמה מלאה (למשל /seo בלי /seo/dashboard) */
+  exact?: boolean;
+}) {
   const pathname = usePathname();
-  const active = pathname === href || pathname.startsWith(`${href}/`);
+  const active = exact
+    ? pathname === href
+    : pathname === href || pathname.startsWith(`${href}/`);
   return (
     <Link
       href={href}

@@ -34,6 +34,7 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 export default function SeoArticlesClient() {
   const [idea, setIdea] = useState("");
   const [keywords, setKeywords] = useState<string[]>([]);
+  const [keywordDraft, setKeywordDraft] = useState("");
   const [draftTitle, setDraftTitle] = useState("");
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -144,13 +145,28 @@ export default function SeoArticlesClient() {
     }
   }, [previewHtml, draftTitle, idea, keywords, mutateList]);
 
+  const addKeyword = useCallback(() => {
+    const t = keywordDraft.trim();
+    if (!t) return;
+    setKeywords((prev) => (prev.includes(t) ? prev : [...prev, t]));
+    setKeywordDraft("");
+  }, [keywordDraft]);
+
+  const removeKeywordAt = useCallback((index: number) => {
+    setKeywords((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
   return (
     <div style={{ maxWidth: 960, margin: "0 auto" }}>
       <h1 style={{ margin: "0 0 8px", fontSize: 26, fontWeight: 800 }}>יצירת מאמר SEO</h1>
       <p style={{ margin: "0 0 22px", color: "#6b7280", lineHeight: 1.5 }}>
-        רעיון ומילות מפתח לפי הקשר העסקי (ניתן להגדיר ב־CRM_SEO_BUSINESS_CONTEXT). התוכן כרגע מוקאפ —
-        אחרי שתגדירו קו עיצובי ומידע, נחבר את הסוכן האמיתי. שמירת מאמר מפרסמת אותו מיד כפוסט ציבורי בכתובת{" "}
-        <code style={{ fontSize: 13 }}>/blog/…</code> עם סלאג שנבחר אוטומטית (ניתן לבטל פרסום מדף המאמר).
+        הרעיונות והמילים מבוססים על{" "}
+        <Link href="/seo/settings" style={{ color: "#2563eb", fontWeight: 600 }}>
+          הגדרות סוכן SEO
+        </Link>{" "}
+        (אתר, תיאור עסק, מה לסרוק ברשת, מילות מפתח ברירת מחדל). אפשר לערוך כאן את הרעיון ואת רשימת המילים לפני
+        יצירת המאמר. התוכן כרגע מוקאפ — שמירת מאמר מפרסמת אותו כפוסט ציבורי בכתובת{" "}
+        <code style={{ fontSize: 13 }}>/blog/…</code> (ניתן לבטל פרסום מדף המאמר).
       </p>
 
       {err ? (
@@ -267,14 +283,19 @@ export default function SeoArticlesClient() {
         />
 
         <div style={{ marginTop: 12 }}>
-          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }}>מילות חיפוש לקידום</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }}>
+            מילות חיפוש לשילוב במאמר (ניתן לערוך, להסיר ולהוסיף)
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
             {keywords.length ? (
-              keywords.map((k) => (
+              keywords.map((k, i) => (
                 <span
-                  key={k}
+                  key={`${i}-${k}`}
                   style={{
-                    padding: "4px 10px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "4px 4px 4px 10px",
                     borderRadius: 999,
                     background: "#eff6ff",
                     color: "#1d4ed8",
@@ -283,11 +304,66 @@ export default function SeoArticlesClient() {
                   }}
                 >
                   {k}
+                  <button
+                    type="button"
+                    onClick={() => removeKeywordAt(i)}
+                    title="הסר"
+                    style={{
+                      border: "none",
+                      background: "rgba(255,255,255,0.7)",
+                      borderRadius: 999,
+                      width: 22,
+                      height: 22,
+                      cursor: "pointer",
+                      fontSize: 14,
+                      lineHeight: 1,
+                      color: "#1e40af",
+                    }}
+                  >
+                    ×
+                  </button>
                 </span>
               ))
             ) : (
-              <span style={{ color: "#9ca3af", fontSize: 14 }}>יופיעו אחרי &quot;צור רעיון&quot;</span>
+              <span style={{ color: "#9ca3af", fontSize: 14 }}>הוסיפו מילים או לחצו &quot;צור רעיון&quot;</span>
             )}
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10, alignItems: "center" }}>
+            <input
+              value={keywordDraft}
+              onChange={(e) => setKeywordDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addKeyword();
+                }
+              }}
+              placeholder="מילה או ביטוי — Enter להוספה"
+              style={{
+                flex: "1 1 200px",
+                minWidth: 160,
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: "1px solid #e5e7eb",
+                fontSize: 14,
+              }}
+            />
+            <button
+              type="button"
+              onClick={addKeyword}
+              disabled={!keywordDraft.trim()}
+              style={{
+                padding: "8px 14px",
+                borderRadius: 10,
+                border: "1px solid #cbd5e1",
+                background: keywordDraft.trim() ? "#fff" : "#f1f5f9",
+                fontWeight: 600,
+                cursor: keywordDraft.trim() ? "pointer" : "not-allowed",
+                color: keywordDraft.trim() ? "#0f172a" : "#94a3b8",
+              }}
+            >
+              הוסף מילה
+            </button>
           </div>
         </div>
       </div>

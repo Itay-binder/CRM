@@ -1,6 +1,15 @@
 import { getTenantConfigs } from "@/lib/tenant/config";
 import { getRequestTenantDatabaseId } from "@/lib/firebase/admin";
 
+/** הקשר ליצירת רעיונות — מגיע מ-Firestore + env (ראה getMergedSeoContextForIdeas) */
+export type SeoIdeaContext = {
+  name: string;
+  blurb: string;
+  siteUrl: string;
+  scanFocus: string;
+  defaultKeywordSeeds: string[];
+};
+
 function hashString(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) {
@@ -58,26 +67,43 @@ const KEYWORD_SUFFIXES = [
   "שאלות נפוצות",
 ];
 
-export async function generateIdeaPayload(): Promise<{
+export async function generateIdeaPayload(ctx: SeoIdeaContext): Promise<{
   idea: string;
   keywords: string[];
 }> {
-  const { name, blurb } = businessContext();
+  const { name, blurb, siteUrl, scanFocus, defaultKeywordSeeds } = ctx;
   const dbId = await getRequestTenantDatabaseId();
-  const seed = hashString(`${dbId}:${Date.now()}:${Math.random()}`);
+  const seed = hashString(`${dbId}:${Date.now()}:${Math.random()}:${scanFocus}:${siteUrl}`);
   const rnd = mulberry32(seed);
   const year = new Date().getFullYear();
   const tpl = IDEA_TEMPLATES[Math.floor(rnd() * IDEA_TEMPLATES.length)] ?? IDEA_TEMPLATES[0];
-  const idea =
+  const blurbShort = blurb.slice(0, 120) + (blurb.length > 120 ? "…" : "");
+  let idea =
     tpl.replace(/\{year\}/g, String(year)) +
-    ` — ממוקד ל־${name}: ${blurb.slice(0, 120)}${blurb.length > 120 ? "…" : ""}`;
+    ` — ממוקד ל־${name}: ${blurbShort}`;
+
+  if (scanFocus.trim()) {
+    idea += `\n\nכיוון מחקר / מה לסרוק ברשת (לפי ההגדרות שלך): ${scanFocus.trim()}`;
+  }
+  if (siteUrl.trim()) {
+    idea += `\nאתר עסקי ליישור תוכן: ${siteUrl.trim()}`;
+  }
 
   const base = name.split(/\s+/)[0] || name;
   const picks = new Set<string>();
-  while (picks.size < 5) {
-    picks.add(`${base} ${KEYWORD_SUFFIXES[Math.floor(rnd() * KEYWORD_SUFFIXES.length)]}`);
+  for (const k of defaultKeywordSeeds) {
+    if (k.trim()) picks.add(k.trim());
   }
-  return { idea, keywords: [...picks] };
+  while (picks.size < 8) {
+    const suffix = KEYWORD_SUFFIXES[Math.floor(rnd() * KEYWORD_SUFFIXES.length)];
+    picks.add(`${base} ${suffix}`);
+    if (picks.size >= 8) break;
+    if (scanFocus.trim()) {
+      const word = scanFocus.split(/[\s,]+/).find((w) => w.length > 2);
+      if (word) picks.add(`${word} ${suffix}`);
+    }
+  }
+  return { idea, keywords: [...picks].slice(0, 8) };
 }
 
 export function mockGoogleRank(keyword: string): {
@@ -146,8 +172,13 @@ export async function buildArticleHtml(input: {
   title: string;
   idea: string;
   keywords: string[];
+  /** אופציונלי — מעדיף על פני env בלבד */
+  brandName?: string;
+  brandBlurb?: string;
 }): Promise<string> {
-  const { name, blurb } = businessContext();
+  const fallback = businessContext();
+  const name = input.brandName?.trim() || fallback.name;
+  const blurb = input.brandBlurb?.trim() || fallback.blurb;
   const kw = input.keywords.length ? input.keywords.join(" · ") : "מילות מפתח יוגדרו בהמשך";
   const safeTitle = escapeHtml(input.title);
   const safeIdea = escapeHtml(input.idea);

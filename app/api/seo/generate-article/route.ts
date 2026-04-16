@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { buildArticleHtml, titleFromIdea } from "@/lib/seoAgent/mockEngine";
+import { getMergedSeoContextForIdeas } from "@/lib/seoAgent/seoSettingsRepo";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -25,7 +26,14 @@ export async function POST(req: NextRequest) {
       );
     }
     const title = body.title?.trim() || titleFromIdea(idea);
-    const html = await buildArticleHtml({ title, idea, keywords });
+    const brand = await getMergedSeoContextForIdeas();
+    const html = await buildArticleHtml({
+      title,
+      idea,
+      keywords,
+      brandName: brand.name,
+      brandBlurb: brand.blurb,
+    });
     return NextResponse.json({ ok: true, title, idea, keywords, html });
   } catch (e) {
     return NextResponse.json(

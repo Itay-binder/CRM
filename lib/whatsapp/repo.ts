@@ -313,7 +313,10 @@ export async function saveWhatsAppTemplate(
   };
   const normalizedCreated = normalizeTemplateHeaderFooter(created);
   const next = [normalizedCreated, ...templates];
-  await db.collection(COLLECTION).doc(TEMPLATES_DOC_ID).set({ templates: next }, { merge: true });
+  await db
+    .collection(COLLECTION)
+    .doc(TEMPLATES_DOC_ID)
+    .set(stripUndefinedForFirestore({ templates: next }), { merge: true });
   return normalizedCreated;
 }
 

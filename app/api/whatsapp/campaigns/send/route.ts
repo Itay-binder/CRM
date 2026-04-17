@@ -5,7 +5,7 @@ import { getAdminDb } from "@/lib/firebase/admin";
 import { getLeadById, listLeadsFiltered, normalizePhone } from "@/lib/leads/repo";
 import type { AudienceCondition, AudienceLogic } from "@/lib/whatsapp/audienceFilter";
 import { filterLeadsByAudience } from "@/lib/whatsapp/audienceFilter";
-import { sendTemplateMessageViaMeta } from "@/lib/whatsapp/meta";
+import { assertPhoneNumberBelongsToWaba, sendTemplateMessageViaMeta } from "@/lib/whatsapp/meta";
 import { buildTemplateParametersForLead } from "@/lib/whatsapp/templateParams";
 import {
   appendWhatsAppCampaign,
@@ -154,6 +154,13 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    if (!config.wabaId.trim()) {
+      return NextResponse.json(
+        { ok: false, error: "חסר WABA ID (חשבון WhatsApp Business). הזינו ב«חשבון WhatsApp» ושמרו." },
+        { status: 400 }
+      );
+    }
+    await assertPhoneNumberBelongsToWaba(config);
     const template = templates.find((t) => t.id === templateId);
     if (!template) {
       return NextResponse.json({ ok: false, error: "Template not found" }, { status: 404 });

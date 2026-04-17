@@ -237,6 +237,10 @@ type MetaTemplateListResponse = {
   paging?: { next?: string };
 };
 
+type MetaWabaPhoneNumbersResponse = {
+  data?: Array<{ id?: string }>;
+};
+
 function mapMetaCategory(raw: string): "MARKETING" | "UTILITY" | "AUTHENTICATION" {
   const c = raw.trim().toUpperCase();
   if (c === "UTILITY" || c === "AUTHENTICATION") return c;
@@ -340,15 +344,14 @@ export async function listTemplatesFromMeta(config: WhatsAppMetaConfig): Promise
 }
 
 export async function assertPhoneNumberBelongsToWaba(config: WhatsAppMetaConfig): Promise<void> {
-  const info = await callMeta<{ whatsapp_business_account?: { id?: string } }>(
-    `/${config.phoneNumberId}?fields=whatsapp_business_account`,
+  const info = await callMeta<MetaWabaPhoneNumbersResponse>(
+    `/${config.wabaId}/phone_numbers?fields=id&limit=500`,
     config.systemUserToken
   );
-  const got = info.whatsapp_business_account?.id?.trim() ?? "";
-  if (!got) {
-    throw new Error("Meta לא החזיר WABA עבור Phone Number ID. בדקו הרשאות טוקן וחיבור המספר.");
-  }
-  if (got !== config.wabaId.trim()) {
+  const expectedPhoneId = config.phoneNumberId.trim();
+  const numbers = Array.isArray(info.data) ? info.data : [];
+  const belongs = numbers.some((row) => (row.id ?? "").trim() === expectedPhoneId);
+  if (!belongs) {
     throw new Error("Phone Number ID לא שייך ל־WABA שהוגדר במערכת. עדכנו מזהים תואמים.");
   }
 }

@@ -82,7 +82,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     try {
       const db = await getAdminDb();
       await patchWhatsAppTemplateMeta(db, templateId, {
-        status: "rejected",
+        // כשל טכני בשליחה לאישור אינו דחייה של Meta עצמה.
+        metaStatus: "SUBMIT_FAILED",
         rejectionReason: message,
       });
     } catch {

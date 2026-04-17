@@ -63,6 +63,7 @@ export default function TemplatesPageClient() {
   const [tplHeaderText, setTplHeaderText] = useState("");
   const [tplHeaderMediaUrl, setTplHeaderMediaUrl] = useState("");
   const [tplFooterText, setTplFooterText] = useState("");
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
 
   const paramSlotCount = countBodyPlaceholders(tplBodyText);
 
@@ -117,6 +118,41 @@ export default function TemplatesPageClient() {
     setTplButtonRows((rows) => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   }
 
+  function resetTemplateForm() {
+    setTplName("");
+    setTplCategory("MARKETING");
+    setTplLanguage("he");
+    setTplBodyText("");
+    setTplExampleValues("");
+    setTplParameterSources([]);
+    setTplButtonRows([]);
+    setTplHeaderFormat("NONE");
+    setTplHeaderText("");
+    setTplHeaderMediaUrl("");
+    setTplFooterText("");
+    setEditingTemplateId(null);
+  }
+
+  function startEditingTemplate(t: TemplateVm) {
+    const slots = countBodyPlaceholders(t.bodyText);
+    const paramSources: TemplateParamSource[] = [];
+    for (let i = 0; i < slots; i++) {
+      paramSources.push(t.parameterSources?.[i] ?? "manual");
+    }
+    setEditingTemplateId(t.id);
+    setTplName(t.name);
+    setTplCategory(t.category);
+    setTplLanguage(t.language || "he");
+    setTplBodyText(t.bodyText);
+    setTplExampleValues((t.exampleValues ?? []).join(", "));
+    setTplParameterSources(paramSources);
+    setTplButtonRows((t.buttonRows ?? []).map((b) => ({ type: b.type, text: b.text, url: b.url ?? "" })));
+    setTplHeaderFormat(t.headerFormat ?? "NONE");
+    setTplHeaderText(t.headerText ?? "");
+    setTplHeaderMediaUrl(t.headerMediaUrl ?? "");
+    setTplFooterText(t.footerText ?? "");
+  }
+
   const load = useCallback(async () => {
     setLoading(true);
     setErr(null);
@@ -160,6 +196,7 @@ export default function TemplatesPageClient() {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          ...(editingTemplateId ? { id: editingTemplateId } : {}),
           name: tplName,
           category: tplCategory,
           language: tplLanguage,
@@ -180,20 +217,16 @@ export default function TemplatesPageClient() {
         }),
       });
       const j = await parseJson<{ ok?: boolean; error?: string }>(res);
-      if (!res.ok || !j.ok) throw new Error(j.error || "יצירת טמפלט נכשלה");
-      setTplName("");
-      setTplBodyText("");
-      setTplExampleValues("");
-      setTplParameterSources([]);
-      setTplButtonRows([]);
-      setTplHeaderFormat("NONE");
-      setTplHeaderText("");
-      setTplHeaderMediaUrl("");
-      setTplFooterText("");
-      setOkMsg("הטמפלט נשמר. ניתן לשלוח לאישור במטא או לבחור בברודקאסט.");
+      if (!res.ok || !j.ok) throw new Error(j.error || "שמירת טמפלט נכשלה");
+      resetTemplateForm();
+      setOkMsg(
+        editingTemplateId
+          ? "הטמפלט עודכן בהצלחה. אפשר לשלוח אותו מחדש לאישור במטא."
+          : "הטמפלט נשמר. ניתן לשלוח לאישור במטא או לבחור בברודקאסט."
+      );
       await load();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "יצירת טמפלט נכשלה");
+      setErr(e instanceof Error ? e.message : "שמירת טמפלט נכשלה");
     } finally {
       setSavingTemplate(false);
     }
@@ -260,11 +293,27 @@ export default function TemplatesPageClient() {
           marginBottom: 20,
         }}
       >
-        <div style={{ fontWeight: 900, fontSize: 16 }}>+ תבנית חדשה</div>
+        <div style={{ fontWeight: 900, fontSize: 16 }}>
+          {editingTemplateId ? "עריכת תבנית קיימת" : "+ תבנית חדשה"}
+        </div>
         <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>
           שם באנגלית בפורמט snake_case מומלץ. גוף ההודעה יכול לכלול {"{{1}}"}, {"{{2}}"} — הוסיפו ערכי דוגמה מופרדים בפסיק
           (לאישור במטא). למטה אפשר לבחור מאיזה שדה ב-CRM נמלא כל מקום — או ידני מהדיוור.
         </p>
+        {editingTemplateId ? (
+          <div
+            style={{
+              fontSize: 12,
+              padding: "8px 10px",
+              borderRadius: 8,
+              background: "#eff6ff",
+              color: "#1e40af",
+              border: "1px solid #bfdbfe",
+            }}
+          >
+            מצב עריכה פעיל — שמירה תעדכן את הטמפלט הקיים ותעביר אותו חזרה לסטטוס טיוטה.
+          </div>
+        ) : null}
         <input
           value={tplName}
           onChange={(e) => setTplName(e.target.value)}
@@ -637,24 +686,49 @@ export default function TemplatesPageClient() {
             הדמיה בלבד — המראה בווצאפ תלוי במכשיר ובאישור מטא.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void saveTemplate()}
-          disabled={savingTemplate || hasBlockingValidation}
-          style={{
-            justifySelf: "start",
-            padding: "10px 18px",
-            borderRadius: 10,
-            border: "none",
-            background: "#2563eb",
-            color: "#fff",
-            fontWeight: 800,
-            cursor: savingTemplate || hasBlockingValidation ? "not-allowed" : "pointer",
-            opacity: hasBlockingValidation ? 0.65 : 1,
-          }}
-        >
-          {savingTemplate ? "שומר..." : hasBlockingValidation ? "תקנו שגיאות לשמירה" : "שמור תבנית"}
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={() => void saveTemplate()}
+            disabled={savingTemplate || hasBlockingValidation}
+            style={{
+              justifySelf: "start",
+              padding: "10px 18px",
+              borderRadius: 10,
+              border: "none",
+              background: "#2563eb",
+              color: "#fff",
+              fontWeight: 800,
+              cursor: savingTemplate || hasBlockingValidation ? "not-allowed" : "pointer",
+              opacity: hasBlockingValidation ? 0.65 : 1,
+            }}
+          >
+            {savingTemplate
+              ? "שומר..."
+              : hasBlockingValidation
+                ? "תקנו שגיאות לשמירה"
+                : editingTemplateId
+                  ? "שמור עדכון"
+                  : "שמור תבנית"}
+          </button>
+          {editingTemplateId ? (
+            <button
+              type="button"
+              onClick={resetTemplateForm}
+              style={{
+                padding: "10px 16px",
+                borderRadius: 10,
+                border: "1px solid #d1d5db",
+                background: "#fff",
+                color: "#374151",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              בטל עריכה
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
@@ -704,22 +778,40 @@ export default function TemplatesPageClient() {
                       <td style={{ padding: 12 }}>{t.language}</td>
                       <td style={{ padding: 12, color: st.color, fontWeight: 700 }}>{st.text}</td>
                       <td style={{ padding: 12 }}>
-                        <button
-                          type="button"
-                          onClick={() => void submitTemplate(t.id)}
-                          style={{
-                            padding: "6px 12px",
-                            borderRadius: 8,
-                            border: "1px solid #bfdbfe",
-                            background: "#eff6ff",
-                            color: "#1d4ed8",
-                            fontWeight: 700,
-                            cursor: "pointer",
-                            fontSize: 13,
-                          }}
-                        >
-                          שלח לאישור במטא
-                        </button>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            onClick={() => startEditingTemplate(t)}
+                            style={{
+                              padding: "6px 12px",
+                              borderRadius: 8,
+                              border: "1px solid #d1d5db",
+                              background: "#fff",
+                              color: "#374151",
+                              fontWeight: 700,
+                              cursor: "pointer",
+                              fontSize: 13,
+                            }}
+                          >
+                            ערוך
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void submitTemplate(t.id)}
+                            style={{
+                              padding: "6px 12px",
+                              borderRadius: 8,
+                              border: "1px solid #bfdbfe",
+                              background: "#eff6ff",
+                              color: "#1d4ed8",
+                              fontWeight: 700,
+                              cursor: "pointer",
+                              fontSize: 13,
+                            }}
+                          >
+                            {t.status === "rejected" ? "שלח מחדש לאישור" : "שלח לאישור במטא"}
+                          </button>
+                        </div>
                         <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }} dir="ltr">
                           {t.updatedAt ? formatIsraelDateTime(t.updatedAt) : ""}
                         </div>

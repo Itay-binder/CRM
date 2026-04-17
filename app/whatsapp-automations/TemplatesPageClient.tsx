@@ -47,6 +47,7 @@ async function parseJson<T>(res: Response): Promise<T> {
 export default function TemplatesPageClient() {
   const [loading, setLoading] = useState(true);
   const [savingTemplate, setSavingTemplate] = useState(false);
+  const [syncingFromMeta, setSyncingFromMeta] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
   const [templates, setTemplates] = useState<TemplateVm[]>([]);
@@ -246,6 +247,34 @@ export default function TemplatesPageClient() {
       await load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "שליחה לאישור נכשלה");
+    }
+  }
+
+  async function syncTemplatesFromMeta() {
+    setSyncingFromMeta(true);
+    setErr(null);
+    setOkMsg(null);
+    try {
+      const res = await fetch("/api/whatsapp/templates/sync", {
+        method: "POST",
+        credentials: "include",
+      });
+      const j = await parseJson<{
+        ok?: boolean;
+        error?: string;
+        created?: number;
+        updated?: number;
+        skipped?: number;
+      }>(res);
+      if (!res.ok || !j.ok) throw new Error(j.error || "סנכרון ממטא נכשל");
+      setOkMsg(
+        `הסנכרון הושלם: נוספו ${j.created ?? 0}, עודכנו ${j.updated ?? 0}, דולגו ${j.skipped ?? 0}.`
+      );
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "סנכרון ממטא נכשל");
+    } finally {
+      setSyncingFromMeta(false);
     }
   }
 
@@ -738,6 +767,22 @@ export default function TemplatesPageClient() {
           placeholder="חיפוש לפי שם, שפה או קטגוריה..."
           style={{ flex: "1 1 240px", minWidth: 200, padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb" }}
         />
+        <button
+          type="button"
+          onClick={() => void syncTemplatesFromMeta()}
+          disabled={syncingFromMeta}
+          style={{
+            padding: "10px 14px",
+            borderRadius: 10,
+            border: "1px solid #bbf7d0",
+            background: "#f0fdf4",
+            fontWeight: 700,
+            color: "#166534",
+            cursor: syncingFromMeta ? "not-allowed" : "pointer",
+          }}
+        >
+          {syncingFromMeta ? "מסנכרן..." : "משוך טמפלטים ממטא"}
+        </button>
         <button
           type="button"
           onClick={() => void load()}

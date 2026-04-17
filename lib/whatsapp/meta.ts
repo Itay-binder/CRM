@@ -17,6 +17,26 @@ type MetaMessageSendResponse = {
   error?: { message?: string };
 };
 
+type MetaTemplateComponent = {
+  type?: string;
+  format?: string;
+  text?: string;
+  url?: string;
+  buttons?: Array<{ type?: string; text?: string; url?: string }>;
+  example?: {
+    body_text?: string[][];
+  };
+};
+
+type MetaTemplateNode = {
+  id?: string;
+  name?: string;
+  status?: string;
+  category?: string;
+  language?: string;
+  components?: MetaTemplateComponent[];
+};
+
 async function callMeta<T>(
   path: string,
   token: string,
@@ -194,4 +214,141 @@ export async function sendTemplateMessageViaMeta(
     }
   );
   return { messageId: res.messages?.[0]?.id };
+}
+
+export type MetaTemplateSnapshot = {
+  metaTemplateId: string;
+  name: string;
+  language: string;
+  category: "MARKETING" | "UTILITY" | "AUTHENTICATION";
+  status: "draft" | "submitted" | "approved" | "rejected";
+  metaStatus: string;
+  rejectionReason?: string;
+  bodyText: string;
+  exampleValues: string[];
+  headerFormat: "NONE" | "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT";
+  headerText?: string;
+  footerText?: string;
+  buttonRows?: Array<{ type: "QUICK_REPLY" | "URL"; text: string; url?: string }>;
+};
+
+type MetaTemplateListResponse = {
+  data?: MetaTemplateNode[];
+  paging?: { next?: string };
+};
+
+function mapMetaCategory(raw: string): "MARKETING" | "UTILITY" | "AUTHENTICATION" {
+  const c = raw.trim().toUpperCase();
+  if (c === "UTILITY" || c === "AUTHENTICATION") return c;
+  return "MARKETING";
+}
+
+function mapMetaStatus(raw: string): "draft" | "submitted" | "approved" | "rejected" {
+  const s = raw.trim().toUpperCase();
+  if (s === "APPROVED") return "approved";
+  if (s === "REJECTED") return "rejected";
+  if (s === "PENDING" || s === "PENDING_DELETION" || s === "IN_APPEAL") return "submitted";
+  return "draft";
+}
+
+function mapMetaHeaderFormat(raw: string): "NONE" | "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" {
+  const f = raw.trim().toUpperCase();
+  if (f === "TEXT" || f === "IMAGE" || f === "VIDEO" || f === "DOCUMENT") return f;
+  return "NONE";
+}
+
+function mapMetaTemplateNode(node: MetaTemplateNode): MetaTemplateSnapshot | null {
+  const metaTemplateId = (node.id ?? "").trim();
+  const name = (node.name ?? "").trim();
+  if (!metaTemplateId || !name) return null;
+  const language = (node.language ?? "").trim() || "he";
+  const metaStatus = (node.status ?? "").trim() || "UNKNOWN";
+  const components = Array.isArray(node.components) ? node.components : [];
+  const header = components.find((c) => String(c.type ?? "").toUpperCase() === "HEADER");
+  const body = components.find((c) => String(c.type ?? "").toUpperCase() === "BODY");
+  const footer = components.find((c) => String(c.type ?? "").toUpperCase() === "FOOTER");
+  const buttonsComp = components.find((c) => String(c.type ?? "").toUpperCase() === "BUTTONS");
+
+  const bodyText = (body?.text ?? "").trim();
+  if (!bodyText) return null;
+  const exampleValues = (body?.example?.body_text?.[0] ?? [])
+    .map((x) => String(x ?? "").trim())
+    .filter(Boolean);
+  const buttons: Array<{ type: "QUICK_REPLY" | "URL"; text: string; url?: string }> = [];
+  for (const b of buttonsComp?.buttons ?? []) {
+    const type = String(b.type ?? "").trim().toUpperCase();
+    const text = String(b.text ?? "").trim().slice(0, 25);
+    if (!text) continue;
+    if (type === "URL") {
+      const url = String(b.url ?? "").trim();
+      if (!url) continue;
+      buttons.push({ type: "URL", text, url });
+    } else {
+      buttons.push({ type: "QUICK_REPLY", text });
+    }
+    if (buttons.length >= 3) break;
+  }
+
+  const headerFormat = mapMetaHeaderFormat(String(header?.format ?? ""));
+
+  return {
+    metaTemplateId,
+    name,
+    language,
+    category: mapMetaCategory(String(node.category ?? "")),
+    status: mapMetaStatus(metaStatus),
+    metaStatus,
+    rejectionReason: node.status?.toUpperCase() === "REJECTED" ? "Meta rejected" : undefined,
+    bodyText,
+    exampleValues,
+    headerFormat,
+    headerText: headerFormat === "TEXT" ? (header?.text ?? "").trim().slice(0, 60) : undefined,
+    footerText: (footer?.text ?? "").trim().slice(0, 60) || undefined,
+    buttonRows: buttons.length ? buttons : undefined,
+  };
+}
+
+async function fetchAbsoluteMeta<T>(url: string, token: string): Promise<T> {
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const json = (await res.json().catch(() => ({}))) as T & { error?: { message?: string } };
+  if (!res.ok) throw new Error(json.error?.message || `Meta request failed (${res.status})`);
+  return json;
+}
+
+export async function listTemplatesFromMeta(config: WhatsAppMetaConfig): Promise<MetaTemplateSnapshot[]> {
+  const fields = encodeURIComponent("id,name,status,category,language,components");
+  let nextPath = `/${config.wabaId}/message_templates?fields=${fields}&limit=100`;
+  let nextAbsoluteUrl = "";
+  const out: MetaTemplateSnapshot[] = [];
+  while (nextPath || nextAbsoluteUrl) {
+    const page = nextAbsoluteUrl
+      ? await fetchAbsoluteMeta<MetaTemplateListResponse>(nextAbsoluteUrl, config.systemUserToken)
+      : await callMeta<MetaTemplateListResponse>(nextPath, config.systemUserToken);
+    const rows = Array.isArray(page.data) ? page.data : [];
+    for (const row of rows) {
+      const mapped = mapMetaTemplateNode(row);
+      if (mapped) out.push(mapped);
+    }
+    const next = page.paging?.next?.trim() ?? "";
+    if (!next) break;
+    nextPath = "";
+    nextAbsoluteUrl = next;
+  }
+  return out;
+}
+
+export async function assertPhoneNumberBelongsToWaba(config: WhatsAppMetaConfig): Promise<void> {
+  const info = await callMeta<{ whatsapp_business_account?: { id?: string } }>(
+    `/${config.phoneNumberId}?fields=whatsapp_business_account`,
+    config.systemUserToken
+  );
+  const got = info.whatsapp_business_account?.id?.trim() ?? "";
+  if (!got) {
+    throw new Error("Meta לא החזיר WABA עבור Phone Number ID. בדקו הרשאות טוקן וחיבור המספר.");
+  }
+  if (got !== config.wabaId.trim()) {
+    throw new Error("Phone Number ID לא שייך ל־WABA שהוגדר במערכת. עדכנו מזהים תואמים.");
+  }
 }

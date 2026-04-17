@@ -1,5 +1,11 @@
 import { randomUUID } from "crypto";
-import { FieldValue, Timestamp, type DocumentData, type DocumentReference } from "firebase-admin/firestore";
+import {
+  FieldValue,
+  Timestamp,
+  type DocumentData,
+  type DocumentReference,
+  type Firestore,
+} from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { allocateRunningCode } from "@/lib/counters/repo";
 import {
@@ -477,11 +483,13 @@ export async function updateLead(
 export async function setLeadWhatsAppMarketingApprovalByPhone(
   phoneRaw: string,
   approved: boolean,
-  reason?: string
+  reason?: string,
+  /** ל-webhook של מטא — אותו מסד כמו appendWhatsAppChatMessage (בלי tenant מהדפדפן) */
+  dbOverride?: Firestore
 ): Promise<{ normalizedPhone?: string; updatedLeadIds: string[] }> {
   const normalizedPhone = normalizePhone(phoneRaw);
   if (!normalizedPhone) return { normalizedPhone: undefined, updatedLeadIds: [] };
-  const db = await getAdminDb();
+  const db = dbOverride ?? (await getAdminDb());
   const refs = new Map<string, DocumentReference<DocumentData>>();
 
   const byPhone = await db.collection("leads").where("phone", "==", normalizedPhone).limit(50).get();

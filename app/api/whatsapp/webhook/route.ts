@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase/admin";
+import { getFirestoreForWhatsAppWebhook } from "@/lib/firebase/admin";
 import { normalizePhone, setLeadWhatsAppMarketingApprovalByPhone } from "@/lib/leads/repo";
 import { appendWhatsAppChatMessage } from "@/lib/whatsapp/repo";
 
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const db = await getAdminDb();
+    const db = getFirestoreForWhatsAppWebhook();
     const entries = Array.isArray(body.entry) ? body.entry : [];
     for (const entry of entries) {
       const changes = Array.isArray(entry.changes) ? entry.changes : [];
@@ -100,7 +100,12 @@ export async function POST(req: NextRequest) {
           let marketingApproved = byPhone.docs[0]?.data()?.customFields?.whatsappMarketingApproved !== false;
 
           if (text && isOptOutKeyword(text)) {
-            const opt = await setLeadWhatsAppMarketingApprovalByPhone(from, false, "opt_out_keyword_he_ser");
+            const opt = await setLeadWhatsAppMarketingApprovalByPhone(
+              from,
+              false,
+              "opt_out_keyword_he_ser",
+              db
+            );
             if (opt.updatedLeadIds.length > 0) marketingApproved = false;
           }
 

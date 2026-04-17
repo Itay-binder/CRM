@@ -31,6 +31,7 @@ export default async function WhatsAppChatsPage() {
       currentTenantId={ctx.tenant.id}
     >
       <WhatsAppSectionShell
+        wide
         title="צ׳אטים"
         subtitle="תצוגת התכתבויות מהמספר המחובר. תגובת 'הסר' מסמנת את איש הקשר כלא פעיל לדיוורים."
       >

@@ -3,12 +3,14 @@ import WhatsAppSubNav from "@/app/whatsapp-automations/WhatsAppSubNav";
 type Props = {
   title: string;
   subtitle?: string;
+  /** מסך צ׳אטים — רוחב מלא יותר כמו Meta Inbox */
+  wide?: boolean;
   children: React.ReactNode;
 };
 
-export default function WhatsAppSectionShell({ title, subtitle, children }: Props) {
+export default function WhatsAppSectionShell({ title, subtitle, wide, children }: Props) {
   return (
-    <div style={{ maxWidth: 1180, width: "100%" }}>
+    <div style={{ maxWidth: wide ? "none" : 1180, width: "100%" }}>
       <WhatsAppSubNav />
       <h1 style={{ margin: "0 0 6px", fontSize: 26, fontWeight: 900 }}>{title}</h1>
       {subtitle ? (

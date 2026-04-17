@@ -4,6 +4,29 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 const SESSION_MS = 24 * 60 * 60 * 1000;
 
+/** WhatsApp Web / Meta Inbox — פלטת צבעים */
+const C = {
+  shell: "#f0f2f5",
+  panel: "#ffffff",
+  hairline: "#e9edef",
+  hairline2: "#d1d7db",
+  text: "#111b21",
+  muted: "#667781",
+  headerBg: "#f0f2f5",
+  chatWall: "#efeae2",
+  bubbleOut: "#d9fdd3",
+  bubbleIn: "#ffffff",
+  waGreen: "#00a884",
+  waGreenHover: "#008f72",
+  metaBlue: "#0084ff",
+  selectedList: "#f0f2f5",
+  dangerBg: "#fef2f2",
+  dangerText: "#991b1b",
+};
+
+const font =
+  'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif';
+
 type ChatMessage = {
   id: string;
   direction: "inbound" | "outbound";
@@ -41,14 +64,90 @@ function formatTime(iso: string): string {
   }
 }
 
+function formatDayLabel(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const today = new Date();
+    if (d.toDateString() === today.toDateString()) return "היום";
+    return d.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
+  } catch {
+    return "";
+  }
+}
+
+function initials(contactName: string | undefined, phone: string): string {
+  const n = (contactName ?? "").trim();
+  if (n) {
+    const parts = n.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) return (parts[0]![0]! + parts[1]![0]!).toUpperCase();
+    return n.slice(0, 2).toUpperCase();
+  }
+  const digits = phone.replace(/\D/g, "");
+  return digits.slice(-2) || "?";
+}
+
 async function parseJson<T>(res: Response): Promise<T> {
   return (await res.json().catch(() => ({}))) as T;
+}
+
+function IconSearch() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm9 2-4.35-4.35"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconSend() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+    </svg>
+  );
+}
+
+function IconMic() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.93V20h2v-2.07A7 7 0 0 0 19 11h-2z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function IconAttach() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M16.5 6v11.5a4.5 4.5 0 1 1-9 0V5a3 3 0 0 1 6 0v12.5a1.5 1.5 0 1 1-3 0V6"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconWa() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="#25D366" aria-hidden>
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z" />
+    </svg>
+  );
 }
 
 export default function ChatsInboxClient() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [threads, setThreads] = useState<ChatThread[]>([]);
+  const [listQuery, setListQuery] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const [active, setActive] = useState<ChatThread | null>(null);
   const [draftText, setDraftText] = useState("");
@@ -103,6 +202,17 @@ export default function ChatsInboxClient() {
 
   const selectedMeta = useMemo(() => threads.find((t) => t.id === selectedId) ?? null, [threads, selectedId]);
 
+  const filteredThreads = useMemo(() => {
+    const q = listQuery.trim().toLowerCase();
+    if (!q) return threads;
+    return threads.filter(
+      (t) =>
+        (t.contactName ?? "").toLowerCase().includes(q) ||
+        t.phone.replace(/\D/g, "").includes(q.replace(/\D/g, "")) ||
+        (t.lastMessagePreview ?? "").toLowerCase().includes(q)
+    );
+  }, [threads, listQuery]);
+
   const canSendFreeform = useMemo(() => {
     const inbound = active?.lastInboundAt ?? selectedMeta?.lastInboundAt;
     return sessionOpen(inbound);
@@ -130,42 +240,176 @@ export default function ChatsInboxClient() {
     }
   }
 
-  if (loading) return <div style={{ color: "#6b7280" }}>טוען שיחות…</div>;
+  const messagesWithDividers = useMemo(() => {
+    if (!active?.messages.length) return [];
+    const out: Array<{ type: "day"; label: string } | { type: "msg"; m: ChatMessage }> = [];
+    let lastDay = "";
+    for (const m of active.messages) {
+      const day = new Date(m.createdAt).toDateString();
+      if (day !== lastDay) {
+        lastDay = day;
+        out.push({ type: "day", label: formatDayLabel(m.createdAt) });
+      }
+      out.push({ type: "msg", m });
+    }
+    return out;
+  }, [active?.messages]);
+
+  if (loading) {
+    return (
+      <div style={{ fontFamily: font, color: C.muted, padding: 24, textAlign: "center" }}>
+        טוען שיחות…
+      </div>
+    );
+  }
+
+  const displayName = selectedMeta?.contactName || selectedMeta?.phone || "בחרו שיחה";
+  const displayPhone = selectedMeta?.phone ?? "";
 
   return (
-    <div>
-      <p style={{ margin: "0 0 14px", fontSize: 13, color: "#4b5563", lineHeight: 1.55 }}>
-        תיבת צ׳אט מלאה של Meta (כולל היסטוריה מלאה) זמינה ב־{" "}
+    <div dir="rtl" style={{ fontFamily: font, color: C.text }}>
+      <div
+        style={{
+          marginBottom: 10,
+          padding: "8px 12px",
+          background: C.panel,
+          border: `1px solid ${C.hairline}`,
+          borderRadius: 8,
+          fontSize: 12,
+          color: C.muted,
+          lineHeight: 1.5,
+        }}
+      >
+        תיבה מלאה ב־Meta:{" "}
         <a
           href="https://business.facebook.com/latest/inbox/"
           target="_blank"
           rel="noopener noreferrer"
-          style={{ color: "#2563eb", fontWeight: 700 }}
+          style={{ color: C.metaBlue, fontWeight: 600 }}
         >
-          Meta Business Suite → Inbox
+          Business Suite → Inbox
         </a>
-        . כאן נשמרות הודעות שעברו דרך ה־CRM וה־webhook — ודאו ש־<code style={{ fontSize: 12 }}>WHATSAPP_WEBHOOK_VERIFY_TOKEN</code> הוא{" "}
-        <strong>מחרוזת סודית</strong> (כמו ב־Meta), לא כתובת ה־webhook.
-      </p>
+        . הודעות כאן מה־webhook — ודאו ש־<code style={{ fontSize: 11 }}>WHATSAPP_WEBHOOK_VERIFY_TOKEN</code> הוא מחרוזת
+        סודית.
+      </div>
+
       {err ? (
-        <div style={{ marginBottom: 12, padding: 12, borderRadius: 10, background: "#fef2f2", color: "#991b1b" }}>{err}</div>
+        <div
+          style={{
+            marginBottom: 10,
+            padding: 12,
+            borderRadius: 8,
+            background: C.dangerBg,
+            color: C.dangerText,
+            fontSize: 14,
+          }}
+        >
+          {err}
+        </div>
       ) : null}
+
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(260px, 340px) 1fr",
-          gap: 12,
-          alignItems: "stretch",
+          gridTemplateColumns: "minmax(300px, 360px) minmax(0, 1fr) minmax(260px, 300px)",
+          border: `1px solid ${C.hairline}`,
+          borderRadius: 12,
+          overflow: "hidden",
+          minHeight: 560,
+          maxHeight: "min(78vh, 820px)",
+          background: C.panel,
+          boxShadow: "0 1px 3px rgba(11,20,26,0.08)",
         }}
       >
-        <aside style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden" }}>
-          <div style={{ padding: "12px 14px", borderBottom: "1px solid #f1f5f9", fontWeight: 900 }}>שיחות</div>
-          <div style={{ maxHeight: 620, overflow: "auto" }}>
-            {threads.length === 0 ? (
-              <div style={{ padding: 14, color: "#6b7280" }}>עדיין לא התקבלו התכתבויות.</div>
+        {/* עמודה 1 (ב־RTL: ימין) — רשימת שיחות */}
+        <aside
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            borderInlineEnd: `1px solid ${C.hairline}`,
+            background: C.panel,
+            minWidth: 0,
+          }}
+        >
+          <div
+            style={{
+              padding: "10px 12px",
+              borderBottom: `1px solid ${C.hairline}`,
+              background: C.headerBg,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontWeight: 700,
+                fontSize: 14,
+                color: C.text,
+              }}
+            >
+              <IconWa />
+              WhatsApp
+            </span>
+            <span
+              style={{
+                marginInlineStart: "auto",
+                fontSize: 11,
+                fontWeight: 600,
+                color: C.muted,
+                padding: "4px 8px",
+                borderRadius: 6,
+                background: "rgba(0,0,0,0.04)",
+              }}
+            >
+              Messenger / Instagram — בקרוב
+            </span>
+          </div>
+          <div style={{ padding: "8px 10px", borderBottom: `1px solid ${C.hairline}` }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                background: C.shell,
+                borderRadius: 8,
+                padding: "6px 10px",
+                border: `1px solid ${C.hairline2}`,
+              }}
+            >
+              <span style={{ color: C.muted, display: "flex" }}>
+                <IconSearch />
+              </span>
+              <input
+                type="search"
+                value={listQuery}
+                onChange={(e) => setListQuery(e.target.value)}
+                placeholder="חיפוש בשיחות…"
+                style={{
+                  flex: 1,
+                  border: "none",
+                  background: "transparent",
+                  fontSize: 14,
+                  outline: "none",
+                  fontFamily: font,
+                  minWidth: 0,
+                }}
+              />
+            </div>
+          </div>
+          <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
+            {filteredThreads.length === 0 ? (
+              <div style={{ padding: 16, color: C.muted, fontSize: 14 }}>
+                {threads.length === 0 ? "עדיין לא התקבלו התכתבויות." : "אין תוצאות לחיפוש."}
+              </div>
             ) : (
-              threads.map((t) => {
-                const activeRow = t.id === selectedId;
+              filteredThreads.map((t) => {
+                const rowOn = t.id === selectedId;
+                const av = initials(t.contactName, t.phone);
                 return (
                   <button
                     key={t.id}
@@ -173,26 +417,78 @@ export default function ChatsInboxClient() {
                     onClick={() => setSelectedId(t.id)}
                     style={{
                       width: "100%",
+                      display: "flex",
+                      alignItems: "stretch",
+                      gap: 10,
                       textAlign: "right",
                       border: "none",
-                      borderBottom: "1px solid #f8fafc",
-                      background: activeRow ? "#f5f3ff" : "#fff",
+                      borderBottom: `1px solid ${C.hairline}`,
+                      background: rowOn ? C.selectedList : C.panel,
                       padding: "10px 12px",
                       cursor: "pointer",
+                      transition: "background 0.12s ease",
                     }}
                   >
-                    <div style={{ fontWeight: 800 }}>
-                      {t.contactName || t.phone}
+                    <div
+                      style={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: "50%",
+                        background: rowOn ? C.waGreen : "#dfe5e7",
+                        color: rowOn ? "#fff" : C.text,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontWeight: 700,
+                        fontSize: 15,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {av}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                        <span style={{ fontWeight: 600, fontSize: 16, color: C.text, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {t.contactName || t.phone}
+                        </span>
+                        <span style={{ fontSize: 11, color: C.muted, flexShrink: 0 }} dir="ltr">
+                          {formatTime(t.lastMessageAt)}
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          color: C.muted,
+                          marginTop: 2,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                        dir="ltr"
+                      >
+                        <span style={{ flexShrink: 0, opacity: 0.85 }}>✓</span>
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{t.lastMessagePreview || "—"}</span>
+                      </div>
                       {t.unreadCount > 0 ? (
-                        <span style={{ marginInlineStart: 8, color: "#1d4ed8", fontWeight: 700, fontSize: 12 }}>
+                        <span
+                          style={{
+                            display: "inline-block",
+                            marginTop: 6,
+                            background: C.waGreen,
+                            color: "#fff",
+                            fontSize: 11,
+                            fontWeight: 700,
+                            padding: "2px 7px",
+                            borderRadius: 10,
+                          }}
+                        >
                           {t.unreadCount} חדש
                         </span>
                       ) : null}
                     </div>
-                    <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }} dir="ltr">
-                      {t.phone}
-                    </div>
-                    <div style={{ fontSize: 12, color: "#4b5563", marginTop: 4 }}>{t.lastMessagePreview || "—"}</div>
                   </button>
                 );
               })
@@ -200,121 +496,309 @@ export default function ChatsInboxClient() {
           </div>
         </aside>
 
-        <section style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden" }}>
-          <div style={{ padding: "12px 14px", borderBottom: "1px solid #f1f5f9" }}>
-            <div style={{ fontWeight: 900 }}>{selectedMeta?.contactName || selectedMeta?.phone || "בחר שיחה"}</div>
-            <div style={{ fontSize: 12, color: "#6b7280" }} dir="ltr">
-              {selectedMeta?.phone || ""}
-            </div>
-            {selectedMeta ? (
-              <div style={{ marginTop: 6, fontSize: 12, color: selectedMeta.marketingApproved ? "#065f46" : "#b45309" }}>
-                אישור דיוור (שיווק): {selectedMeta.marketingApproved ? "פעיל" : "לא פעיל"}
-              </div>
-            ) : null}
+        {/* עמודה 2 — חלון שיחה */}
+        <section style={{ display: "flex", flexDirection: "column", minWidth: 0, background: C.chatWall }}>
+          <header
+            style={{
+              height: 59,
+              flexShrink: 0,
+              padding: "0 16px",
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              background: C.headerBg,
+              borderBottom: `1px solid ${C.hairline}`,
+            }}
+          >
             <div
               style={{
-                marginTop: 8,
-                fontSize: 12,
-                color: canSendFreeform ? "#065f46" : "#92400e",
-                lineHeight: 1.45,
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                background: "#dfe5e7",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontWeight: 700,
+                fontSize: 14,
+                color: C.text,
+                flexShrink: 0,
               }}
             >
-              {canSendFreeform
-                ? "חלון שירות Meta פעיל (~24 שעות מהודעת הלקוח האחרונה) — ניתן לשלוח טקסט חופשי."
-                : "מחוץ לחלון השירות: שליחת טקסט חופשי דורשת שאיש הקשר שלח הודעה או ביצע אינטראקציה לאחרונה. אחרת השתמשו בתבנית מאושרת."}
+              {selectedMeta ? initials(selectedMeta.contactName, selectedMeta.phone) : "?"}
             </div>
-          </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 16, color: C.text }}>{displayName}</div>
+              <div style={{ fontSize: 12, color: C.muted }} dir="ltr">
+                {displayPhone || " "}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 4, color: C.muted }}>
+              <span title="סימון" style={{ padding: 8, borderRadius: 8, cursor: "default", opacity: 0.5 }}>
+                ★
+              </span>
+              <span title="דוא״ל" style={{ padding: 8, borderRadius: 8, cursor: "default", opacity: 0.5 }}>
+                ✉
+              </span>
+            </div>
+          </header>
+
           <div
             style={{
-              minHeight: 360,
-              maxHeight: 520,
+              flex: 1,
               overflow: "auto",
-              background: "#ece5dd",
-              padding: 14,
+              padding: "12px 16px 8px",
+              backgroundColor: C.chatWall,
+              backgroundImage: `repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0,0,0,0.02) 2px,
+                rgba(0,0,0,0.02) 4px
+              )`,
+              minHeight: 0,
             }}
           >
             {!active || active.messages.length === 0 ? (
-              <div style={{ color: "#57534e", textAlign: "center", padding: 24 }}>אין הודעות להצגה.</div>
+              <div style={{ color: C.muted, textAlign: "center", padding: 40, fontSize: 14 }}>
+                אין הודעות להצגה.
+              </div>
             ) : (
-              active.messages.map((m) => {
-                const outbound = m.direction === "outbound";
-                return (
-                  <div
-                    key={m.id}
-                    style={{
-                      display: "flex",
-                      justifyContent: outbound ? "flex-end" : "flex-start",
-                      marginBottom: 10,
-                    }}
-                  >
-                    <div
+              messagesWithDividers.map((item, idx) =>
+                item.type === "day" ? (
+                  <div key={`d-${idx}`} style={{ display: "flex", justifyContent: "center", margin: "14px 0" }}>
+                    <span
                       style={{
-                        maxWidth: "82%",
-                        padding: "8px 10px 6px",
-                        borderRadius: outbound ? "10px 10px 2px 10px" : "10px 10px 10px 2px",
-                        background: outbound ? "#dcf8c6" : "#fff",
-                        boxShadow: "0 1px 0.5px rgba(0,0,0,0.12)",
-                        whiteSpace: "pre-wrap",
-                        lineHeight: 1.45,
-                        fontSize: 14,
-                        color: "#111",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: C.muted,
+                        background: "rgba(255,255,255,0.92)",
+                        padding: "4px 12px",
+                        borderRadius: 8,
+                        boxShadow: "0 1px 1px rgba(0,0,0,0.06)",
                       }}
                     >
-                      <div>{m.text || "—"}</div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: "#667085",
-                          marginTop: 4,
-                          textAlign: "end",
-                        }}
-                        dir="ltr"
-                      >
-                        {formatTime(m.createdAt)}
-                      </div>
-                    </div>
+                      {item.label}
+                    </span>
                   </div>
-                );
-              })
+                ) : (
+                  (() => {
+                    const m = item.m;
+                    const outbound = m.direction === "outbound";
+                    return (
+                      <div
+                        key={m.id}
+                        style={{
+                          display: "flex",
+                          justifyContent: outbound ? "flex-start" : "flex-end",
+                          marginBottom: 4,
+                        }}
+                      >
+                        <div
+                          style={{
+                            maxWidth: "min(75%, 520px)",
+                            padding: outbound ? "6px 7px 6px 9px" : "6px 9px 6px 7px",
+                            borderRadius: outbound ? "7.5px 7.5px 0 7.5px" : "7.5px 7.5px 7.5px 0",
+                            background: outbound ? C.bubbleOut : C.bubbleIn,
+                            boxShadow: "0 1px 0.5px rgba(11,20,26,0.13)",
+                            position: "relative",
+                          }}
+                        >
+                          <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.45, fontSize: 14.2, color: C.text }}>
+                            {m.text || "—"}
+                          </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "flex-end",
+                              alignItems: "center",
+                              gap: 4,
+                              marginTop: 2,
+                              fontSize: 11,
+                              color: C.muted,
+                            }}
+                            dir="ltr"
+                          >
+                            {formatTime(m.createdAt)}
+                            {outbound ? <span style={{ opacity: 0.65 }}>✓✓</span> : null}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()
+                )
+              )
             )}
           </div>
-          <div style={{ borderTop: "1px solid #e5e7eb", padding: 12, background: "#fafafa" }}>
-            <textarea
-              value={draftText}
-              onChange={(e) => setDraftText(e.target.value)}
-              placeholder={canSendFreeform ? "כתבו הודעה…" : "מחוץ לחלון שירות — לא ניתן לשלוח טקסט"}
-              disabled={!canSendFreeform || sending || !selectedId}
-              rows={3}
+
+          <footer
+            style={{
+              flexShrink: 0,
+              padding: "8px 12px 10px",
+              background: C.headerBg,
+              borderTop: `1px solid ${C.hairline}`,
+            }}
+          >
+            <div
               style={{
-                width: "100%",
-                resize: "vertical",
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #e5e7eb",
-                fontFamily: "inherit",
-                fontSize: 14,
-                marginBottom: 8,
-                opacity: canSendFreeform ? 1 : 0.65,
-              }}
-            />
-            <button
-              type="button"
-              disabled={!canSendFreeform || sending || !draftText.trim() || !selectedId}
-              onClick={() => void sendMessage()}
-              style={{
-                padding: "10px 18px",
-                borderRadius: 10,
-                border: "none",
-                background: canSendFreeform && draftText.trim() ? "#25d366" : "#cbd5e1",
-                color: "#fff",
-                fontWeight: 800,
-                cursor: canSendFreeform && draftText.trim() ? "pointer" : "not-allowed",
+                display: "flex",
+                alignItems: "flex-end",
+                gap: 8,
+                background: C.panel,
+                borderRadius: 24,
+                border: `1px solid ${canSendFreeform ? C.hairline2 : C.hairline}`,
+                padding: "6px 6px 6px 12px",
+                boxShadow: "0 1px 1px rgba(0,0,0,0.04)",
               }}
             >
-              {sending ? "שולח…" : "שלח בווצאפ"}
-            </button>
-          </div>
+              <button
+                type="button"
+                disabled
+                title="צירוף קבצים — בקרוב"
+                style={{
+                  border: "none",
+                  background: "none",
+                  color: C.muted,
+                  padding: 6,
+                  cursor: "not-allowed",
+                  opacity: 0.45,
+                  display: "flex",
+                }}
+              >
+                <IconAttach />
+              </button>
+              <textarea
+                value={draftText}
+                onChange={(e) => setDraftText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    if (canSendFreeform && draftText.trim() && !sending && selectedId) void sendMessage();
+                  }
+                }}
+                placeholder={canSendFreeform ? "הקלידו הודעה…" : "מחוץ לחלון שירות — לא ניתן לשלוח טקסט חופשי"}
+                disabled={!canSendFreeform || sending || !selectedId}
+                rows={1}
+                style={{
+                  flex: 1,
+                  border: "none",
+                  resize: "none",
+                  outline: "none",
+                  fontFamily: font,
+                  fontSize: 15,
+                  lineHeight: 1.4,
+                  maxHeight: 120,
+                  padding: "8px 0",
+                  background: "transparent",
+                  opacity: canSendFreeform ? 1 : 0.55,
+                  minWidth: 0,
+                }}
+              />
+              <button
+                type="button"
+                disabled={!canSendFreeform}
+                title="הקלטה — בקרוב"
+                style={{
+                  border: "none",
+                  background: "none",
+                  color: C.muted,
+                  padding: 6,
+                  cursor: "not-allowed",
+                  opacity: 0.45,
+                  display: "flex",
+                }}
+              >
+                <IconMic />
+              </button>
+              <button
+                type="button"
+                disabled={!canSendFreeform || sending || !draftText.trim() || !selectedId}
+                onClick={() => void sendMessage()}
+                aria-label="שליחה"
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: "50%",
+                  border: "none",
+                  background: canSendFreeform && draftText.trim() ? C.waGreen : "#b3b9bd",
+                  color: "#fff",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: canSendFreeform && draftText.trim() ? "pointer" : "not-allowed",
+                  flexShrink: 0,
+                  transition: "background 0.15s ease",
+                }}
+              >
+                {sending ? (
+                  <span style={{ fontSize: 12, fontWeight: 800 }}>…</span>
+                ) : (
+                  <IconSend />
+                )}
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: C.muted, marginTop: 8, lineHeight: 1.45, paddingInline: 4 }}>
+              {canSendFreeform
+                ? "חלון שירות פעיל (~24 שע׳ מהודעת הלקוח האחרונה) — Enter לשליחה, Shift+Enter לשורה חדשה."
+                : "מחוץ לחלון השירות: נדרשת הודעה מהלקוח או אינטראקציה לאחרונה; אחרת שלחו תבנית מאושרת."}
+            </div>
+          </footer>
         </section>
+
+        {/* עמודה 3 (ב־RTL: שמאל) — פרטי איש קשר */}
+        <aside
+          style={{
+            borderInlineStart: `1px solid ${C.hairline}`,
+            background: C.panel,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "auto",
+            minWidth: 0,
+          }}
+        >
+          <div style={{ padding: 20, textAlign: "center", borderBottom: `1px solid ${C.hairline}` }}>
+            <div
+              style={{
+                width: 80,
+                height: 80,
+                margin: "0 auto 12px",
+                borderRadius: "50%",
+                background: "#dfe5e7",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 28,
+                fontWeight: 700,
+                color: C.text,
+              }}
+            >
+              {selectedMeta ? initials(selectedMeta.contactName, selectedMeta.phone) : "?"}
+            </div>
+            <div style={{ fontWeight: 800, fontSize: 18 }}>{displayName}</div>
+            <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }} dir="ltr">
+              {displayPhone || "—"}
+            </div>
+          </div>
+          <div style={{ padding: "14px 16px", fontSize: 13 }}>
+            <div style={{ fontWeight: 700, marginBottom: 10, color: C.muted, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              פרטי איש קשר
+            </div>
+            <dl style={{ margin: 0, display: "grid", gap: 10 }}>
+              <div>
+                <dt style={{ color: C.muted, fontSize: 11, marginBottom: 2 }}>טלפון</dt>
+                <dd style={{ margin: 0, fontWeight: 600 }} dir="ltr">
+                  {displayPhone || "—"}
+                </dd>
+              </div>
+              <div>
+                <dt style={{ color: C.muted, fontSize: 11, marginBottom: 2 }}>אישור דיוור (שיווק)</dt>
+                <dd style={{ margin: 0, fontWeight: 600, color: selectedMeta?.marketingApproved ? "#0d7a5c" : "#b45309" }}>
+                  {selectedMeta ? (selectedMeta.marketingApproved ? "פעיל" : "לא פעיל") : "—"}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        </aside>
       </div>
     </div>
   );

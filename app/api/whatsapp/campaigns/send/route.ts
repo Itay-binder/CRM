@@ -90,8 +90,15 @@ export async function POST(req: NextRequest) {
       parameterValues = draft.parameterValues;
       if (!broadcastName) broadcastName = draft.name;
       useAudienceFilter = true;
-      audienceConditions = draft.conditions;
-      audienceLogic = draft.logic;
+      // תצוגת הקהל במסך משתמשת במצב הנוכחי; אם לא ממזגים כאן, שליחה עם draftId
+      // הייתה מתעלמת מתנאים שעודכנו בממשק בלי «שמור טיוטה» — ואז recipientIds יתרוקנו.
+      if (Array.isArray(body.conditions)) {
+        audienceConditions = body.conditions;
+        audienceLogic = body.logic === "or" ? "or" : "and";
+      } else {
+        audienceConditions = draft.conditions;
+        audienceLogic = draft.logic;
+      }
     } else if (body.conditions !== undefined) {
       useAudienceFilter = true;
       audienceConditions = Array.isArray(body.conditions) ? body.conditions : [];

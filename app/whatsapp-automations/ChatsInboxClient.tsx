@@ -123,7 +123,6 @@ export default function ChatsInboxClient() {
       if (!res.ok || !j.ok) throw new Error(j.error || "שליחה נכשלה");
       setDraftText("");
       await loadThread(selectedId);
-      await loadThreads();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "שליחה נכשלה");
     } finally {
@@ -135,6 +134,19 @@ export default function ChatsInboxClient() {
 
   return (
     <div>
+      <p style={{ margin: "0 0 14px", fontSize: 13, color: "#4b5563", lineHeight: 1.55 }}>
+        תיבת צ׳אט מלאה של Meta (כולל היסטוריה מלאה) זמינה ב־{" "}
+        <a
+          href="https://business.facebook.com/latest/inbox/"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: "#2563eb", fontWeight: 700 }}
+        >
+          Meta Business Suite → Inbox
+        </a>
+        . כאן נשמרות הודעות שעברו דרך ה־CRM וה־webhook — ודאו ש־<code style={{ fontSize: 12 }}>WHATSAPP_WEBHOOK_VERIFY_TOKEN</code> הוא{" "}
+        <strong>מחרוזת סודית</strong> (כמו ב־Meta), לא כתובת ה־webhook.
+      </p>
       {err ? (
         <div style={{ marginBottom: 12, padding: 12, borderRadius: 10, background: "#fef2f2", color: "#991b1b" }}>{err}</div>
       ) : null}

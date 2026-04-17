@@ -43,6 +43,14 @@ export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get("hub.verify_token");
   const challenge = req.nextUrl.searchParams.get("hub.challenge");
   const expected = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN?.trim() || "";
+  const looksLikeUrl =
+    /^https?:\/\//i.test(expected) || expected.includes("/api/whatsapp/webhook");
+  if (looksLikeUrl) {
+    return new NextResponse(
+      "Misconfigured WHATSAPP_WEBHOOK_VERIFY_TOKEN: use a random secret string (same as in Meta), not the webhook URL. Callback URL in Meta should be https://<domain>/api/whatsapp/webhook",
+      { status: 403, headers: { "Content-Type": "text/plain; charset=utf-8" } }
+    );
+  }
   if (mode === "subscribe" && token && expected && token === expected && challenge) {
     return new NextResponse(challenge, { status: 200 });
   }

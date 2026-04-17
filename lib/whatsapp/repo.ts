@@ -18,6 +18,20 @@ function stripUndefinedForFirestore<T>(value: T): T {
 const CAMPAIGNS_DOC_ID = "whatsappCampaigns";
 const DRAFTS_DOC_ID = "whatsappBroadcastDrafts";
 const CHATS_COLLECTION = "whatsappChats";
+/** הודעות במסמכי משנה — מונע מסמך שיחה ענק ומאיץ טעינת רשימת שיחות */
+const CHAT_THREAD_MESSAGES_SUB = "thread_messages";
+
+const CHAT_THREAD_LIST_FIELDS = [
+  "phone",
+  "contactId",
+  "contactName",
+  "marketingApproved",
+  "lastInboundAt",
+  "lastMessageAt",
+  "lastMessagePreview",
+  "unreadCount",
+  "updatedAt",
+] as const;
 
 export type WhatsAppMetaConfig = {
   appId: string;
@@ -444,6 +458,36 @@ function parseAudienceConditions(raw: unknown): AudienceCondition[] {
   return out;
 }
 
+function mapSubcollectionMessageDoc(docId: string, data: Record<string, unknown>): WhatsAppChatMessageRecord | null {
+  const direction = asString(data.direction).trim() === "inbound" ? "inbound" : "outbound";
+  const text = asString(data.text);
+  const from = asString(data.from).trim();
+  const to = asString(data.to).trim();
+  const createdAt = asString(data.createdAt).trim();
+  if (!from || !to || !createdAt) return null;
+  return {
+    id: docId,
+    direction,
+    text,
+    from,
+    to,
+    createdAt,
+    messageId: asString(data.messageId).trim() || undefined,
+  };
+}
+
+function mergeThreadMessages(
+  legacy: WhatsAppChatMessageRecord[],
+  fromSub: WhatsAppChatMessageRecord[]
+): WhatsAppChatMessageRecord[] {
+  const map = new Map<string, WhatsAppChatMessageRecord>();
+  for (const m of legacy) map.set(m.id, m);
+  for (const m of fromSub) map.set(m.id, m);
+  return Array.from(map.values())
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .slice(-200);
+}
+
 function parseChatMessages(raw: unknown): WhatsAppChatMessageRecord[] {
   if (!Array.isArray(raw)) return [];
   const out: WhatsAppChatMessageRecord[] = [];
@@ -557,6 +601,7 @@ export async function listWhatsAppChatThreads(
     .collection(CHATS_COLLECTION)
     .orderBy("lastMessageAt", "desc")
     .limit(Math.max(1, Math.min(200, limit)))
+    .select(...CHAT_THREAD_LIST_FIELDS)
     .get();
   const rows = snap.docs
     .map((doc): WhatsAppChatThreadRecord | null => {
@@ -588,11 +633,22 @@ export async function getWhatsAppChatThread(
 ): Promise<WhatsAppChatThreadRecord | null> {
   const id = normalizeChatPhone(threadId);
   if (!id) return null;
-  const snap = await db.collection(CHATS_COLLECTION).doc(id).get();
+  const ref = db.collection(CHATS_COLLECTION).doc(id);
+  const [snap, subSnap] = await Promise.all([
+    ref.get(),
+    ref.collection(CHAT_THREAD_MESSAGES_SUB).orderBy("createdAt", "asc").limit(200).get(),
+  ]);
   if (!snap.exists) return null;
   const d = (snap.data() ?? {}) as Record<string, unknown>;
   const lastMessageAt = asString(d.lastMessageAt).trim();
   if (!lastMessageAt) return null;
+  const fromSub: WhatsAppChatMessageRecord[] = [];
+  for (const doc of subSnap.docs) {
+    const row = mapSubcollectionMessageDoc(doc.id, doc.data() as Record<string, unknown>);
+    if (row) fromSub.push(row);
+  }
+  const legacy = parseChatMessages(d.messages);
+  const messages = fromSub.length > 0 ? mergeThreadMessages(legacy, fromSub) : legacy;
   return {
     id: snap.id,
     phone: asString(d.phone).trim() || snap.id,
@@ -604,7 +660,7 @@ export async function getWhatsAppChatThread(
     lastMessagePreview: asString(d.lastMessagePreview).trim().slice(0, 240),
     unreadCount: Number(d.unreadCount ?? 0),
     updatedAt: asString(d.updatedAt).trim() || lastMessageAt,
-    messages: parseChatMessages(d.messages),
+    messages,
   };
 }
 
@@ -629,8 +685,9 @@ export async function appendWhatsAppChatMessage(
   const snap = await ref.get();
   const prev = (snap.data() ?? {}) as Record<string, unknown>;
   const now = input.createdAt?.trim() || new Date().toISOString();
+  const msgId = randomUUID();
   const msg: WhatsAppChatMessageRecord = {
-    id: randomUUID(),
+    id: msgId,
     direction: input.direction,
     text: input.text.trim(),
     from: input.from.trim(),
@@ -638,10 +695,9 @@ export async function appendWhatsAppChatMessage(
     createdAt: now,
     messageId: input.messageId?.trim() || undefined,
   };
-  const nextMessages = [...parseChatMessages(prev.messages), msg].slice(-200);
   const unreadInc = input.direction === "inbound" ? 1 : 0;
   const prevUnread = Number(prev.unreadCount ?? 0);
-  const payload: Record<string, unknown> = {
+  const parentPayload: Record<string, unknown> = {
     phone: id,
     contactId: input.contactId?.trim() || asString(prev.contactId).trim() || undefined,
     contactName: input.contactName?.trim() || asString(prev.contactName).trim() || undefined,
@@ -651,12 +707,24 @@ export async function appendWhatsAppChatMessage(
     lastMessagePreview: msg.text.slice(0, 240),
     unreadCount: input.direction === "inbound" ? prevUnread + unreadInc : prevUnread,
     updatedAt: new Date().toISOString(),
-    messages: nextMessages,
   };
   if (input.direction === "inbound") {
-    payload.lastInboundAt = now;
+    parentPayload.lastInboundAt = now;
   }
-  await ref.set(stripUndefinedForFirestore(payload), { merge: true });
+  const batch = db.batch();
+  batch.set(
+    ref.collection(CHAT_THREAD_MESSAGES_SUB).doc(msgId),
+    stripUndefinedForFirestore({
+      direction: msg.direction,
+      text: msg.text,
+      from: msg.from,
+      to: msg.to,
+      createdAt: msg.createdAt,
+      messageId: msg.messageId,
+    })
+  );
+  batch.set(ref, stripUndefinedForFirestore(parentPayload), { merge: true });
+  await batch.commit();
 }
 
 export async function markWhatsAppChatThreadRead(db: Firestore, threadId: string): Promise<void> {

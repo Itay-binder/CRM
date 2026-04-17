@@ -12,6 +12,13 @@ type MetaTemplateCreateResponse = {
   category?: string;
 };
 
+type MetaGraphError = {
+  message?: string;
+  code?: number;
+  error_subcode?: number;
+  error_data?: { details?: string };
+};
+
 type MetaMessageSendResponse = {
   messages?: Array<{ id?: string }>;
   error?: { message?: string };
@@ -52,11 +59,12 @@ async function callMeta<T>(
       ...(init?.headers ?? {}),
     },
   });
-  const json = (await res.json().catch(() => ({}))) as T & {
-    error?: { message?: string };
-  };
+  const json = (await res.json().catch(() => ({}))) as T & { error?: MetaGraphError };
   if (!res.ok) {
-    throw new Error(json.error?.message || `Meta request failed (${res.status})`);
+    const msg = json.error?.message?.trim() || `Meta request failed (${res.status})`;
+    const details = json.error?.error_data?.details?.trim() || "";
+    const sub = json.error?.error_subcode ? ` [subcode ${json.error.error_subcode}]` : "";
+    throw new Error(details ? `${msg}${sub}: ${details}` : `${msg}${sub}`);
   }
   return json;
 }
@@ -75,11 +83,70 @@ function normalizeTemplateComponents(template: WhatsAppTemplateRecord): WhatsApp
   return next;
 }
 
+function validateTemplateForMeta(template: WhatsAppTemplateRecord): void {
+  const issues: string[] = [];
+  const metaName = template.name.trim();
+  if (!/^[a-z][a-z0-9_]*$/.test(metaName)) {
+    issues.push("שם תבנית חייב להתחיל באות קטנה באנגלית ולהכיל רק a-z, מספרים וקו תחתון (_).");
+  }
+  if (metaName.length > 512) {
+    issues.push("שם תבנית ארוך מדי (מקסימום 512 תווים).");
+  }
+  const lang = template.language.trim();
+  if (!/^[a-z]{2}(?:_[A-Z]{2})?$/.test(lang)) {
+    issues.push("קוד שפה לא תקין. השתמשו ב-he או בקוד מלא כמו en_US.");
+  }
+  const body = template.bodyText;
+  const placeholderIds = Array.from(body.matchAll(/\{\{(\d+)\}\}/g))
+    .map((m) => Number.parseInt(String(m[1]), 10))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (placeholderIds.length > 0) {
+    const max = Math.max(...placeholderIds);
+    const set = new Set(placeholderIds);
+    for (let i = 1; i <= max; i++) {
+      if (!set.has(i)) {
+        issues.push("הפלייסהולדרים בגוף חייבים להיות רציפים: {{1}}, {{2}}, {{3}}... ללא דילוגים.");
+        break;
+      }
+    }
+  }
+  if (/\{\{\s*\d+\s*\}\}/.test(template.headerText ?? "")) {
+    issues.push("בכותרת טקסט אין תמיכה במשתנים ({{n}}) בגרסה זו.");
+  }
+  for (const btn of template.buttonRows ?? []) {
+    if (btn.type === "URL") {
+      const url = (btn.url ?? "").trim();
+      if (!url) {
+        issues.push("לכפתור URL חייב להיות קישור מלא.");
+        continue;
+      }
+      try {
+        const u = new URL(url);
+        if (u.protocol !== "http:" && u.protocol !== "https:") {
+          issues.push("כפתור URL חייב להיות עם http/https.");
+        }
+      } catch {
+        issues.push("כפתור URL אינו קישור תקין.");
+      }
+      if (/\{\{(\d+)\}\}/.test(url)) {
+        issues.push("כפתור URL דינמי (עם {{n}}) לא נתמך כרגע דרך ה-CRM.");
+      }
+    }
+  }
+  if (template.category === "AUTHENTICATION") {
+    issues.push("קטגוריית AUTHENTICATION דורשת מבנה מיוחד ואינה נתמכת עדיין דרך מסך זה.");
+  }
+  if (issues.length > 0) {
+    throw new Error(issues.join(" "));
+  }
+}
+
 export async function submitTemplateToMeta(
   config: WhatsAppMetaConfig,
   template: WhatsAppTemplateRecord
 ): Promise<MetaTemplateCreateResponse> {
   const t = normalizeTemplateComponents(template);
+  validateTemplateForMeta(t);
   const components: Array<Record<string, unknown>> = [];
 
   const hf = t.headerFormat ?? "NONE";
@@ -205,6 +272,34 @@ export async function sendTemplateMessageViaMeta(
     },
   };
 
+  const res = await callMeta<MetaMessageSendResponse>(
+    `/${config.phoneNumberId}/messages`,
+    config.systemUserToken,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }
+  );
+  return { messageId: res.messages?.[0]?.id };
+}
+
+/** הודעת טקסט בתוך חלון שירות לקוח (~24 שעות אחרי פעילות של הלקוח) — ללא תבנית */
+export async function sendSessionTextMessageViaMeta(
+  config: WhatsAppMetaConfig,
+  input: { to: string; body: string }
+): Promise<{ messageId?: string }> {
+  const text = input.body.trim();
+  if (!text) throw new Error("טקסט ההודעה ריק.");
+  if (text.length > 4096) {
+    throw new Error("הודעה ארוכה מדי (מקסימום 4096 תווים).");
+  }
+  const payload = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: input.to,
+    type: "text",
+    text: { preview_url: false, body: text },
+  };
   const res = await callMeta<MetaMessageSendResponse>(
     `/${config.phoneNumberId}/messages`,
     config.systemUserToken,

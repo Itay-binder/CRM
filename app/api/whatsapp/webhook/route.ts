@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 type MetaWebhookMessage = {
   id?: string;
   from?: string;
-  timestamp?: string;
+  timestamp?: string | number;
   type?: string;
   text?: { body?: string };
   button?: { text?: string };
@@ -75,10 +75,14 @@ export async function POST(req: NextRequest) {
           const from = normalizePhone(msg.from) ?? "";
           if (!from) continue;
           const text = extractInboundText(msg);
-          const ts =
-            typeof msg.timestamp === "string" && /^\d+$/.test(msg.timestamp)
-              ? new Date(Number(msg.timestamp) * 1000).toISOString()
-              : new Date().toISOString();
+          const rawTs = msg.timestamp;
+          const tsSec =
+            typeof rawTs === "number" && Number.isFinite(rawTs)
+              ? rawTs
+              : typeof rawTs === "string" && /^\d+$/.test(rawTs.trim())
+                ? Number.parseInt(rawTs.trim(), 10)
+                : NaN;
+          const ts = Number.isFinite(tsSec) ? new Date(tsSec * 1000).toISOString() : new Date().toISOString();
           const contacts = Array.isArray(value.contacts) ? value.contacts : [];
           const byWa = contacts.find((c) => (normalizePhone(c.wa_id) ?? "") === from);
           const fallback = contacts[0];

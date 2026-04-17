@@ -120,6 +120,8 @@ export type WhatsAppChatThreadRecord = {
   contactId?: string;
   contactName?: string;
   marketingApproved: boolean;
+  /** ISO — הודעת לקוח אחרונה; מאפשר שליחת טקסט חופשי בתוך חלון השירות של Meta (~24 שעות) */
+  lastInboundAt?: string;
   lastMessageAt: string;
   lastMessagePreview: string;
   unreadCount: number;
@@ -419,7 +421,10 @@ export async function appendWhatsAppCampaign(
 ): Promise<void> {
   const prev = await listWhatsAppCampaigns(db);
   const next = [campaign, ...prev].slice(0, 100);
-  await db.collection(COLLECTION).doc(CAMPAIGNS_DOC_ID).set({ campaigns: next }, { merge: true });
+  await db
+    .collection(COLLECTION)
+    .doc(CAMPAIGNS_DOC_ID)
+    .set(stripUndefinedForFirestore({ campaigns: next }), { merge: true });
 }
 
 function parseAudienceConditions(raw: unknown): AudienceCondition[] {
@@ -565,6 +570,7 @@ export async function listWhatsAppChatThreads(
         contactId: asString(d.contactId).trim() || undefined,
         contactName: asString(d.contactName).trim() || undefined,
         marketingApproved: d.marketingApproved !== false,
+        lastInboundAt: asString(d.lastInboundAt).trim() || undefined,
         lastMessageAt,
         lastMessagePreview: asString(d.lastMessagePreview).trim().slice(0, 240),
         unreadCount: Number(d.unreadCount ?? 0),
@@ -593,6 +599,7 @@ export async function getWhatsAppChatThread(
     contactId: asString(d.contactId).trim() || undefined,
     contactName: asString(d.contactName).trim() || undefined,
     marketingApproved: d.marketingApproved !== false,
+    lastInboundAt: asString(d.lastInboundAt).trim() || undefined,
     lastMessageAt,
     lastMessagePreview: asString(d.lastMessagePreview).trim().slice(0, 240),
     unreadCount: Number(d.unreadCount ?? 0),
@@ -634,23 +641,22 @@ export async function appendWhatsAppChatMessage(
   const nextMessages = [...parseChatMessages(prev.messages), msg].slice(-200);
   const unreadInc = input.direction === "inbound" ? 1 : 0;
   const prevUnread = Number(prev.unreadCount ?? 0);
-  await ref.set(
-    stripUndefinedForFirestore({
-      phone: id,
-      contactId: input.contactId?.trim() || asString(prev.contactId).trim() || undefined,
-      contactName: input.contactName?.trim() || asString(prev.contactName).trim() || undefined,
-      marketingApproved:
-        input.marketingApproved !== undefined
-          ? input.marketingApproved
-          : prev.marketingApproved !== false,
-      lastMessageAt: now,
-      lastMessagePreview: msg.text.slice(0, 240),
-      unreadCount: input.direction === "inbound" ? prevUnread + unreadInc : prevUnread,
-      updatedAt: new Date().toISOString(),
-      messages: nextMessages,
-    }),
-    { merge: true }
-  );
+  const payload: Record<string, unknown> = {
+    phone: id,
+    contactId: input.contactId?.trim() || asString(prev.contactId).trim() || undefined,
+    contactName: input.contactName?.trim() || asString(prev.contactName).trim() || undefined,
+    marketingApproved:
+      input.marketingApproved !== undefined ? input.marketingApproved : prev.marketingApproved !== false,
+    lastMessageAt: now,
+    lastMessagePreview: msg.text.slice(0, 240),
+    unreadCount: input.direction === "inbound" ? prevUnread + unreadInc : prevUnread,
+    updatedAt: new Date().toISOString(),
+    messages: nextMessages,
+  };
+  if (input.direction === "inbound") {
+    payload.lastInboundAt = now;
+  }
+  await ref.set(stripUndefinedForFirestore(payload), { merge: true });
 }
 
 export async function markWhatsAppChatThreadRead(db: Firestore, threadId: string): Promise<void> {

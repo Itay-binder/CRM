@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { AudienceCondition, AudienceLogic } from "@/lib/whatsapp/audienceFilter";
+import type { WhatsAppHeaderFormat } from "@/lib/whatsapp/repo";
 import { countBodyPlaceholders } from "@/lib/whatsapp/templateParams";
 
 type TemplateVm = {
@@ -15,6 +16,10 @@ type TemplateVm = {
   bodyText?: string;
   exampleValues?: string[];
   parameterSources?: string[];
+  footerText?: string;
+  headerFormat?: WhatsAppHeaderFormat;
+  headerText?: string;
+  buttonRows?: Array<{ type: string; text: string; url?: string }>;
 };
 
 type LabelOpt = { id: string; name: string };
@@ -218,7 +223,7 @@ export default function BroadcastNewClient() {
 
   const previewBodyText = useMemo(() => {
     const body = selectedTpl?.bodyText?.trim() ?? "";
-    if (!body) return "בחרו תבנית כדי לראות תצוגה מקדימה.";
+    if (!body) return "";
     const sources = selectedTpl?.parameterSources ?? [];
     return body.replace(/\{\{(\d+)\}\}/g, (_, raw) => {
       const idx = Number.parseInt(String(raw), 10) - 1;
@@ -230,6 +235,25 @@ export default function BroadcastNewClient() {
       return `[CRM:${src}]`;
     });
   }, [manualParameterValues, selectedTpl]);
+
+  const previewHeaderText = useMemo(() => {
+    if (!selectedTpl || (selectedTpl.headerFormat ?? "NONE") !== "TEXT") return "";
+    return (selectedTpl.headerText ?? "").trim();
+  }, [selectedTpl]);
+
+  const previewFooterText = useMemo(() => (selectedTpl?.footerText ?? "").trim(), [selectedTpl]);
+
+  const previewButtons = useMemo(() => {
+    const rows = selectedTpl?.buttonRows ?? [];
+    return rows
+      .filter((b) => (b.text ?? "").trim())
+      .slice(0, 3)
+      .map((b) => ({
+        type: String(b.type ?? "").toUpperCase() === "URL" ? "URL" : "QUICK_REPLY",
+        text: (b.text ?? "").trim().slice(0, 25),
+        url: (b.url ?? "").trim(),
+      }));
+  }, [selectedTpl]);
 
   const hasManualTemplateParams = useMemo(() => {
     if (!selectedTpl?.bodyText) return true;
@@ -424,16 +448,121 @@ export default function BroadcastNewClient() {
             />
             <div
               style={{
-                marginTop: 10,
-                border: "1px solid #e5e7eb",
-                borderRadius: 10,
-                background: "#f8fafc",
-                padding: "10px 12px",
+                marginTop: 14,
+                border: "1px solid #d1d5db",
+                borderRadius: 12,
+                overflow: "hidden",
+                background: "#fff",
               }}
             >
-              <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6 }}>תצוגה מקדימה</div>
-              <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.5, fontSize: 13, color: "#111827" }}>
-                {previewBodyText}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "10px 14px",
+                  borderBottom: "1px solid #e5e7eb",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  color: "#111827",
+                }}
+              >
+                <span>תצוגה מקדימה של התבנית</span>
+                <span style={{ fontSize: 12, color: "#6b7280", fontWeight: 600 }}>כמו במטא</span>
+              </div>
+              <div style={{ background: "#ece5dd", padding: 16 }}>
+                <div
+                  style={{
+                    maxWidth: 320,
+                    margin: "0 auto",
+                    background: "#fff",
+                    borderRadius: 8,
+                    boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
+                    overflow: "hidden",
+                  }}
+                >
+                  {previewHeaderText ? (
+                    <div
+                      style={{
+                        padding: "10px 12px 0",
+                        fontWeight: 800,
+                        fontSize: 15,
+                        color: "#111",
+                        textAlign: "right" as const,
+                      }}
+                    >
+                      {previewHeaderText}
+                    </div>
+                  ) : null}
+                  <div
+                    style={{
+                      padding: "10px 12px",
+                      whiteSpace: "pre-wrap",
+                      lineHeight: 1.5,
+                      fontSize: 14,
+                      color: "#111",
+                      textAlign: "right" as const,
+                    }}
+                  >
+                    {previewBodyText || "בחרו תבנית כדי לראות תצוגה מקדימה."}
+                  </div>
+                  {previewFooterText ? (
+                    <div
+                      style={{
+                        padding: "0 12px 8px",
+                        fontSize: 12,
+                        color: "#6b7280",
+                        textAlign: "right" as const,
+                      }}
+                    >
+                      {previewFooterText}
+                    </div>
+                  ) : null}
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "#94a3b8",
+                      textAlign: "end" as const,
+                      padding: "0 12px 8px",
+                    }}
+                    dir="ltr"
+                  >
+                    {new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}
+                  </div>
+                  {previewButtons.length > 0 ? (
+                    <div style={{ borderTop: "1px solid #e5e7eb" }}>
+                      {previewButtons.map((b, i) => (
+                        <div
+                          key={`${b.text}-${i}`}
+                          style={{
+                            padding: "10px 12px",
+                            borderTop: i > 0 ? "1px solid #e5e7eb" : undefined,
+                            fontSize: 14,
+                            fontWeight: 600,
+                            color: "#0284c7",
+                            textAlign: "center" as const,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: 6,
+                          }}
+                        >
+                          {b.type === "URL" ? (
+                            <>
+                              <span style={{ fontSize: 12 }}>↗</span>
+                              {b.text}
+                            </>
+                          ) : (
+                            b.text
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <p style={{ margin: "12px 0 0", fontSize: 11, color: "#78716c", textAlign: "center" }}>
+                  הדמיה לפי נתוני התבנית ב-CRM — המראה הסופי בווצאפ תלוי במכשיר ובמטא.
+                </p>
               </div>
             </div>
             {selectedTpl && selectedTpl.status !== "approved" ? (

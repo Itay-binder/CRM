@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+const SESSION_MS = 24 * 60 * 60 * 1000;
+
 type ChatMessage = {
   id: string;
   direction: "inbound" | "outbound";
@@ -16,11 +18,28 @@ type ChatThread = {
   phone: string;
   contactName?: string;
   marketingApproved: boolean;
+  lastInboundAt?: string;
   lastMessageAt: string;
   lastMessagePreview: string;
   unreadCount: number;
   messages: ChatMessage[];
 };
+
+function sessionOpen(lastInboundIso?: string): boolean {
+  if (!lastInboundIso?.trim()) return false;
+  const t = new Date(lastInboundIso).getTime();
+  if (Number.isNaN(t)) return false;
+  return Date.now() - t < SESSION_MS;
+}
+
+function formatTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "";
+  }
+}
 
 async function parseJson<T>(res: Response): Promise<T> {
   return (await res.json().catch(() => ({}))) as T;
@@ -32,6 +51,8 @@ export default function ChatsInboxClient() {
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [active, setActive] = useState<ChatThread | null>(null);
+  const [draftText, setDraftText] = useState("");
+  const [sending, setSending] = useState(false);
 
   const loadThreads = useCallback(async () => {
     const res = await fetch("/api/whatsapp/chats", { credentials: "include", cache: "no-store" });
@@ -82,6 +103,34 @@ export default function ChatsInboxClient() {
 
   const selectedMeta = useMemo(() => threads.find((t) => t.id === selectedId) ?? null, [threads, selectedId]);
 
+  const canSendFreeform = useMemo(() => {
+    const inbound = active?.lastInboundAt ?? selectedMeta?.lastInboundAt;
+    return sessionOpen(inbound);
+  }, [active?.lastInboundAt, selectedMeta?.lastInboundAt]);
+
+  async function sendMessage() {
+    if (!selectedId || !draftText.trim()) return;
+    setSending(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/whatsapp/chats/send", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadId: selectedId, text: draftText.trim() }),
+      });
+      const j = await parseJson<{ ok?: boolean; error?: string }>(res);
+      if (!res.ok || !j.ok) throw new Error(j.error || "שליחה נכשלה");
+      setDraftText("");
+      await loadThread(selectedId);
+      await loadThreads();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "שליחה נכשלה");
+    } finally {
+      setSending(false);
+    }
+  }
+
   if (loading) return <div style={{ color: "#6b7280" }}>טוען שיחות…</div>;
 
   return (
@@ -92,7 +141,7 @@ export default function ChatsInboxClient() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "340px 1fr",
+          gridTemplateColumns: "minmax(260px, 340px) 1fr",
           gap: 12,
           alignItems: "stretch",
         }}
@@ -146,14 +195,34 @@ export default function ChatsInboxClient() {
               {selectedMeta?.phone || ""}
             </div>
             {selectedMeta ? (
-              <div style={{ marginTop: 6, fontSize: 12, color: selectedMeta.marketingApproved ? "#065f46" : "#b91c1c" }}>
-                אישור דיוור: {selectedMeta.marketingApproved ? "פעיל" : "לא פעיל"}
+              <div style={{ marginTop: 6, fontSize: 12, color: selectedMeta.marketingApproved ? "#065f46" : "#b45309" }}>
+                אישור דיוור (שיווק): {selectedMeta.marketingApproved ? "פעיל" : "לא פעיל"}
               </div>
             ) : null}
+            <div
+              style={{
+                marginTop: 8,
+                fontSize: 12,
+                color: canSendFreeform ? "#065f46" : "#92400e",
+                lineHeight: 1.45,
+              }}
+            >
+              {canSendFreeform
+                ? "חלון שירות Meta פעיל (~24 שעות מהודעת הלקוח האחרונה) — ניתן לשלוח טקסט חופשי."
+                : "מחוץ לחלון השירות: שליחת טקסט חופשי דורשת שאיש הקשר שלח הודעה או ביצע אינטראקציה לאחרונה. אחרת השתמשו בתבנית מאושרת."}
+            </div>
           </div>
-          <div style={{ minHeight: 420, maxHeight: 620, overflow: "auto", background: "#f8fafc", padding: 14 }}>
+          <div
+            style={{
+              minHeight: 360,
+              maxHeight: 520,
+              overflow: "auto",
+              background: "#ece5dd",
+              padding: 14,
+            }}
+          >
             {!active || active.messages.length === 0 ? (
-              <div style={{ color: "#6b7280" }}>אין הודעות להצגה.</div>
+              <div style={{ color: "#57534e", textAlign: "center", padding: 24 }}>אין הודעות להצגה.</div>
             ) : (
               active.messages.map((m) => {
                 const outbound = m.direction === "outbound";
@@ -162,31 +231,76 @@ export default function ChatsInboxClient() {
                     key={m.id}
                     style={{
                       display: "flex",
-                      justifyContent: outbound ? "flex-start" : "flex-end",
-                      marginBottom: 8,
+                      justifyContent: outbound ? "flex-end" : "flex-start",
+                      marginBottom: 10,
                     }}
                   >
                     <div
                       style={{
-                        maxWidth: "78%",
-                        padding: "8px 10px",
-                        borderRadius: 10,
-                        background: outbound ? "#dbeafe" : "#dcfce7",
-                        border: "1px solid #e5e7eb",
+                        maxWidth: "82%",
+                        padding: "8px 10px 6px",
+                        borderRadius: outbound ? "10px 10px 2px 10px" : "10px 10px 10px 2px",
+                        background: outbound ? "#dcf8c6" : "#fff",
+                        boxShadow: "0 1px 0.5px rgba(0,0,0,0.12)",
                         whiteSpace: "pre-wrap",
                         lineHeight: 1.45,
-                        fontSize: 13,
+                        fontSize: 14,
+                        color: "#111",
                       }}
                     >
                       <div>{m.text || "—"}</div>
-                      <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }} dir="ltr">
-                        {new Date(m.createdAt).toLocaleString("he-IL")}
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "#667085",
+                          marginTop: 4,
+                          textAlign: "end",
+                        }}
+                        dir="ltr"
+                      >
+                        {formatTime(m.createdAt)}
                       </div>
                     </div>
                   </div>
                 );
               })
             )}
+          </div>
+          <div style={{ borderTop: "1px solid #e5e7eb", padding: 12, background: "#fafafa" }}>
+            <textarea
+              value={draftText}
+              onChange={(e) => setDraftText(e.target.value)}
+              placeholder={canSendFreeform ? "כתבו הודעה…" : "מחוץ לחלון שירות — לא ניתן לשלוח טקסט"}
+              disabled={!canSendFreeform || sending || !selectedId}
+              rows={3}
+              style={{
+                width: "100%",
+                resize: "vertical",
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #e5e7eb",
+                fontFamily: "inherit",
+                fontSize: 14,
+                marginBottom: 8,
+                opacity: canSendFreeform ? 1 : 0.65,
+              }}
+            />
+            <button
+              type="button"
+              disabled={!canSendFreeform || sending || !draftText.trim() || !selectedId}
+              onClick={() => void sendMessage()}
+              style={{
+                padding: "10px 18px",
+                borderRadius: 10,
+                border: "none",
+                background: canSendFreeform && draftText.trim() ? "#25d366" : "#cbd5e1",
+                color: "#fff",
+                fontWeight: 800,
+                cursor: canSendFreeform && draftText.trim() ? "pointer" : "not-allowed",
+              }}
+            >
+              {sending ? "שולח…" : "שלח בווצאפ"}
+            </button>
           </div>
         </section>
       </div>

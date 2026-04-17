@@ -143,6 +143,8 @@ function IconWa() {
   );
 }
 
+type MobilePanel = "list" | "chat" | "details";
+
 export default function ChatsInboxClient() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -152,6 +154,20 @@ export default function ChatsInboxClient() {
   const [active, setActive] = useState<ChatThread | null>(null);
   const [draftText, setDraftText] = useState("");
   const [sending, setSending] = useState(false);
+  const [isNarrow, setIsNarrow] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>("list");
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 768px)");
+    const apply = () => setIsNarrow(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
+  useEffect(() => {
+    if (isNarrow && mobilePanel === "chat" && !selectedId) setMobilePanel("list");
+  }, [isNarrow, mobilePanel, selectedId]);
 
   const loadThreads = useCallback(async () => {
     const res = await fetch("/api/whatsapp/chats", { credentials: "include", cache: "no-store" });
@@ -163,7 +179,9 @@ export default function ChatsInboxClient() {
     if (!res.ok || !j.ok) throw new Error(j.error || "טעינת שיחות נכשלה");
     const list = j.threads ?? [];
     setThreads(list);
-    setSelectedId((prev) => prev || list[0]?.id || "");
+    const narrow =
+      typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches;
+    setSelectedId((prev) => (narrow ? prev : prev || list[0]?.id || ""));
   }, []);
 
   const loadThread = useCallback(async (id: string) => {
@@ -196,6 +214,14 @@ export default function ChatsInboxClient() {
   }, [loadThreads]);
 
   useEffect(() => {
+    const t = window.setInterval(() => {
+      void loadThreads().catch(() => {});
+      if (selectedId) void loadThread(selectedId).catch(() => {});
+    }, 12_000);
+    return () => window.clearInterval(t);
+  }, [loadThreads, loadThread, selectedId]);
+
+  useEffect(() => {
     if (!selectedId) return;
     void loadThread(selectedId).catch((e) => setErr(e instanceof Error ? e.message : "שגיאה"));
   }, [selectedId, loadThread]);
@@ -217,6 +243,17 @@ export default function ChatsInboxClient() {
     const inbound = active?.lastInboundAt ?? selectedMeta?.lastInboundAt;
     return sessionOpen(inbound);
   }, [active?.lastInboundAt, selectedMeta?.lastInboundAt]);
+
+  function selectThread(id: string) {
+    setSelectedId(id);
+    if (isNarrow) setMobilePanel("chat");
+  }
+
+  function goBackToList() {
+    setSelectedId("");
+    setActive(null);
+    setMobilePanel("list");
+  }
 
   async function sendMessage() {
     if (!selectedId || !draftText.trim()) return;
@@ -271,16 +308,25 @@ export default function ChatsInboxClient() {
       <div
         style={{
           marginBottom: 10,
-          padding: "8px 12px",
+          padding: "10px 12px",
           background: C.panel,
           border: `1px solid ${C.hairline}`,
           borderRadius: 8,
           fontSize: 12,
           color: C.muted,
-          lineHeight: 1.5,
+          lineHeight: 1.55,
         }}
       >
-        תיבה מלאה ב־Meta:{" "}
+        <strong style={{ color: C.text }}>למה אין הודעות נכנסות?</strong> התכתבות כאן נשמרת רק כשמטא שולחת webhook לכתובת{" "}
+        <code dir="ltr" style={{ fontSize: 11, background: "#f3f4f6", padding: "1px 5px", borderRadius: 4 }}>
+          …/api/whatsapp/webhook
+        </code>
+        . ב־Meta Developers → האפליקציה שלכם → WhatsApp → Configuration: Callback URL כזו, Verify token זהה ל־
+        <code dir="ltr" style={{ fontSize: 11, background: "#f3f4f6", padding: "1px 5px", borderRadius: 4 }}>
+          WHATSAPP_WEBHOOK_VERIFY_TOKEN
+        </code>{" "}
+        (מחרוזת סודית — לא URL), וסמנו subscribe לאירוע <code style={{ fontSize: 11 }}>messages</code>. ב־Vercel חייב להיות אותו
+        משתנה סביבה. תיבה מלאה:{" "}
         <a
           href="https://business.facebook.com/latest/inbox/"
           target="_blank"
@@ -289,8 +335,7 @@ export default function ChatsInboxClient() {
         >
           Business Suite → Inbox
         </a>
-        . הודעות כאן מה־webhook — ודאו ש־<code style={{ fontSize: 11 }}>WHATSAPP_WEBHOOK_VERIFY_TOKEN</code> הוא מחרוזת
-        סודית.
+        .
       </div>
 
       {err ? (
@@ -308,15 +353,61 @@ export default function ChatsInboxClient() {
         </div>
       ) : null}
 
+      {isNarrow ? (
+        <div
+          role="tablist"
+          aria-label="תצוגת צ׳אט"
+          style={{
+            display: "flex",
+            gap: 6,
+            marginBottom: 8,
+            padding: 4,
+            background: C.shell,
+            borderRadius: 10,
+            border: `1px solid ${C.hairline}`,
+          }}
+        >
+          {(["list", "chat", "details"] as const).map((p) => {
+            const labels: Record<MobilePanel, string> = { list: "שיחות", chat: "הודעות", details: "פרטים" };
+            const on = mobilePanel === p;
+            return (
+              <button
+                key={p}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                onClick={() => setMobilePanel(p)}
+                style={{
+                  flex: 1,
+                  padding: "10px 8px",
+                  borderRadius: 8,
+                  border: on ? `1px solid ${C.hairline2}` : "1px solid transparent",
+                  background: on ? C.panel : "transparent",
+                  fontWeight: 800,
+                  fontSize: 13,
+                  color: on ? C.text : C.muted,
+                  cursor: "pointer",
+                  fontFamily: font,
+                }}
+              >
+                {labels[p]}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(300px, 360px) minmax(0, 1fr) minmax(260px, 300px)",
+          gridTemplateColumns: isNarrow
+            ? "1fr"
+            : "minmax(280px, 1fr) minmax(0, 2.2fr) minmax(220px, 1fr)",
           border: `1px solid ${C.hairline}`,
           borderRadius: 12,
           overflow: "hidden",
-          minHeight: 560,
-          maxHeight: "min(78vh, 820px)",
+          minHeight: isNarrow ? 420 : 560,
+          maxHeight: isNarrow ? "min(calc(100dvh - 280px), 720px)" : "min(78vh, 820px)",
           background: C.panel,
           boxShadow: "0 1px 3px rgba(11,20,26,0.08)",
         }}
@@ -324,9 +415,9 @@ export default function ChatsInboxClient() {
         {/* עמודה 1 (ב־RTL: ימין) — רשימת שיחות */}
         <aside
           style={{
-            display: "flex",
+            display: isNarrow && mobilePanel !== "list" ? "none" : "flex",
             flexDirection: "column",
-            borderInlineEnd: `1px solid ${C.hairline}`,
+            borderInlineEnd: isNarrow ? "none" : `1px solid ${C.hairline}`,
             background: C.panel,
             minWidth: 0,
           }}
@@ -355,19 +446,21 @@ export default function ChatsInboxClient() {
               <IconWa />
               WhatsApp
             </span>
-            <span
-              style={{
-                marginInlineStart: "auto",
-                fontSize: 11,
-                fontWeight: 600,
-                color: C.muted,
-                padding: "4px 8px",
-                borderRadius: 6,
-                background: "rgba(0,0,0,0.04)",
-              }}
-            >
-              Messenger / Instagram — בקרוב
-            </span>
+            {!isNarrow ? (
+              <span
+                style={{
+                  marginInlineStart: "auto",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: C.muted,
+                  padding: "4px 8px",
+                  borderRadius: 6,
+                  background: "rgba(0,0,0,0.04)",
+                }}
+              >
+                Messenger / Instagram — בקרוב
+              </span>
+            ) : null}
           </div>
           <div style={{ padding: "8px 10px", borderBottom: `1px solid ${C.hairline}` }}>
             <div
@@ -414,7 +507,7 @@ export default function ChatsInboxClient() {
                   <button
                     key={t.id}
                     type="button"
-                    onClick={() => setSelectedId(t.id)}
+                    onClick={() => selectThread(t.id)}
                     style={{
                       width: "100%",
                       display: "flex",
@@ -497,7 +590,14 @@ export default function ChatsInboxClient() {
         </aside>
 
         {/* עמודה 2 — חלון שיחה */}
-        <section style={{ display: "flex", flexDirection: "column", minWidth: 0, background: C.chatWall }}>
+        <section
+          style={{
+            display: isNarrow && mobilePanel !== "chat" ? "none" : "flex",
+            flexDirection: "column",
+            minWidth: 0,
+            background: C.chatWall,
+          }}
+        >
           <header
             style={{
               height: 59,
@@ -510,6 +610,27 @@ export default function ChatsInboxClient() {
               borderBottom: `1px solid ${C.hairline}`,
             }}
           >
+            {isNarrow ? (
+              <button
+                type="button"
+                onClick={goBackToList}
+                aria-label="חזרה לרשימת שיחות"
+                style={{
+                  border: "none",
+                  background: "rgba(0,0,0,0.06)",
+                  borderRadius: 10,
+                  padding: "8px 10px",
+                  fontWeight: 800,
+                  fontSize: 13,
+                  color: C.text,
+                  cursor: "pointer",
+                  flexShrink: 0,
+                  fontFamily: font,
+                }}
+              >
+                ←
+              </button>
+            ) : null}
             <div
               style={{
                 width: 40,
@@ -748,9 +869,9 @@ export default function ChatsInboxClient() {
         {/* עמודה 3 (ב־RTL: שמאל) — פרטי איש קשר */}
         <aside
           style={{
-            borderInlineStart: `1px solid ${C.hairline}`,
+            borderInlineStart: isNarrow ? "none" : `1px solid ${C.hairline}`,
             background: C.panel,
-            display: "flex",
+            display: isNarrow && mobilePanel !== "details" ? "none" : "flex",
             flexDirection: "column",
             overflow: "auto",
             minWidth: 0,

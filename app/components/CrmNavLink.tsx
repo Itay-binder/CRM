@@ -20,6 +20,7 @@ export default function CrmNavLink({
   return (
     <Link
       href={href}
+      className="crm-nav-link"
       style={{
         display: "block",
         padding: "10px 12px",

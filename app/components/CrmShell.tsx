@@ -21,6 +21,7 @@ export default function CrmShell({
 }: Props) {
   return (
     <div
+      className="crm-shell-layout"
       style={{
         display: "flex",
         minHeight: "100vh",
@@ -28,6 +29,7 @@ export default function CrmShell({
       }}
     >
       <aside
+        className="crm-shell-aside"
         style={{
           width: 260,
           background: "#ffffff",
@@ -36,6 +38,7 @@ export default function CrmShell({
         }}
       >
         <div
+          className="crm-shell-aside-top"
           style={{
             display: "flex",
             alignItems: "center",
@@ -55,7 +58,7 @@ export default function CrmShell({
           />
         </div>
 
-        <nav style={{ display: "grid", gap: 8, marginTop: 8 }}>
+        <nav className="crm-shell-nav" style={{ display: "grid", gap: 8, marginTop: 8 }}>
           <CrmNavLink href="/dashboard" label={'דשבורד מנכ"ל'} />
           <CrmNavLink href="/contacts" label="אנשי קשר" />
           <CrmNavLink href="/pipeline" label="ניהול הזדמנויות" />
@@ -72,6 +75,7 @@ export default function CrmShell({
       </aside>
 
       <section
+        className="crm-shell-main"
         style={{
           flex: 1,
           minWidth: 0,

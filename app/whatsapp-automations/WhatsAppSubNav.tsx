@@ -14,13 +14,17 @@ export default function WhatsAppSubNav() {
   const pathname = usePathname() || "";
   return (
     <div
+      className="wa-subnav"
       style={{
         display: "flex",
         gap: 8,
         marginBottom: 20,
-        flexWrap: "wrap",
+        flexWrap: "nowrap",
+        overflowX: "auto",
+        WebkitOverflowScrolling: "touch",
         borderBottom: "1px solid #e5e7eb",
         paddingBottom: 12,
+        scrollbarWidth: "thin",
       }}
     >
       {items.map((item) => {
@@ -38,6 +42,8 @@ export default function WhatsAppSubNav() {
               background: active ? "#ede9fe" : "transparent",
               color: active ? "#4c1d95" : "#374151",
               border: active ? "1px solid #ddd6fe" : "1px solid transparent",
+              whiteSpace: "nowrap",
+              flexShrink: 0,
             }}
           >
             {item.label}

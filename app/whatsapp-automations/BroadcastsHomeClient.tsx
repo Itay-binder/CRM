@@ -14,6 +14,8 @@ type DraftRow = {
 type CampaignRow = {
   id: string;
   broadcastName?: string;
+  templateId: string;
+  parameterValues: string[];
   templateName: string;
   recipientCount: number;
   sentCount: number;
@@ -213,12 +215,13 @@ export default function BroadcastsHomeClient() {
                     <th style={th}>נשלחו</th>
                     <th style={th}>הצליחו</th>
                     <th style={th}>נכשלו</th>
+                    <th style={th}>פעולות</th>
                   </tr>
                 </thead>
                 <tbody>
                   {campaigns.length === 0 ? (
                     <tr>
-                      <td colSpan={6} style={{ ...td, color: "#6b7280" }}>
+                      <td colSpan={7} style={{ ...td, color: "#6b7280" }}>
                         עדיין לא נשלחו ברודקאסטים.
                       </td>
                     </tr>
@@ -241,6 +244,24 @@ export default function BroadcastsHomeClient() {
                             <span style={{ fontWeight: 500, color: "#6b7280", fontSize: 12 }}>({pct}%)</span>
                           </td>
                           <td style={{ ...td, color: c.failedCount ? "#b91c1c" : "#6b7280" }}>{c.failedCount}</td>
+                          <td style={{ ...td, width: 170 }}>
+                            <Link
+                              href={`/whatsapp-automations/broadcasts/new?campaign=${encodeURIComponent(c.id)}`}
+                              style={{
+                                display: "inline-block",
+                                padding: "6px 10px",
+                                borderRadius: 8,
+                                border: "1px solid #d1d5db",
+                                background: "#fff",
+                                color: "#1f2937",
+                                textDecoration: "none",
+                                fontWeight: 700,
+                                fontSize: 12,
+                              }}
+                            >
+                              שכפל דיוור
+                            </Link>
+                          </td>
                         </tr>
                       );
                     })

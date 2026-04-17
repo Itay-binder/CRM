@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { FieldValue, Timestamp } from "firebase-admin/firestore";
+import { FieldValue, Timestamp, type DocumentData, type DocumentReference } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { allocateRunningCode } from "@/lib/counters/repo";
 import {
@@ -47,6 +47,11 @@ export type LeadRecord = {
   createdAt: Date | null;
   updatedAt: Date | null;
 };
+
+export function isLeadWhatsAppMarketingApproved(lead: Pick<LeadRecord, "customFields">): boolean {
+  const raw = lead.customFields?.whatsappMarketingApproved;
+  return raw !== false;
+}
 
 export type LeadUpsertInput = {
   id?: string;
@@ -467,5 +472,43 @@ export async function updateLead(
 
   const again = await ref.get();
   return mapDocToLead(again.id, (again.data() ?? {}) as Record<string, unknown>);
+}
+
+export async function setLeadWhatsAppMarketingApprovalByPhone(
+  phoneRaw: string,
+  approved: boolean,
+  reason?: string
+): Promise<{ normalizedPhone?: string; updatedLeadIds: string[] }> {
+  const normalizedPhone = normalizePhone(phoneRaw);
+  if (!normalizedPhone) return { normalizedPhone: undefined, updatedLeadIds: [] };
+  const db = await getAdminDb();
+  const refs = new Map<string, DocumentReference<DocumentData>>();
+
+  const byPhone = await db.collection("leads").where("phone", "==", normalizedPhone).limit(50).get();
+  for (const doc of byPhone.docs) refs.set(doc.id, doc.ref);
+
+  const byId = await db.collection("leads").doc(normalizedPhone).get();
+  if (byId.exists) refs.set(byId.id, byId.ref);
+
+  if (!refs.size) return { normalizedPhone, updatedLeadIds: [] };
+
+  const nowIso = new Date().toISOString();
+  const updates = Array.from(refs.values()).map((ref) =>
+    ref.set(
+      {
+        "customFields.whatsappMarketingApproved": approved,
+        "customFields.whatsappMarketingApprovalUpdatedAt": nowIso,
+        ...(approved
+          ? { "customFields.whatsappMarketingApprovalReason": FieldValue.delete() }
+          : {
+              "customFields.whatsappMarketingApprovalReason": reason?.trim() || "opt_out_keyword",
+            }),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    )
+  );
+  await Promise.all(updates);
+  return { normalizedPhone, updatedLeadIds: Array.from(refs.keys()) };
 }
 

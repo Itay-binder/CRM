@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import type { Firestore } from "firebase-admin/firestore";
 import type { AudienceCondition, AudienceLogic } from "@/lib/whatsapp/audienceFilter";
 import {
@@ -16,6 +17,7 @@ function stripUndefinedForFirestore<T>(value: T): T {
 }
 const CAMPAIGNS_DOC_ID = "whatsappCampaigns";
 const DRAFTS_DOC_ID = "whatsappBroadcastDrafts";
+const CHATS_COLLECTION = "whatsappChats";
 
 export type WhatsAppMetaConfig = {
   appId: string;
@@ -100,6 +102,29 @@ export type WhatsAppBroadcastDraftRecord = {
   createdAt: string;
   updatedAt: string;
   createdBy: string;
+};
+
+export type WhatsAppChatMessageRecord = {
+  id: string;
+  direction: "inbound" | "outbound";
+  text: string;
+  from: string;
+  to: string;
+  createdAt: string;
+  messageId?: string;
+};
+
+export type WhatsAppChatThreadRecord = {
+  id: string;
+  phone: string;
+  contactId?: string;
+  contactName?: string;
+  marketingApproved: boolean;
+  lastMessageAt: string;
+  lastMessagePreview: string;
+  unreadCount: number;
+  updatedAt: string;
+  messages: WhatsAppChatMessageRecord[];
 };
 
 function asString(v: unknown): string {
@@ -414,6 +439,38 @@ function parseAudienceConditions(raw: unknown): AudienceCondition[] {
   return out;
 }
 
+function parseChatMessages(raw: unknown): WhatsAppChatMessageRecord[] {
+  if (!Array.isArray(raw)) return [];
+  const out: WhatsAppChatMessageRecord[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const id = asString(row.id).trim();
+    const direction = asString(row.direction).trim() === "inbound" ? "inbound" : "outbound";
+    const text = asString(row.text);
+    const from = asString(row.from).trim();
+    const to = asString(row.to).trim();
+    const createdAt = asString(row.createdAt).trim();
+    if (!id || !from || !to || !createdAt) continue;
+    out.push({
+      id,
+      direction,
+      text,
+      from,
+      to,
+      createdAt,
+      messageId: asString(row.messageId).trim() || undefined,
+    });
+  }
+  return out
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .slice(-200);
+}
+
+function normalizeChatPhone(phoneRaw: string): string {
+  return phoneRaw.replace(/[^\d]/g, "").trim();
+}
+
 export async function listWhatsAppBroadcastDrafts(db: Firestore): Promise<WhatsAppBroadcastDraftRecord[]> {
   const snap = await db.collection(COLLECTION).doc(DRAFTS_DOC_ID).get();
   if (!snap.exists) return [];
@@ -485,4 +542,119 @@ export async function deleteWhatsAppBroadcastDraft(db: Firestore, id: string): P
   const drafts = await listWhatsAppBroadcastDrafts(db);
   const next = drafts.filter((d) => d.id !== id);
   await db.collection(COLLECTION).doc(DRAFTS_DOC_ID).set({ drafts: next }, { merge: true });
+}
+
+export async function listWhatsAppChatThreads(
+  db: Firestore,
+  limit = 80
+): Promise<WhatsAppChatThreadRecord[]> {
+  const snap = await db
+    .collection(CHATS_COLLECTION)
+    .orderBy("lastMessageAt", "desc")
+    .limit(Math.max(1, Math.min(200, limit)))
+    .get();
+  const rows = snap.docs
+    .map((doc): WhatsAppChatThreadRecord | null => {
+      const d = (doc.data() ?? {}) as Record<string, unknown>;
+      const phone = asString(d.phone).trim() || doc.id;
+      const lastMessageAt = asString(d.lastMessageAt).trim();
+      if (!phone || !lastMessageAt) return null;
+      return {
+        id: doc.id,
+        phone,
+        contactId: asString(d.contactId).trim() || undefined,
+        contactName: asString(d.contactName).trim() || undefined,
+        marketingApproved: d.marketingApproved !== false,
+        lastMessageAt,
+        lastMessagePreview: asString(d.lastMessagePreview).trim().slice(0, 240),
+        unreadCount: Number(d.unreadCount ?? 0),
+        updatedAt: asString(d.updatedAt).trim() || lastMessageAt,
+        messages: [],
+      };
+    })
+    .filter((x): x is WhatsAppChatThreadRecord => Boolean(x));
+  return rows;
+}
+
+export async function getWhatsAppChatThread(
+  db: Firestore,
+  threadId: string
+): Promise<WhatsAppChatThreadRecord | null> {
+  const id = normalizeChatPhone(threadId);
+  if (!id) return null;
+  const snap = await db.collection(CHATS_COLLECTION).doc(id).get();
+  if (!snap.exists) return null;
+  const d = (snap.data() ?? {}) as Record<string, unknown>;
+  const lastMessageAt = asString(d.lastMessageAt).trim();
+  if (!lastMessageAt) return null;
+  return {
+    id: snap.id,
+    phone: asString(d.phone).trim() || snap.id,
+    contactId: asString(d.contactId).trim() || undefined,
+    contactName: asString(d.contactName).trim() || undefined,
+    marketingApproved: d.marketingApproved !== false,
+    lastMessageAt,
+    lastMessagePreview: asString(d.lastMessagePreview).trim().slice(0, 240),
+    unreadCount: Number(d.unreadCount ?? 0),
+    updatedAt: asString(d.updatedAt).trim() || lastMessageAt,
+    messages: parseChatMessages(d.messages),
+  };
+}
+
+export async function appendWhatsAppChatMessage(
+  db: Firestore,
+  input: {
+    phone: string;
+    direction: "inbound" | "outbound";
+    text: string;
+    from: string;
+    to: string;
+    createdAt?: string;
+    messageId?: string;
+    contactId?: string;
+    contactName?: string;
+    marketingApproved?: boolean;
+  }
+): Promise<void> {
+  const id = normalizeChatPhone(input.phone);
+  if (!id) return;
+  const ref = db.collection(CHATS_COLLECTION).doc(id);
+  const snap = await ref.get();
+  const prev = (snap.data() ?? {}) as Record<string, unknown>;
+  const now = input.createdAt?.trim() || new Date().toISOString();
+  const msg: WhatsAppChatMessageRecord = {
+    id: randomUUID(),
+    direction: input.direction,
+    text: input.text.trim(),
+    from: input.from.trim(),
+    to: input.to.trim(),
+    createdAt: now,
+    messageId: input.messageId?.trim() || undefined,
+  };
+  const nextMessages = [...parseChatMessages(prev.messages), msg].slice(-200);
+  const unreadInc = input.direction === "inbound" ? 1 : 0;
+  const prevUnread = Number(prev.unreadCount ?? 0);
+  await ref.set(
+    stripUndefinedForFirestore({
+      phone: id,
+      contactId: input.contactId?.trim() || asString(prev.contactId).trim() || undefined,
+      contactName: input.contactName?.trim() || asString(prev.contactName).trim() || undefined,
+      marketingApproved:
+        input.marketingApproved !== undefined
+          ? input.marketingApproved
+          : prev.marketingApproved !== false,
+      lastMessageAt: now,
+      lastMessagePreview: msg.text.slice(0, 240),
+      unreadCount: input.direction === "inbound" ? prevUnread + unreadInc : prevUnread,
+      updatedAt: new Date().toISOString(),
+      messages: nextMessages,
+    }),
+    { merge: true }
+  );
+}
+
+export async function markWhatsAppChatThreadRead(db: Firestore, threadId: string): Promise<void> {
+  const id = normalizeChatPhone(threadId);
+  if (!id) return;
+  await db.collection(CHATS_COLLECTION).doc(id).set({ unreadCount: 0, updatedAt: new Date().toISOString() }, { merge: true });
 }

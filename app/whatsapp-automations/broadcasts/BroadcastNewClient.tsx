@@ -13,6 +13,7 @@ type TemplateVm = {
   language: string;
   status: string;
   bodyText?: string;
+  exampleValues?: string[];
   parameterSources?: string[];
 };
 
@@ -33,6 +34,14 @@ type AudienceContactRow = {
   phone: string;
   email: string;
   status: string;
+  marketingApproved: boolean;
+};
+
+type CampaignVm = {
+  id: string;
+  broadcastName?: string;
+  templateId: string;
+  parameterValues: string[];
 };
 
 async function parseJson<T>(res: Response): Promise<T> {
@@ -63,6 +72,7 @@ export default function BroadcastNewClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const draftQ = searchParams.get("draft")?.trim() ?? "";
+  const campaignQ = searchParams.get("campaign")?.trim() ?? "";
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -116,6 +126,21 @@ export default function BroadcastNewClient() {
     setConditions(d.conditions.length ? d.conditions : []);
   }, [draftQ]);
 
+  const loadCampaign = useCallback(async () => {
+    if (!campaignQ) return;
+    const res = await fetch("/api/whatsapp/campaigns/send", { credentials: "include", cache: "no-store" });
+    const j = await parseJson<{ ok?: boolean; campaigns?: CampaignVm[] }>(res);
+    if (!j.ok || !Array.isArray(j.campaigns)) return;
+    const c = j.campaigns.find((x) => x.id === campaignQ);
+    if (!c) return;
+    setDraftId(null);
+    setBroadcastName(`שכפול: ${c.broadcastName?.trim() || "דיוור"}`);
+    setTemplateId(c.templateId);
+    setParameterValuesStr((c.parameterValues ?? []).join(", "));
+    setLogic("and");
+    setConditions([]);
+  }, [campaignQ]);
+
   useEffect(() => {
     void (async () => {
       setLoading(true);
@@ -123,13 +148,14 @@ export default function BroadcastNewClient() {
       try {
         await loadBase();
         await loadDraft();
+        await loadCampaign();
       } catch (e) {
         setErr(e instanceof Error ? e.message : "שגיאה");
       } finally {
         setLoading(false);
       }
     })();
-  }, [loadBase, loadDraft]);
+  }, [loadBase, loadDraft, loadCampaign]);
 
   const refreshAudience = useCallback(async () => {
     setErr(null);
@@ -151,7 +177,7 @@ export default function BroadcastNewClient() {
       if (!res.ok || !j.ok) throw new Error(j.error || "תצוגה מקדימה נכשלה");
       const list = j.contacts ?? [];
       setAudienceContacts(list);
-      setSelectedIds(new Set(list.map((c) => c.id)));
+      setSelectedIds(new Set(list.filter((c) => c.marketingApproved).map((c) => c.id)));
       setPreviewCount(typeof j.count === "number" ? j.count : list.length);
       setAudienceTruncated(Boolean(j.truncated));
     } catch (e) {
@@ -181,6 +207,29 @@ export default function BroadcastNewClient() {
   }, [templates, tplSearch]);
 
   const selectedTpl = templates.find((t) => t.id === templateId);
+  const manualParameterValues = useMemo(
+    () =>
+      parameterValuesStr
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean),
+    [parameterValuesStr]
+  );
+
+  const previewBodyText = useMemo(() => {
+    const body = selectedTpl?.bodyText?.trim() ?? "";
+    if (!body) return "בחרו תבנית כדי לראות תצוגה מקדימה.";
+    const sources = selectedTpl?.parameterSources ?? [];
+    return body.replace(/\{\{(\d+)\}\}/g, (_, raw) => {
+      const idx = Number.parseInt(String(raw), 10) - 1;
+      if (idx < 0) return "";
+      const src = sources[idx] ?? "manual";
+      if (src === "manual") {
+        return manualParameterValues[idx] ?? selectedTpl?.exampleValues?.[idx] ?? `{{${idx + 1}}}`;
+      }
+      return `[CRM:${src}]`;
+    });
+  }, [manualParameterValues, selectedTpl]);
 
   const hasManualTemplateParams = useMemo(() => {
     if (!selectedTpl?.bodyText) return true;
@@ -194,6 +243,8 @@ export default function BroadcastNewClient() {
   }, [selectedTpl]);
 
   function toggleContact(id: string) {
+    const row = audienceContacts.find((c) => c.id === id);
+    if (row && !row.marketingApproved) return;
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -203,7 +254,7 @@ export default function BroadcastNewClient() {
   }
 
   function selectAllVisible() {
-    setSelectedIds(new Set(audienceContacts.map((c) => c.id)));
+    setSelectedIds(new Set(audienceContacts.filter((c) => c.marketingApproved).map((c) => c.id)));
   }
 
   function clearSelection() {
@@ -215,10 +266,7 @@ export default function BroadcastNewClient() {
     setErr(null);
     setOkMsg(null);
     try {
-      const parameterValues = parameterValuesStr
-        .split(",")
-        .map((x) => x.trim())
-        .filter(Boolean);
+      const parameterValues = manualParameterValues;
       const body = {
         id: draftId ?? undefined,
         name: broadcastName.trim() || "טיוטה",
@@ -250,10 +298,7 @@ export default function BroadcastNewClient() {
     setErr(null);
     setOkMsg(null);
     try {
-      const parameterValues = parameterValuesStr
-        .split(",")
-        .map((x) => x.trim())
-        .filter(Boolean);
+      const parameterValues = manualParameterValues;
       if (selectedIds.size === 0) {
         throw new Error("בחרו לפחות איש קשר אחד מהרשימה.");
       }
@@ -377,6 +422,20 @@ export default function BroadcastNewClient() {
                 background: hasManualTemplateParams ? "#fff" : "#f3f4f6",
               }}
             />
+            <div
+              style={{
+                marginTop: 10,
+                border: "1px solid #e5e7eb",
+                borderRadius: 10,
+                background: "#f8fafc",
+                padding: "10px 12px",
+              }}
+            >
+              <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6 }}>תצוגה מקדימה</div>
+              <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.5, fontSize: 13, color: "#111827" }}>
+                {previewBodyText}
+              </div>
+            </div>
             {selectedTpl && selectedTpl.status !== "approved" ? (
               <p style={{ fontSize: 12, color: "#b45309", marginTop: 8 }}>
                 התבנית לא מסומנת כ-approved — Meta עלולה לחסום שליחה עד לאישור.
@@ -584,23 +643,31 @@ export default function BroadcastNewClient() {
                     <th style={{ padding: 8, textAlign: "right" as const }}>טלפון</th>
                     <th style={{ padding: 8, textAlign: "right" as const }}>אימייל</th>
                     <th style={{ padding: 8, textAlign: "right" as const }}>סטטוס</th>
+                    <th style={{ padding: 8, textAlign: "right" as const }}>אישור דיוור</th>
                   </tr>
                 </thead>
                 <tbody>
                   {audienceContacts.length === 0 && !audienceLoading ? (
                     <tr>
-                      <td colSpan={5} style={{ padding: 16, textAlign: "center", color: "#6b7280" }}>
+                      <td colSpan={6} style={{ padding: 16, textAlign: "center", color: "#6b7280" }}>
                         אין אנשי קשר להצגה.
                       </td>
                     </tr>
                   ) : (
                     audienceContacts.map((c) => (
-                      <tr key={c.id} style={{ borderTop: "1px solid #eee", background: "#fff" }}>
+                      <tr
+                        key={c.id}
+                        style={{
+                          borderTop: "1px solid #eee",
+                          background: c.marketingApproved ? "#fff" : "#fff7ed",
+                        }}
+                      >
                         <td style={{ padding: 8, textAlign: "center" }}>
                           <input
                             type="checkbox"
                             checked={selectedIds.has(c.id)}
                             onChange={() => toggleContact(c.id)}
+                            disabled={!c.marketingApproved}
                             aria-label={`בחר ${c.name || c.id}`}
                           />
                         </td>
@@ -612,6 +679,9 @@ export default function BroadcastNewClient() {
                           {c.email || "—"}
                         </td>
                         <td style={{ padding: 8 }}>{c.status || "—"}</td>
+                        <td style={{ padding: 8, color: c.marketingApproved ? "#065f46" : "#b45309", fontWeight: 700 }}>
+                          {c.marketingApproved ? "פעיל" : "לא פעיל"}
+                        </td>
                       </tr>
                     ))
                   )}

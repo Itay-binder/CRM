@@ -2,13 +2,19 @@ import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { getAdminDb } from "@/lib/firebase/admin";
-import { getLeadById, listLeadsFiltered, normalizePhone } from "@/lib/leads/repo";
+import {
+  getLeadById,
+  isLeadWhatsAppMarketingApproved,
+  listLeadsFiltered,
+  normalizePhone,
+} from "@/lib/leads/repo";
 import type { AudienceCondition, AudienceLogic } from "@/lib/whatsapp/audienceFilter";
 import { filterLeadsByAudience } from "@/lib/whatsapp/audienceFilter";
 import { assertPhoneNumberBelongsToWaba, sendTemplateMessageViaMeta } from "@/lib/whatsapp/meta";
 import { buildTemplateParametersForLead } from "@/lib/whatsapp/templateParams";
 import {
   appendWhatsAppCampaign,
+  appendWhatsAppChatMessage,
   getWhatsAppMetaConfig,
   listWhatsAppBroadcastDrafts,
   listWhatsAppCampaigns,
@@ -190,12 +196,42 @@ export async function POST(req: NextRequest) {
         });
         continue;
       }
+      if (!isLeadWhatsAppMarketingApproved(lead)) {
+        dispatches.push({
+          contactId: lead.id,
+          contactName: lead.name || lead.email || lead.id,
+          to: normalized,
+          status: "failed",
+          error: "Contact is inactive for WhatsApp marketing",
+        });
+        continue;
+      }
       try {
         const paramValuesForLead = buildTemplateParametersForLead(lead, template, parameterValues);
         const sent = await sendTemplateMessageViaMeta(config, {
           to: normalized,
           template,
           bodyParameterValues: paramValuesForLead,
+        });
+        const previewText = template.bodyText
+          .replace(/\{\{(\d+)\}\}/g, (_, raw) => {
+            const idx = Number.parseInt(String(raw), 10) - 1;
+            return idx >= 0 ? String(paramValuesForLead[idx] ?? "").trim() : "";
+          })
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 400);
+        await appendWhatsAppChatMessage(db, {
+          phone: normalized,
+          direction: "outbound",
+          text: previewText || `[Template ${template.name}]`,
+          from: config.phoneNumberId,
+          to: normalized,
+          createdAt: new Date().toISOString(),
+          messageId: sent.messageId,
+          contactId: lead.id,
+          contactName: lead.name || lead.email || lead.id,
+          marketingApproved: true,
         });
         dispatches.push({
           contactId: lead.id,

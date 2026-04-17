@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
-import { listLeadsFiltered } from "@/lib/leads/repo";
+import { isLeadWhatsAppMarketingApproved, listLeadsFiltered } from "@/lib/leads/repo";
 import {
   filterLeadsByAudience,
   type AudienceCondition,
@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
       phone: String(l.phone ?? ""),
       email: String(l.email ?? ""),
       status: String(l.status ?? ""),
+      marketingApproved: isLeadWhatsAppMarketingApproved(l),
     }));
     return NextResponse.json({
       ok: true,

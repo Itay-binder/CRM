@@ -195,8 +195,40 @@ export default function ChatsInboxClient() {
     });
     const j = await parseJson<{ ok?: boolean; thread?: ChatThread; error?: string }>(res);
     if (!res.ok || !j.ok || !j.thread) throw new Error(j.error || "טעינת חלון שיחה נכשלה");
-    setActive(j.thread);
-    setThreads((prev) => prev.map((t) => (t.id === id ? { ...t, unreadCount: 0 } : t)));
+    const th = j.thread;
+    setActive(th);
+    setThreads((prev) => {
+      const idx = prev.findIndex((t) => t.id === id);
+      if (idx === -1) {
+        return [
+          {
+            id: th.id,
+            phone: th.phone,
+            contactName: th.contactName,
+            marketingApproved: th.marketingApproved,
+            lastInboundAt: th.lastInboundAt,
+            lastMessageAt: th.lastMessageAt,
+            lastMessagePreview: th.lastMessagePreview,
+            unreadCount: 0,
+            messages: [],
+          },
+          ...prev,
+        ];
+      }
+      return prev.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              unreadCount: 0,
+              lastMessageAt: th.lastMessageAt,
+              lastMessagePreview: th.lastMessagePreview,
+              lastInboundAt: th.lastInboundAt ?? t.lastInboundAt,
+              contactName: th.contactName ?? t.contactName,
+              marketingApproved: th.marketingApproved,
+            }
+          : t
+      );
+    });
   }, []);
 
   useEffect(() => {
@@ -213,11 +245,20 @@ export default function ChatsInboxClient() {
     })();
   }, [loadThreads]);
 
+  /** פולינג: רשימה = query אחד; שיחה פתוחה = רק מסמך השיחה (לא טוען את כל הרשימה בכל פעם). רענון רשימה מלא מדי ~60 שניות כשיש שיחה פתוחה. */
   useEffect(() => {
+    let tick = 0;
+    const POLL_MS = 15_000;
     const t = window.setInterval(() => {
-      void loadThreads().catch(() => {});
-      if (selectedId) void loadThread(selectedId).catch(() => {});
-    }, 12_000);
+      tick += 1;
+      if (document.visibilityState === "hidden") return;
+      if (selectedId) {
+        void loadThread(selectedId).catch(() => {});
+        if (tick % 4 === 0) void loadThreads().catch(() => {});
+      } else {
+        void loadThreads().catch(() => {});
+      }
+    }, POLL_MS);
     return () => window.clearInterval(t);
   }, [loadThreads, loadThread, selectedId]);
 

@@ -141,10 +141,14 @@ export default function AccountPageClient() {
           <input
             value={systemUserToken}
             onChange={(e) => setSystemUserToken(e.target.value)}
-            placeholder="System User Access Token — השאר ריק אם לא מחליפים"
+            placeholder="System User Access Token — השאר ריק רק כשמעדכנים שדות אחרים ולא רוצים להחליף טוקן"
             dir="ltr"
             style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb" }}
           />
+          <p style={{ margin: 0, fontSize: 12, color: "#92400e", lineHeight: 1.5 }}>
+            חובה להדביק כאן טוקן System User עם הרשאות WhatsApp (פעם ראשונה ואחרי רוטציה). בלי טוקן — שמירת
+            תבנית ב-CRM תעבוד, אבל «שלח לאישור במטא» ודיוורים לא יעבדו.
+          </p>
           <div style={{ fontSize: 13, color: "#6b7280" }}>
             טוקן שמור: {settings?.hasToken ? settings.tokenPreview : "לא הוגדר"}
             {settings?.updatedAt ? ` · עודכן ${formatIsraelDateTime(settings.updatedAt)}` : ""}

@@ -128,9 +128,29 @@ export async function POST(req: NextRequest) {
       getWhatsAppMetaConfig(db),
       listWhatsAppTemplates(db),
     ]);
-    if (!config || !config.phoneNumberId || !config.systemUserToken) {
+    if (!config) {
       return NextResponse.json(
-        { ok: false, error: "Meta settings are missing. Please save WhatsApp settings first." },
+        {
+          ok: false,
+          error:
+            "לא הוגדרו הגדרות Meta. מלאו ב«חשבון WhatsApp»: Phone Number ID, WABA, וטוקן — ושמרו.",
+        },
+        { status: 400 }
+      );
+    }
+    if (!config.phoneNumberId.trim()) {
+      return NextResponse.json(
+        { ok: false, error: "חסר Phone Number ID (מזהה מספר השולח). הזינו ב«חשבון WhatsApp» ושמרו." },
+        { status: 400 }
+      );
+    }
+    if (!config.systemUserToken.trim()) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "חסר System User Access Token. הדביקו טוקן ב«חשבון WhatsApp» ושמרו — נדרש לשליחת הודעות.",
+        },
         { status: 400 }
       );
     }

@@ -36,9 +36,32 @@ export async function POST(req: NextRequest, { params }: Params) {
       getWhatsAppMetaConfig(db),
       listWhatsAppTemplates(db),
     ]);
-    if (!config || !config.wabaId || !config.systemUserToken) {
+    if (!config) {
       return NextResponse.json(
-        { ok: false, error: "Meta settings are missing. Please save WhatsApp settings first." },
+        {
+          ok: false,
+          error:
+            "לא הוגדרו הגדרות Meta. פתחו «חשבון WhatsApp», מלאו WABA ID ומזהה מספר טלפון (Phone Number ID), הדביקו System User Access Token ושמרו.",
+        },
+        { status: 400 }
+      );
+    }
+    if (!config.wabaId.trim()) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "חסר WhatsApp Business Account ID (WABA). הזינו אותו ב«חשבון WhatsApp» ושמרו.",
+        },
+        { status: 400 }
+      );
+    }
+    if (!config.systemUserToken.trim()) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "חסר System User Access Token — בלי טוקן אי אפשר לשלוח תבנית לאישור Meta. הדביקו טוקן בשדה המתאים ב«חשבון WhatsApp», שמרו (השדה לא יישאר ריק בפעם הראשונה), ואז נסו שוב «שלח לאישור במטא».",
+        },
         { status: 400 }
       );
     }

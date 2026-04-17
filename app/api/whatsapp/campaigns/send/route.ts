@@ -221,18 +221,22 @@ export async function POST(req: NextRequest) {
           .replace(/\s+/g, " ")
           .trim()
           .slice(0, 400);
-        await appendWhatsAppChatMessage(db, {
-          phone: normalized,
-          direction: "outbound",
-          text: previewText || `[Template ${template.name}]`,
-          from: config.phoneNumberId,
-          to: normalized,
-          createdAt: new Date().toISOString(),
-          messageId: sent.messageId,
-          contactId: lead.id,
-          contactName: lead.name || lead.email || lead.id,
-          marketingApproved: true,
-        });
+        try {
+          await appendWhatsAppChatMessage(db, {
+            phone: normalized,
+            direction: "outbound",
+            text: previewText || `[Template ${template.name}]`,
+            from: config.phoneNumberId,
+            to: normalized,
+            createdAt: new Date().toISOString(),
+            messageId: sent.messageId,
+            contactId: lead.id,
+            contactName: lead.name || lead.email || lead.id,
+            marketingApproved: true,
+          });
+        } catch {
+          // ההודעה כבר נשלחה בהצלחה למטא; כשל בלוג השיחה לא צריך להפוך את השליחה ל-failed.
+        }
         dispatches.push({
           contactId: lead.id,
           contactName: lead.name || lead.email || lead.id,
@@ -267,8 +271,17 @@ export async function POST(req: NextRequest) {
       createdAt: new Date().toISOString(),
       dispatches,
     };
-    await appendWhatsAppCampaign(db, campaign);
-    return NextResponse.json({ ok: true, campaign });
+    try {
+      await appendWhatsAppCampaign(db, campaign);
+      return NextResponse.json({ ok: true, campaign });
+    } catch (e) {
+      return NextResponse.json({
+        ok: true,
+        campaign,
+        warning:
+          `ההודעות נשלחו, אבל שמירת ההיסטוריה נכשלה: ${e instanceof Error ? e.message : "Unknown error"}`,
+      });
+    }
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "Unknown error" },

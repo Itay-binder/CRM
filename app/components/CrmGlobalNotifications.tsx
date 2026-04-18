@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
 const PREFS_KEY = "liftygo_crm_notification_prefs";
@@ -60,6 +61,13 @@ type PollWa = {
   contactName?: string;
   lastInboundAt: string | null;
   lastMessageAt: string;
+  unreadCount: number;
+};
+
+type WaBaselineSnap = {
+  lastInboundAt: string | null;
+  lastMessageAt: string;
+  unreadCount: number;
 };
 
 type PollLead = { id: string; name: string; phone: string; createdAt: string };
@@ -95,11 +103,16 @@ function pushBrowserNotification(title: string, body: string, tag: string) {
 
 export default function CrmGlobalNotifications() {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
   const [toasts, setToasts] = useState<InAppToast[]>([]);
   const initRef = useRef(false);
-  const waBaselineRef = useRef<Map<string, string | null>>(new Map());
+  const waBaselineRef = useRef<Map<string, WaBaselineSnap>>(new Map());
   const leadBaselineRef = useRef<{ id: string; createdAt: string }>({ id: "", createdAt: "" });
   const prefsRef = useRef(loadCrmNotificationPrefs());
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -107,8 +120,8 @@ export default function CrmGlobalNotifications() {
 
   const addToast = useCallback((t: Omit<InAppToast, "id">) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    setToasts((prev) => [...prev, { ...t, id }].slice(-5));
-    window.setTimeout(() => dismissToast(id), 14_000);
+    setToasts((prev) => [{ ...t, id }, ...prev].slice(0, 5));
+    window.setTimeout(() => dismissToast(id), 12_000);
   }, [dismissToast]);
 
   const poll = useCallback(async () => {
@@ -119,12 +132,15 @@ export default function CrmGlobalNotifications() {
     const j = await parseJson<PollOk | { ok: false; error?: string }>(res);
     if (!res.ok || !j.ok || !("whatsapp" in j)) return;
 
-    const nextWaMap = new Map<string, string | null>(
-      j.whatsapp.map((t) => [t.id, t.lastInboundAt ?? null])
-    );
+    const snapFor = (t: PollWa): WaBaselineSnap => ({
+      lastInboundAt: t.lastInboundAt ?? null,
+      lastMessageAt: t.lastMessageAt,
+      unreadCount: Number(t.unreadCount ?? 0),
+    });
+    const nextWaMap = new Map<string, WaBaselineSnap>(j.whatsapp.map((t) => [t.id, snapFor(t)]));
 
     if (!initRef.current) {
-      waBaselineRef.current = nextWaMap;
+      waBaselineRef.current = new Map(nextWaMap);
       if (j.latestLead) {
         leadBaselineRef.current = { id: j.latestLead.id, createdAt: j.latestLead.createdAt };
       } else {
@@ -134,10 +150,23 @@ export default function CrmGlobalNotifications() {
       return;
     }
 
+    const prevAll = waBaselineRef.current;
+    const nextBaseline = new Map(prevAll);
+
     for (const t of j.whatsapp) {
-      const prevInbound = waBaselineRef.current.get(t.id);
-      const cur = t.lastInboundAt ?? null;
-      if (cur && (!prevInbound || cur > prevInbound)) {
+      const prev = prevAll.get(t.id);
+      const curIn = t.lastInboundAt ?? null;
+      const curUn = Number(t.unreadCount ?? 0);
+      const prevUn = prev?.unreadCount ?? 0;
+      const inboundTimeAdvanced =
+        curIn != null &&
+        (!prev?.lastInboundAt || (prev.lastInboundAt != null && curIn > prev.lastInboundAt));
+      const unreadRose = curUn > prevUn;
+      /** שיחה חדשה שלא הייתה במפה; אחרת רק עליית unread או זמן הודעת לקוח */
+      const newThreadFirstSeen = !prev && (curUn > 0 || Boolean(curIn));
+      const looksNewInbound = inboundTimeAdvanced || unreadRose || newThreadFirstSeen;
+
+      if (looksNewInbound) {
         const label = t.contactName?.trim() || t.phone;
         if (prefs.inAppWhatsApp) {
           addToast({
@@ -148,11 +177,13 @@ export default function CrmGlobalNotifications() {
           });
         }
         if (prefs.browserWhatsApp) {
-          pushBrowserNotification("הודעת וואטסאפ חדשה", `מ־${label}`, `wa-${t.id}-${cur}`);
+          const tagKey = curIn || `${t.lastMessageAt}-${curUn}`;
+          pushBrowserNotification("הודעת וואטסאפ חדשה", `מ־${label}`, `wa-${t.id}-${tagKey}`);
         }
       }
+      nextBaseline.set(t.id, snapFor(t));
     }
-    waBaselineRef.current = nextWaMap;
+    waBaselineRef.current = nextBaseline;
 
     if (j.latestLead) {
       const prev = leadBaselineRef.current;
@@ -199,7 +230,7 @@ export default function CrmGlobalNotifications() {
       void poll().catch(() => {});
     };
     tick();
-    const ms = () => (document.visibilityState === "hidden" ? 45_000 : 12_000);
+    const ms = () => (document.visibilityState === "hidden" ? 30_000 : 4_000);
     let id = window.setInterval(tick, ms());
     const vis = () => {
       window.clearInterval(id);
@@ -214,40 +245,51 @@ export default function CrmGlobalNotifications() {
     };
   }, [poll]);
 
-  return (
+  const layer = (
     <div
       aria-live="polite"
       style={{
         position: "fixed",
-        insetInlineEnd: 16,
-        bottom: 16,
-        zIndex: 9999,
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 2147483000,
         display: "flex",
         flexDirection: "column",
-        gap: 10,
-        maxWidth: 360,
-        width: "calc(100vw - 32px)",
+        alignItems: "center",
+        gap: 8,
+        padding: "12px 12px 0",
         pointerEvents: "none",
+        boxSizing: "border-box",
       }}
     >
+      <style>{`@keyframes crmToastIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}`}</style>
       {toasts.map((t) => (
         <div
           key={t.id}
           dir="rtl"
+          role="status"
           style={{
             pointerEvents: "auto",
-            background: "#fff",
+            width: "100%",
+            maxWidth: 560,
+            background: "linear-gradient(180deg, #ffffff 0%, #f9fafb 100%)",
             borderRadius: 12,
-            boxShadow: "0 8px 28px rgba(0,0,0,0.12), 0 0 1px rgba(0,0,0,0.08)",
+            boxShadow: "0 10px 40px rgba(0,0,0,0.1), 0 0 0 1px rgba(0,0,0,0.06)",
             border: "1px solid #e5e7eb",
-            padding: "12px 14px",
-            display: "grid",
-            gap: 8,
+            padding: "10px 14px",
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: "10px 12px",
+            animation: "crmToastIn 0.22s ease-out",
           }}
         >
-          <div style={{ fontWeight: 800, fontSize: 14, color: "#111827" }}>{t.title}</div>
-          <div style={{ fontSize: 13, color: "#4b5563", lineHeight: 1.45 }}>{t.body}</div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: "#111827" }}>{t.title}</div>
+            <div style={{ fontSize: 13, color: "#4b5563", lineHeight: 1.45, marginTop: 2 }}>{t.body}</div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginInlineStart: "auto" }}>
             <button
               type="button"
               onClick={() => dismissToast(t.id)}
@@ -255,7 +297,7 @@ export default function CrmGlobalNotifications() {
                 padding: "6px 12px",
                 borderRadius: 8,
                 border: "1px solid #e5e7eb",
-                background: "#f9fafb",
+                background: "#fff",
                 fontWeight: 600,
                 fontSize: 13,
                 cursor: "pointer",
@@ -310,4 +352,7 @@ export default function CrmGlobalNotifications() {
       ))}
     </div>
   );
+
+  if (!mounted) return null;
+  return createPortal(layer, document.body);
 }

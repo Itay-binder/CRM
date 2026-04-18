@@ -28,6 +28,7 @@ export async function GET(req: NextRequest) {
         contactName: t.contactName,
         lastInboundAt: t.lastInboundAt ?? null,
         lastMessageAt: t.lastMessageAt,
+        unreadCount: t.unreadCount,
       })),
       latestLead,
     });

@@ -217,6 +217,7 @@ export default function ChatsInboxClient() {
   const [draftText, setDraftText] = useState("");
   const [sending, setSending] = useState(false);
   const [crmContact, setCrmContact] = useState<CrmLeadVm | null>(null);
+  const [marketingSaving, setMarketingSaving] = useState(false);
   const [isNarrow, setIsNarrow] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("list");
   const messagesScrollRef = useRef<HTMLDivElement>(null);
@@ -411,6 +412,36 @@ export default function ChatsInboxClient() {
     }
   }
 
+  async function toggleMarketing() {
+    if (!selectedId || marketingSaving) return;
+    const currentOn =
+      (active?.marketingApproved ?? selectedMeta?.marketingApproved) !== false;
+    const next = !currentOn;
+    if (next) {
+      const ok = window.confirm(
+        'הלקוח מסומן כלא מאשר דיוור שיווקי (למשל אחרי "הסר"). האם לאשר מחדש דיוור שיווקי, בהתאם לחוק ובסיס חוקי מתאים?'
+      );
+      if (!ok) return;
+    }
+    setMarketingSaving(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/whatsapp/chats/marketing", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadId: selectedId, marketingApproved: next }),
+      });
+      const j = await parseJson<{ ok?: boolean; error?: string }>(res);
+      if (!res.ok || !j.ok) throw new Error(j.error || "עדכון נכשל");
+      await loadThread(selectedId);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "עדכון נכשל");
+    } finally {
+      setMarketingSaving(false);
+    }
+  }
+
   const messagesWithDividers = useMemo(() => {
     if (!active?.messages.length) return [];
     const out: Array<{ type: "day"; label: string } | { type: "msg"; m: ChatMessage }> = [];
@@ -438,6 +469,10 @@ export default function ChatsInboxClient() {
   const displayPhone = selectedMeta?.phone ?? "";
   const displayPhoto = active?.waProfilePictureUrl ?? selectedMeta?.waProfilePictureUrl;
   const panelTitleName = crmContact?.name?.trim() || displayName;
+  const marketingOn =
+    selectedMeta != null
+      ? (active?.marketingApproved ?? selectedMeta.marketingApproved) !== false
+      : false;
 
   return (
     <div dir="rtl" style={{ fontFamily: font, color: C.text }}>
@@ -1041,9 +1076,61 @@ export default function ChatsInboxClient() {
               </div>
               <div>
                 <dt style={{ color: C.muted, fontSize: 11, marginBottom: 2 }}>אישור דיוור (שיווק)</dt>
-                <dd style={{ margin: 0, fontWeight: 600, color: selectedMeta?.marketingApproved ? "#0d7a5c" : "#b45309" }}>
-                  {selectedMeta ? (selectedMeta.marketingApproved ? "פעיל" : "לא פעיל") : "—"}
+                <dd style={{ margin: 0, fontWeight: 600, color: marketingOn ? "#0d7a5c" : "#b45309" }}>
+                  {selectedMeta ? (marketingOn ? "פעיל" : "לא פעיל") : "—"}
                 </dd>
+                {selectedMeta ? (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 12,
+                    }}
+                  >
+                    <span style={{ fontSize: 12, color: C.muted, lineHeight: 1.35 }}>
+                      דיוור שיווקי (ניתן להפעיל מחדש גם אחרי &quot;הסר&quot;)
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={marketingOn}
+                      aria-busy={marketingSaving}
+                      aria-label={marketingOn ? "כבה דיוור שיווקי" : "הפעל דיוור שיווקי"}
+                      disabled={marketingSaving}
+                      onClick={() => void toggleMarketing()}
+                      style={{
+                        width: 48,
+                        height: 26,
+                        borderRadius: 13,
+                        padding: 0,
+                        border: "none",
+                        cursor: marketingSaving ? "wait" : "pointer",
+                        background: marketingOn ? C.waGreen : C.hairline2,
+                        position: "relative",
+                        flexShrink: 0,
+                        opacity: marketingSaving ? 0.65 : 1,
+                        transition: "background 0.2s",
+                      }}
+                    >
+                      <span
+                        style={{
+                          position: "absolute",
+                          left: 3,
+                          top: 3,
+                          width: 20,
+                          height: 20,
+                          borderRadius: "50%",
+                          background: "#fff",
+                          boxShadow: "0 1px 2px rgba(0,0,0,0.18)",
+                          transform: marketingOn ? "translateX(22px)" : "translateX(0)",
+                          transition: "transform 0.2s",
+                        }}
+                      />
+                    </button>
+                  </div>
+                ) : null}
               </div>
               <div>
                 <dt style={{ color: C.muted, fontSize: 11, marginBottom: 2 }}>הודעת לקוח אחרונה (חלון שירות)</dt>

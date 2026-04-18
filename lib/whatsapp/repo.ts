@@ -882,3 +882,17 @@ export async function markWhatsAppChatThreadRead(db: Firestore, threadId: string
   if (!id) return;
   await db.collection(CHATS_COLLECTION).doc(id).set({ unreadCount: 0, updatedAt: new Date().toISOString() }, { merge: true });
 }
+
+/** עדכון שדה marketingApproved במסמך השיחה (למשל אחרי שינוי ידני מממשק הנציג). */
+export async function setWhatsAppChatThreadMarketingApproved(
+  db: Firestore,
+  threadId: string,
+  marketingApproved: boolean
+): Promise<void> {
+  const id = normalizeChatPhone(threadId);
+  if (!id) return;
+  await db
+    .collection(CHATS_COLLECTION)
+    .doc(id)
+    .set({ marketingApproved, updatedAt: new Date().toISOString() }, { merge: true });
+}

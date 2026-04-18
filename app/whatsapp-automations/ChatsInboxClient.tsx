@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 
 const SESSION_MS = 24 * 60 * 60 * 1000;
 
@@ -27,6 +28,66 @@ const C = {
 const font =
   'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif';
 
+type CrmLeadVm = {
+  id: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  stage?: string;
+  status?: string;
+  source?: string;
+  contactCode?: string;
+  assignedRep?: string;
+  pipelineId?: string;
+  customFields?: Record<string, unknown>;
+};
+
+function AvatarCircle({
+  photoUrl,
+  name,
+  phone,
+  size,
+}: {
+  photoUrl?: string;
+  name?: string;
+  phone: string;
+  size: number;
+}) {
+  const [imgErr, setImgErr] = useState(false);
+  const trimmed = photoUrl?.trim();
+  const showImg = Boolean(trimmed) && !imgErr;
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        overflow: "hidden",
+        background: "#dfe5e7",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontWeight: 700,
+        fontSize: Math.max(12, Math.round(size * 0.35)),
+        color: C.text,
+        flexShrink: 0,
+      }}
+    >
+      {showImg ? (
+        <img
+          src={trimmed}
+          alt=""
+          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          onError={() => setImgErr(true)}
+          referrerPolicy="no-referrer"
+        />
+      ) : (
+        initials(name, phone)
+      )}
+    </div>
+  );
+}
+
 type ChatMessage = {
   id: string;
   direction: "inbound" | "outbound";
@@ -40,6 +101,7 @@ type ChatThread = {
   id: string;
   phone: string;
   contactName?: string;
+  waProfilePictureUrl?: string;
   marketingApproved: boolean;
   lastInboundAt?: string;
   lastMessageAt: string;
@@ -154,6 +216,7 @@ export default function ChatsInboxClient() {
   const [active, setActive] = useState<ChatThread | null>(null);
   const [draftText, setDraftText] = useState("");
   const [sending, setSending] = useState(false);
+  const [crmContact, setCrmContact] = useState<CrmLeadVm | null>(null);
   const [isNarrow, setIsNarrow] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("list");
   const messagesScrollRef = useRef<HTMLDivElement>(null);
@@ -190,16 +253,23 @@ export default function ChatsInboxClient() {
   const loadThread = useCallback(async (id: string) => {
     if (!id) {
       setActive(null);
+      setCrmContact(null);
       return;
     }
     const res = await fetch(`/api/whatsapp/chats?thread=${encodeURIComponent(id)}`, {
       credentials: "include",
       cache: "no-store",
     });
-    const j = await parseJson<{ ok?: boolean; thread?: ChatThread; error?: string }>(res);
+    const j = await parseJson<{
+      ok?: boolean;
+      thread?: ChatThread;
+      contact?: CrmLeadVm | null;
+      error?: string;
+    }>(res);
     if (!res.ok || !j.ok || !j.thread) throw new Error(j.error || "טעינת חלון שיחה נכשלה");
     const th = j.thread;
     setActive(th);
+    setCrmContact(j.contact ?? null);
     setThreads((prev) => {
       const idx = prev.findIndex((t) => t.id === id);
       if (idx === -1) {
@@ -208,6 +278,7 @@ export default function ChatsInboxClient() {
             id: th.id,
             phone: th.phone,
             contactName: th.contactName,
+            waProfilePictureUrl: th.waProfilePictureUrl,
             marketingApproved: th.marketingApproved,
             lastInboundAt: th.lastInboundAt,
             lastMessageAt: th.lastMessageAt,
@@ -227,6 +298,7 @@ export default function ChatsInboxClient() {
               lastMessagePreview: th.lastMessagePreview,
               lastInboundAt: th.lastInboundAt ?? t.lastInboundAt,
               contactName: th.contactName ?? t.contactName,
+              waProfilePictureUrl: th.waProfilePictureUrl ?? t.waProfilePictureUrl,
               marketingApproved: th.marketingApproved,
             }
           : t
@@ -364,6 +436,8 @@ export default function ChatsInboxClient() {
 
   const displayName = selectedMeta?.contactName || selectedMeta?.phone || "בחרו שיחה";
   const displayPhone = selectedMeta?.phone ?? "";
+  const displayPhoto = active?.waProfilePictureUrl ?? selectedMeta?.waProfilePictureUrl;
+  const panelTitleName = crmContact?.name?.trim() || displayName;
 
   return (
     <div dir="rtl" style={{ fontFamily: font, color: C.text }}>
@@ -569,7 +643,6 @@ export default function ChatsInboxClient() {
             ) : (
               filteredThreads.map((t) => {
                 const rowOn = t.id === selectedId;
-                const av = initials(t.contactName, t.phone);
                 return (
                   <button
                     key={t.id}
@@ -591,20 +664,13 @@ export default function ChatsInboxClient() {
                   >
                     <div
                       style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: "50%",
-                        background: rowOn ? C.waGreen : "#dfe5e7",
-                        color: rowOn ? "#fff" : C.text,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontWeight: 700,
-                        fontSize: 15,
                         flexShrink: 0,
+                        borderRadius: "50%",
+                        outline: rowOn ? `2px solid ${C.waGreen}` : "none",
+                        outlineOffset: 2,
                       }}
                     >
-                      {av}
+                      <AvatarCircle photoUrl={t.waProfilePictureUrl} name={t.contactName} phone={t.phone} size={48} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
@@ -701,23 +767,12 @@ export default function ChatsInboxClient() {
                 ←
               </button>
             ) : null}
-            <div
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: "50%",
-                background: "#dfe5e7",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontWeight: 700,
-                fontSize: 14,
-                color: C.text,
-                flexShrink: 0,
-              }}
-            >
-              {selectedMeta ? initials(selectedMeta.contactName, selectedMeta.phone) : "?"}
-            </div>
+            <AvatarCircle
+              photoUrl={displayPhoto}
+              name={selectedMeta?.contactName}
+              phone={displayPhone || "?"}
+              size={40}
+            />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 700, fontSize: 16, color: C.text }}>{displayName}</div>
               <div style={{ fontSize: 12, color: C.muted }} dir="ltr">
@@ -951,35 +1006,35 @@ export default function ChatsInboxClient() {
           }}
         >
           <div style={{ padding: 20, textAlign: "center", borderBottom: `1px solid ${C.hairline}` }}>
-            <div
-              style={{
-                width: 80,
-                height: 80,
-                margin: "0 auto 12px",
-                borderRadius: "50%",
-                background: "#dfe5e7",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 28,
-                fontWeight: 700,
-                color: C.text,
-              }}
-            >
-              {selectedMeta ? initials(selectedMeta.contactName, selectedMeta.phone) : "?"}
+            <div style={{ margin: "0 auto 12px", width: 88, height: 88 }}>
+              <AvatarCircle photoUrl={displayPhoto} name={selectedMeta?.contactName} phone={displayPhone || "?"} size={88} />
             </div>
-            <div style={{ fontWeight: 800, fontSize: 18 }}>{displayName}</div>
+            <div style={{ fontWeight: 800, fontSize: 18 }}>{panelTitleName}</div>
             <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }} dir="ltr">
               {displayPhone || "—"}
             </div>
+            {crmContact?.name && displayName !== crmContact.name ? (
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>
+                שם בווצאפ: <span dir="auto">{displayName}</span>
+              </div>
+            ) : null}
           </div>
           <div style={{ padding: "14px 16px", fontSize: 13 }}>
-            <div style={{ fontWeight: 700, marginBottom: 10, color: C.muted, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-              פרטי איש קשר
+            <div
+              style={{
+                fontWeight: 700,
+                marginBottom: 10,
+                color: C.muted,
+                fontSize: 12,
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+              }}
+            >
+              WhatsApp
             </div>
             <dl style={{ margin: 0, display: "grid", gap: 10 }}>
               <div>
-                <dt style={{ color: C.muted, fontSize: 11, marginBottom: 2 }}>טלפון</dt>
+                <dt style={{ color: C.muted, fontSize: 11, marginBottom: 2 }}>מזהה (מספר)</dt>
                 <dd style={{ margin: 0, fontWeight: 600 }} dir="ltr">
                   {displayPhone || "—"}
                 </dd>
@@ -990,7 +1045,108 @@ export default function ChatsInboxClient() {
                   {selectedMeta ? (selectedMeta.marketingApproved ? "פעיל" : "לא פעיל") : "—"}
                 </dd>
               </div>
+              <div>
+                <dt style={{ color: C.muted, fontSize: 11, marginBottom: 2 }}>הודעת לקוח אחרונה (חלון שירות)</dt>
+                <dd style={{ margin: 0, fontWeight: 600, fontSize: 12 }} dir="ltr">
+                  {active?.lastInboundAt || selectedMeta?.lastInboundAt
+                    ? formatIsraelDateTime(active?.lastInboundAt ?? selectedMeta?.lastInboundAt ?? "")
+                    : "—"}
+                </dd>
+              </div>
             </dl>
+          </div>
+          <div style={{ padding: "14px 16px", fontSize: 13, borderTop: `1px solid ${C.hairline}` }}>
+            <div
+              style={{
+                fontWeight: 700,
+                marginBottom: 10,
+                color: C.muted,
+                fontSize: 12,
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+              }}
+            >
+              איש קשר ב־CRM
+            </div>
+            {crmContact ? (
+              <dl style={{ margin: 0, display: "grid", gap: 10 }}>
+                <div>
+                  <dt style={{ color: C.muted, fontSize: 11, marginBottom: 2 }}>מזהה מסמך</dt>
+                  <dd style={{ margin: 0, fontWeight: 600 }} dir="ltr">
+                    {crmContact.id}
+                  </dd>
+                </div>
+                {crmContact.email ? (
+                  <div>
+                    <dt style={{ color: C.muted, fontSize: 11, marginBottom: 2 }}>אימייל</dt>
+                    <dd style={{ margin: 0, fontWeight: 600 }} dir="ltr">
+                      {crmContact.email}
+                    </dd>
+                  </div>
+                ) : null}
+                {crmContact.contactCode ? (
+                  <div>
+                    <dt style={{ color: C.muted, fontSize: 11, marginBottom: 2 }}>קוד איש קשר</dt>
+                    <dd style={{ margin: 0, fontWeight: 600 }}>{crmContact.contactCode}</dd>
+                  </div>
+                ) : null}
+                {crmContact.stage ? (
+                  <div>
+                    <dt style={{ color: C.muted, fontSize: 11, marginBottom: 2 }}>שלב</dt>
+                    <dd style={{ margin: 0, fontWeight: 600 }}>{crmContact.stage}</dd>
+                  </div>
+                ) : null}
+                {crmContact.status ? (
+                  <div>
+                    <dt style={{ color: C.muted, fontSize: 11, marginBottom: 2 }}>סטטוס מכירה</dt>
+                    <dd style={{ margin: 0, fontWeight: 600 }}>{crmContact.status}</dd>
+                  </div>
+                ) : null}
+                {crmContact.source ? (
+                  <div>
+                    <dt style={{ color: C.muted, fontSize: 11, marginBottom: 2 }}>מקור</dt>
+                    <dd style={{ margin: 0, fontWeight: 600 }}>{crmContact.source}</dd>
+                  </div>
+                ) : null}
+                {crmContact.assignedRep ? (
+                  <div>
+                    <dt style={{ color: C.muted, fontSize: 11, marginBottom: 2 }}>נציג</dt>
+                    <dd style={{ margin: 0, fontWeight: 600 }}>{crmContact.assignedRep}</dd>
+                  </div>
+                ) : null}
+                {crmContact.pipelineId ? (
+                  <div>
+                    <dt style={{ color: C.muted, fontSize: 11, marginBottom: 2 }}>Pipeline</dt>
+                    <dd style={{ margin: 0, fontWeight: 600 }} dir="ltr">
+                      {crmContact.pipelineId}
+                    </dd>
+                  </div>
+                ) : null}
+                {crmContact.customFields && Object.keys(crmContact.customFields).length > 0 ? (
+                  <div>
+                    <dt style={{ color: C.muted, fontSize: 11, marginBottom: 4 }}>שדות מותאמים</dt>
+                    <dd style={{ margin: 0 }}>
+                      <div style={{ display: "grid", gap: 6, maxHeight: 200, overflow: "auto" }}>
+                        {Object.entries(crmContact.customFields)
+                          .slice(0, 14)
+                          .map(([k, v]) => (
+                            <div key={k} style={{ fontSize: 12, borderBottom: `1px solid ${C.hairline}`, paddingBottom: 4 }}>
+                              <div style={{ color: C.muted, fontSize: 10 }}>{k}</div>
+                              <div style={{ fontWeight: 600, wordBreak: "break-word" }}>
+                                {typeof v === "object" ? JSON.stringify(v) : String(v)}
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </dd>
+                  </div>
+                ) : null}
+              </dl>
+            ) : (
+              <p style={{ margin: 0, color: C.muted, lineHeight: 1.5 }}>
+                לא נמצא איש קשר תואם ב־CRM (לפי מזהה או טלפון). אחרי שיוך בטלפון — הפרטים יופיעו כאן.
+              </p>
+            )}
           </div>
         </aside>
       </div>

@@ -35,7 +35,7 @@ type MetaWebhookStatus = {
 
 type MetaWebhookValue = {
   metadata?: { display_phone_number?: string };
-  contacts?: Array<{ wa_id?: string; profile?: { name?: string } }>;
+  contacts?: Array<{ wa_id?: string; profile?: { name?: string } & Record<string, unknown> }>;
   messages?: MetaWebhookMessage[];
   statuses?: MetaWebhookStatus[];
 };
@@ -129,6 +129,24 @@ function statusErrorsText(errors: MetaWebhookStatus["errors"]): string | undefin
   return parts.length ? parts.join("; ") : undefined;
 }
 
+function extractWaProfilePictureUrl(
+  contacts: MetaWebhookValue["contacts"],
+  fromPhone: string
+): string | undefined {
+  if (!contacts?.length || !fromPhone) return undefined;
+  const fromNorm = normalizePhone(fromPhone);
+  if (!fromNorm) return undefined;
+  const match = contacts.find((c) => (normalizePhone(c.wa_id) ?? "") === fromNorm);
+  const profile = match?.profile;
+  if (!profile || typeof profile !== "object") return undefined;
+  const p = profile as Record<string, unknown>;
+  for (const k of ["picture", "picture_url", "profile_picture_url", "icon", "avatar", "image"]) {
+    const v = p[k];
+    if (typeof v === "string" && /^https?:\/\//i.test(v.trim())) return v.trim();
+  }
+  return undefined;
+}
+
 function isOptOutKeyword(text: string): boolean {
   const normalized = text.replace(/\s+/g, " ").trim().toLowerCase();
   return normalized === "הסר" || normalized === "remove" || normalized === "stop";
@@ -201,6 +219,7 @@ export async function POST(req: NextRequest) {
           const byWa = contacts.find((c) => (normalizePhone(c.wa_id) ?? "") === from);
           const fallback = contacts[0];
           const contactName = byWa?.profile?.name?.trim() || fallback?.profile?.name?.trim() || undefined;
+          const waProfilePictureUrl = extractWaProfilePictureUrl(contacts, from);
           const byPhone = await db.collection("leads").where("phone", "==", from).limit(1).get();
           const leadId = byPhone.docs[0]?.id;
           let marketingApproved = byPhone.docs[0]?.data()?.customFields?.whatsappMarketingApproved !== false;
@@ -225,6 +244,7 @@ export async function POST(req: NextRequest) {
             messageId: msg.id?.trim(),
             contactId: leadId,
             contactName,
+            waProfilePictureUrl,
             marketingApproved,
           });
         }

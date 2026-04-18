@@ -25,6 +25,7 @@ const CHAT_THREAD_LIST_FIELDS = [
   "phone",
   "contactId",
   "contactName",
+  "waProfilePictureUrl",
   "marketingApproved",
   "lastInboundAt",
   "lastMessageAt",
@@ -146,7 +147,10 @@ export type WhatsAppChatThreadRecord = {
   id: string;
   phone: string;
   contactId?: string;
+  /** שם כפי שמטא שולחת ב־contacts[].profile (לרוב «שם בווצאפ») */
   contactName?: string;
+  /** תמונת פרופיל מה-webhook כשמטא כוללת קישור (אם קיים) */
+  waProfilePictureUrl?: string;
   marketingApproved: boolean;
   /** ISO — הודעת לקוח אחרונה; מאפשר שליחת טקסט חופשי בתוך חלון השירות של Meta (~24 שעות) */
   lastInboundAt?: string;
@@ -753,6 +757,7 @@ export async function listWhatsAppChatThreads(
         phone,
         contactId: asString(d.contactId).trim() || undefined,
         contactName: asString(d.contactName).trim() || undefined,
+        waProfilePictureUrl: asString(d.waProfilePictureUrl).trim() || undefined,
         marketingApproved: d.marketingApproved !== false,
         lastInboundAt: asString(d.lastInboundAt).trim() || undefined,
         lastMessageAt,
@@ -793,6 +798,7 @@ export async function getWhatsAppChatThread(
     phone: asString(d.phone).trim() || snap.id,
     contactId: asString(d.contactId).trim() || undefined,
     contactName: asString(d.contactName).trim() || undefined,
+    waProfilePictureUrl: asString(d.waProfilePictureUrl).trim() || undefined,
     marketingApproved: d.marketingApproved !== false,
     lastInboundAt: asString(d.lastInboundAt).trim() || undefined,
     lastMessageAt,
@@ -815,6 +821,8 @@ export async function appendWhatsAppChatMessage(
     messageId?: string;
     contactId?: string;
     contactName?: string;
+    /** קישור לתמונת פרופיל מה-webhook (כשמטא שולחת) */
+    waProfilePictureUrl?: string;
     marketingApproved?: boolean;
   }
 ): Promise<void> {
@@ -836,10 +844,13 @@ export async function appendWhatsAppChatMessage(
   };
   const unreadInc = input.direction === "inbound" ? 1 : 0;
   const prevUnread = Number(prev.unreadCount ?? 0);
+  const picIn = input.waProfilePictureUrl?.trim();
+  const prevPic = asString(prev.waProfilePictureUrl).trim();
   const parentPayload: Record<string, unknown> = {
     phone: id,
     contactId: input.contactId?.trim() || asString(prev.contactId).trim() || undefined,
     contactName: input.contactName?.trim() || asString(prev.contactName).trim() || undefined,
+    waProfilePictureUrl: picIn || prevPic || undefined,
     marketingApproved:
       input.marketingApproved !== undefined ? input.marketingApproved : prev.marketingApproved !== false,
     lastMessageAt: now,

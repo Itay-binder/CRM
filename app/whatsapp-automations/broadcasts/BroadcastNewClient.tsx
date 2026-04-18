@@ -268,11 +268,24 @@ export default function BroadcastNewClient() {
 
   function toggleContact(id: string) {
     const row = audienceContacts.find((c) => c.id === id);
-    if (row && !row.marketingApproved) return;
+    if (!row) return;
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+        return next;
+      }
+      if (!row.marketingApproved) {
+        const ok1 = window.confirm(
+          "איש קשר זה לא פעיל לדיוור שיווקי (למשל אחרי «הסר» מהווטסאפ). סימון השורה מאפשר שליחת תבנית חד-פעמית בלבד לנמען זה, בלי לשנות את הסטטוס ב-CRM."
+        );
+        if (!ok1) return prev;
+        const ok2 = window.confirm(
+          "אישור שני: השליחה אינה מפעילה מחדש דיוור. להמשיך ולסמן את הנמען לשליחה?"
+        );
+        if (!ok2) return prev;
+      }
+      next.add(id);
       return next;
     });
   }
@@ -326,13 +339,21 @@ export default function BroadcastNewClient() {
       if (selectedIds.size === 0) {
         throw new Error("בחרו לפחות איש קשר אחד מהרשימה.");
       }
+      const selectedArr = Array.from(selectedIds);
+      const oneTimeMarketingOverrideIds = selectedArr.filter((id) => {
+        const row = audienceContacts.find((c) => c.id === id);
+        return row && !row.marketingApproved;
+      });
       const body: Record<string, unknown> = {
         broadcastName: broadcastName.trim() || undefined,
         templateId,
         parameterValues,
         conditions,
         logic,
-        recipientIds: Array.from(selectedIds),
+        recipientIds: selectedArr,
+        ...(oneTimeMarketingOverrideIds.length > 0
+          ? { oneTimeMarketingOverrideIds }
+          : {}),
       };
       if (draftId) {
         body.draftId = draftId;
@@ -583,7 +604,8 @@ export default function BroadcastNewClient() {
             <h2 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 900 }}>קהל יעד</h2>
             <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>
               הוסף תנאים (תגית, שם, טלפון וכו׳). בלי תנאים — נכללים כל אנשי הקשר. הרשימה והצ&apos;קבוקסים מתעדכנים
-              אוטומטית כשמשנים תנאים. ניתן לבטל סימון ליחידים לפני שליחה.
+              אוטומטית כשמשנים תנאים. ניתן לבטל סימון ליחידים לפני שליחה. שורות באפור — לא פעילים לדיוור (סנכרון עם
+              «הסר»); סימון דורש אישור כפול ושליחה חד-פעמית בלבד (בלי שינוי סטטוס — אלא אם מעדכנים באיש הקשר).
             </p>
             <select
               value={logic}
@@ -788,7 +810,8 @@ export default function BroadcastNewClient() {
                         key={c.id}
                         style={{
                           borderTop: "1px solid #eee",
-                          background: c.marketingApproved ? "#fff" : "#fff7ed",
+                          background: c.marketingApproved ? "#fff" : "#e5e7eb",
+                          color: c.marketingApproved ? "#111827" : "#6b7280",
                         }}
                       >
                         <td style={{ padding: 8, textAlign: "center" }}>
@@ -796,7 +819,6 @@ export default function BroadcastNewClient() {
                             type="checkbox"
                             checked={selectedIds.has(c.id)}
                             onChange={() => toggleContact(c.id)}
-                            disabled={!c.marketingApproved}
                             aria-label={`בחר ${c.name || c.id}`}
                           />
                         </td>

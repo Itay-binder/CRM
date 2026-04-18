@@ -54,6 +54,11 @@ export async function POST(req: NextRequest) {
     templateId?: string;
     /** אם הוגדר קהל בתנאים — מצמצם לרשימה זו (צ'קבוקסים) */
     recipientIds?: string[];
+    /**
+     * מזהי אנשי קשר שלא פעילים לדיוור — שליחה חד-פעמית בלבד (אחרי אישור כפול ב-UI).
+     * לא מעדכן את שדה האישור ב-CRM; חייב להתאים ללידים שבאמת !isLeadWhatsAppMarketingApproved.
+     */
+    oneTimeMarketingOverrideIds?: string[];
     parameterValues?: string[];
     conditions?: AudienceCondition[];
     logic?: AudienceLogic;
@@ -108,6 +113,10 @@ export async function POST(req: NextRequest) {
     const selectedRaw = Array.isArray(body.recipientIds)
       ? Array.from(new Set(body.recipientIds.map((x) => String(x).trim()).filter(Boolean)))
       : [];
+    const oneTimeOverrideRaw = Array.isArray(body.oneTimeMarketingOverrideIds)
+      ? Array.from(new Set(body.oneTimeMarketingOverrideIds.map((x) => String(x).trim()).filter(Boolean)))
+      : [];
+    const oneTimeOverrideSet = new Set(oneTimeOverrideRaw);
 
     if (useAudienceFilter) {
       const leads = await listLeadsFiltered(null, null);
@@ -120,6 +129,19 @@ export async function POST(req: NextRequest) {
     }
 
     recipientIds = recipientIds.slice(0, MAX_RECIPIENTS);
+
+    for (const oid of oneTimeOverrideRaw) {
+      if (!recipientIds.includes(oid)) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              "רשימת oneTimeMarketingOverrideIds חייבת להיות תת-קבוצה של הנמענים שנבחרו לשליחה.",
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     if (!templateId) {
       return NextResponse.json({ ok: false, error: "templateId is required" }, { status: 400 });
@@ -203,7 +225,9 @@ export async function POST(req: NextRequest) {
         });
         continue;
       }
-      if (!isLeadWhatsAppMarketingApproved(lead)) {
+      const marketingOk = isLeadWhatsAppMarketingApproved(lead);
+      const allowOneTimeInactive = !marketingOk && oneTimeOverrideSet.has(lead.id);
+      if (!marketingOk && !allowOneTimeInactive) {
         dispatches.push({
           contactId: lead.id,
           contactName: lead.name || lead.email || lead.id,
@@ -239,7 +263,7 @@ export async function POST(req: NextRequest) {
             messageId: sent.messageId,
             contactId: lead.id,
             contactName: lead.name || lead.email || lead.id,
-            marketingApproved: true,
+            marketingApproved: marketingOk,
           });
         } catch {
           // ההודעה כבר נשלחה בהצלחה למטא; כשל בלוג השיחה לא צריך להפוך את השליחה ל-failed.

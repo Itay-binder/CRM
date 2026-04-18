@@ -92,13 +92,24 @@ export function normalizePhone(raw?: string): string | undefined {
   const digits = raw.replace(/[^\d+]/g, "").replace(/^\+/, "");
   if (!digits) return undefined;
 
-  // Already in IL international prefix format.
-  if (digits.startsWith("972")) return digits;
+  // כבר בפורמט בינלאומי ישראלי (ללא +).
+  if (digits.startsWith("972")) {
+    // טעות נפוצה: 972052... במקום 97252...
+    if (digits.startsWith("9720") && digits.length > 4 && digits[4] === "5") {
+      return `972${digits.slice(4)}`;
+    }
+    return digits;
+  }
 
-  // Local Israeli numbers (mobile/landline) like 052..., 03..., 072...
+  // מקומי עם 0: 052..., 03..., 072...
   if (digits.startsWith("0")) return `972${digits.slice(1)}`;
 
-  // Fallback: keep numeric value as-is if not recognizable IL local format.
+  // נייד ישראלי בלי קידומת מדינה ובלי 0 מוביל (למשל 526660006 → 972526660006).
+  if (digits.length === 9 && /^5[0-9]\d{7}$/.test(digits)) {
+    return `972${digits}`;
+  }
+
+  // ברירת מחדל: ספרות בלבד (מספרים בינלאומיים אחרים וכו׳).
   return digits.replace(/[^\d]/g, "");
 }
 

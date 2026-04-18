@@ -1,5 +1,6 @@
 import UserMenu from "@/app/components/UserMenu";
 import CrmNavLink from "@/app/components/CrmNavLink";
+import CrmGlobalNotifications from "@/app/components/CrmGlobalNotifications";
 import { isMovingOrdersTenant } from "@/lib/tenant/movingOrders";
 
 export type CrmTenantOption = { id: string; label: string };
@@ -105,7 +106,10 @@ export default function CrmShell({
             </div>
           </div>
         ) : (
-          children
+          <>
+            {children}
+            <CrmGlobalNotifications />
+          </>
         )}
       </section>
     </div>

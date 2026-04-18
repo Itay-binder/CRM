@@ -1,17 +1,16 @@
-import { Suspense } from "react";
 import { getCrmSession } from "@/lib/auth/crmSession";
 import { authDisabled } from "@/lib/auth/session";
 import { redirect } from "next/navigation";
 import CrmShell from "@/app/components/CrmShell";
-import WhatsAppSectionShell from "@/app/whatsapp-automations/WhatsAppSectionShell";
-import ChatsInboxClient from "@/app/whatsapp-automations/ChatsInboxClient";
+import NotificationsClient from "@/app/settings/notifications/NotificationsClient";
+import { isMovingOrdersTenant } from "@/lib/tenant/movingOrders";
 
 export const dynamic = "force-dynamic";
 
-export default async function WhatsAppChatsPage() {
+export default async function SettingsNotificationsPage() {
   if (authDisabled()) redirect("/login");
   const ctx = await getCrmSession();
-  if (ctx.kind === "anon") redirect("/login?returnTo=/whatsapp-automations/chats");
+  if (ctx.kind === "anon") redirect("/login?returnTo=/settings/notifications");
   if (ctx.kind === "forbidden") {
     return (
       <CrmShell
@@ -31,15 +30,7 @@ export default async function WhatsAppChatsPage() {
       tenants={ctx.accessibleTenants.map((t) => ({ id: t.id, label: t.label }))}
       currentTenantId={ctx.tenant.id}
     >
-      <WhatsAppSectionShell
-        wide
-        title="צ׳אטים"
-        subtitle="תצוגת התכתבויות מהמספר המחובר. תגובת 'הסר' מסמנת את איש הקשר כלא פעיל לדיוורים."
-      >
-        <Suspense fallback={<div style={{ padding: 24, textAlign: "center", color: "#667781" }}>טוען צ׳אטים…</div>}>
-          <ChatsInboxClient />
-        </Suspense>
-      </WhatsAppSectionShell>
+      <NotificationsClient showMovingOrders={isMovingOrdersTenant(ctx.tenant.id)} />
     </CrmShell>
   );
 }

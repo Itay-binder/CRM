@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 
 const SESSION_MS = 24 * 60 * 60 * 1000;
@@ -208,6 +209,7 @@ function IconWa() {
 type MobilePanel = "list" | "chat" | "details";
 
 export default function ChatsInboxClient() {
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [threads, setThreads] = useState<ChatThread[]>([]);
@@ -231,6 +233,20 @@ export default function ChatsInboxClient() {
     mq.addEventListener("change", apply);
     return () => mq.removeEventListener("change", apply);
   }, []);
+
+  /** פתיחת שיחה מקישור (למשל מהתראה צפה): ‎?thread=9725… */
+  useEffect(() => {
+    const raw = searchParams.get("thread")?.trim() ?? "";
+    const normalized = raw.replace(/\D/g, "");
+    if (!normalized) return;
+    setSelectedId(normalized);
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches) {
+      setMobilePanel("chat");
+    }
+    if (typeof window !== "undefined") {
+      window.history.replaceState({}, "", "/whatsapp-automations/chats");
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (isNarrow && mobilePanel === "chat" && !selectedId) setMobilePanel("list");

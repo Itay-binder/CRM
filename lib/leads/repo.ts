@@ -520,3 +520,27 @@ export async function setLeadWhatsAppMarketingApprovalByPhone(
   return { normalizedPhone, updatedLeadIds: Array.from(refs.keys()) };
 }
 
+/** הליד האחרון שנוצר — לסקר התראות (השוואת מזהה בין קריאות). */
+export async function getNewestLeadByCreatedAt(): Promise<{
+  id: string;
+  name: string;
+  phone: string;
+  createdAt: string;
+} | null> {
+  const db = await getAdminDb();
+  try {
+    const snap = await db.collection("leads").orderBy("createdAt", "desc").limit(1).get();
+    if (snap.empty) return null;
+    const doc = snap.docs[0]!;
+    const lead = mapDocToLead(doc.id, doc.data() as Record<string, unknown>);
+    return {
+      id: lead.id,
+      name: lead.name?.trim() ?? "",
+      phone: lead.phone?.trim() ?? "",
+      createdAt: lead.createdAt ? lead.createdAt.toISOString() : "",
+    };
+  } catch {
+    return null;
+  }
+}
+

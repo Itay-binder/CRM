@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-type Section = "fields" | "api" | "triggers" | "cityRegions";
+type Section = "fields" | "api" | "triggers" | "cityRegions" | "notifications";
 
 export default function SettingsSectionNav({
   active,
@@ -45,6 +45,12 @@ export default function SettingsSectionNav({
       </Link>
       <Link href="/settings/triggers" style={active === "triggers" ? activeStyle : idleStyle}>
         טריגרים
+      </Link>
+      <Link
+        href="/settings/notifications"
+        style={active === "notifications" ? activeStyle : idleStyle}
+      >
+        התראות
       </Link>
       {showMovingOrders ? (
         <Link

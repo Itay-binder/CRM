@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { getNewestLeadByCreatedAt } from "@/lib/leads/repo";
+import { getNewestMovingOrderByCreatedAt } from "@/lib/movingOrders/repo";
+import { getNewestOpportunityByCreatedAt } from "@/lib/opportunities/repo";
 import { listWhatsAppChatThreads } from "@/lib/whatsapp/repo";
 
 export const dynamic = "force-dynamic";
@@ -16,9 +18,11 @@ export async function GET(req: NextRequest) {
   }
   try {
     const db = await getAdminDb();
-    const [threads, latestLead] = await Promise.all([
+    const [threads, latestLead, latestOpportunity, latestOrder] = await Promise.all([
       listWhatsAppChatThreads(db, 120),
       getNewestLeadByCreatedAt(),
+      getNewestOpportunityByCreatedAt(),
+      getNewestMovingOrderByCreatedAt(db),
     ]);
     return NextResponse.json({
       ok: true,
@@ -31,6 +35,8 @@ export async function GET(req: NextRequest) {
         unreadCount: t.unreadCount,
       })),
       latestLead,
+      latestOpportunity,
+      latestOrder,
     });
   } catch (e) {
     return NextResponse.json(

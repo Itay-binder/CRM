@@ -214,6 +214,32 @@ export async function getMovingOrder(id: string, db?: Firestore): Promise<Moving
   return mapDoc(snap.id, (snap.data() ?? {}) as Record<string, unknown>);
 }
 
+/** הזמנה האחרונה שנוצרה — לסקר התראות */
+export async function getNewestMovingOrderByCreatedAt(db?: Firestore): Promise<{
+  id: string;
+  orderId: string;
+  name: string;
+  phone: string;
+  createdAt: string;
+} | null> {
+  const d = db ?? (await getAdminDb());
+  try {
+    const snap = await d.collection(COLLECTION).orderBy("createdAt", "desc").limit(1).get();
+    if (snap.empty) return null;
+    const row = mapDoc(snap.docs[0]!.id, (snap.docs[0]!.data() ?? {}) as Record<string, unknown>);
+    if (!row.createdAt) return null;
+    return {
+      id: row.id,
+      orderId: row.orderId,
+      name: row.payload?.name?.trim() ?? "",
+      phone: row.payload?.phone?.trim() ?? "",
+      createdAt: row.createdAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function upsertMovingOrderFromIngest(
   payload: MovingOrderPayload,
   db?: Firestore

@@ -4,6 +4,7 @@ export type DevicePushPrefs = {
   whatsapp: boolean;
   newLead: boolean;
   newOrder: boolean;
+  newOpportunity: boolean;
 };
 
 export type WebPushSubscriptionStored = {
@@ -21,6 +22,7 @@ function normalizePrefs(
     whatsapp: patch?.whatsapp ?? (p.whatsapp !== false),
     newLead: patch?.newLead ?? (p.newLead !== false),
     newOrder: patch?.newOrder ?? (p.newOrder !== false),
+    newOpportunity: patch?.newOpportunity ?? (p.newOpportunity !== false),
   };
 }
 
@@ -78,7 +80,7 @@ export async function updateUserDevicePushPrefs(
   patch: Partial<DevicePushPrefs>
 ): Promise<DevicePushPrefs> {
   const ref = db.collection("users").doc(userDocId);
-  let out: DevicePushPrefs = { whatsapp: true, newLead: true, newOrder: true };
+  let out: DevicePushPrefs = { whatsapp: true, newLead: true, newOrder: true, newOpportunity: true };
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const d = (snap.data() ?? {}) as Record<string, unknown>;
@@ -91,6 +93,8 @@ export async function updateUserDevicePushPrefs(
       whatsapp: patch.whatsapp !== undefined ? Boolean(patch.whatsapp) : base.whatsapp,
       newLead: patch.newLead !== undefined ? Boolean(patch.newLead) : base.newLead,
       newOrder: patch.newOrder !== undefined ? Boolean(patch.newOrder) : base.newOrder,
+      newOpportunity:
+        patch.newOpportunity !== undefined ? Boolean(patch.newOpportunity) : base.newOpportunity,
     };
     tx.set(ref, { devicePushPrefs: out }, { merge: true });
   });

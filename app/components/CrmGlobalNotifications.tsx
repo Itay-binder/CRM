@@ -3,15 +3,36 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import { CRM_NOTIFICATION_SCHEMA_VERSION } from "@/lib/crmNotificationPrefsSchema";
 
 const PREFS_KEY = "liftygo_crm_notification_prefs";
 
 export type CrmNotificationPrefs = {
+  /** גרסת סכימה — מתחת לערך הנוכחי יוצג בקשה לאשר מחדש (דפדפן) */
+  schemaVersion: number;
   inAppWhatsApp: boolean;
   inAppNewLead: boolean;
+  inAppNewOpportunity: boolean;
+  inAppNewOrder: boolean;
   browserWhatsApp: boolean;
   browserNewLead: boolean;
+  browserNewOpportunity: boolean;
+  browserNewOrder: boolean;
 };
+
+function defaultPrefs(): CrmNotificationPrefs {
+  return {
+    schemaVersion: CRM_NOTIFICATION_SCHEMA_VERSION,
+    inAppWhatsApp: true,
+    inAppNewLead: true,
+    inAppNewOpportunity: true,
+    inAppNewOrder: true,
+    browserWhatsApp: false,
+    browserNewLead: false,
+    browserNewOpportunity: false,
+    browserNewOrder: false,
+  };
+}
 
 export function saveCrmNotificationPrefs(p: CrmNotificationPrefs) {
   if (typeof window === "undefined") return;
@@ -20,38 +41,33 @@ export function saveCrmNotificationPrefs(p: CrmNotificationPrefs) {
 }
 
 export function loadCrmNotificationPrefs(): CrmNotificationPrefs {
-  if (typeof window === "undefined") {
-    return {
-      inAppWhatsApp: true,
-      inAppNewLead: true,
-      browserWhatsApp: false,
-      browserNewLead: false,
-    };
-  }
+  if (typeof window === "undefined") return defaultPrefs();
   try {
     const raw = localStorage.getItem(PREFS_KEY);
-    if (!raw) {
-      return {
-        inAppWhatsApp: true,
-        inAppNewLead: true,
-        browserWhatsApp: false,
-        browserNewLead: false,
-      };
-    }
-    const j = JSON.parse(raw) as Partial<CrmNotificationPrefs>;
+    if (!raw) return defaultPrefs();
+    const j = JSON.parse(raw) as Partial<CrmNotificationPrefs> & Record<string, unknown>;
+    const base = defaultPrefs();
+    const hasLegacy = !("schemaVersion" in j);
+    const schemaVersion =
+      typeof j.schemaVersion === "number" && Number.isFinite(j.schemaVersion)
+        ? j.schemaVersion
+        : hasLegacy
+          ? 0
+          : CRM_NOTIFICATION_SCHEMA_VERSION;
     return {
+      ...base,
+      schemaVersion,
       inAppWhatsApp: j.inAppWhatsApp !== false,
       inAppNewLead: j.inAppNewLead !== false,
+      inAppNewOpportunity: j.inAppNewOpportunity !== false,
+      inAppNewOrder: j.inAppNewOrder !== false,
       browserWhatsApp: Boolean(j.browserWhatsApp),
       browserNewLead: Boolean(j.browserNewLead),
+      browserNewOpportunity: Boolean(j.browserNewOpportunity),
+      browserNewOrder: Boolean(j.browserNewOrder),
     };
   } catch {
-    return {
-      inAppWhatsApp: true,
-      inAppNewLead: true,
-      browserWhatsApp: false,
-      browserNewLead: false,
-    };
+    return defaultPrefs();
   }
 }
 
@@ -72,19 +88,27 @@ type WaBaselineSnap = {
 
 type PollLead = { id: string; name: string; phone: string; createdAt: string };
 
+type PollOpportunity = { id: string; name: string; contactName: string; createdAt: string };
+
+type PollOrder = { id: string; orderId: string; name: string; phone: string; createdAt: string };
+
 type PollOk = {
   ok: true;
   whatsapp: PollWa[];
   latestLead: PollLead | null;
+  latestOpportunity: PollOpportunity | null;
+  latestOrder: PollOrder | null;
 };
 
 type InAppToast = {
   id: string;
-  kind: "wa" | "lead";
+  kind: "wa" | "lead" | "opp" | "order";
   title: string;
   body: string;
   threadId?: string;
   leadId?: string;
+  opportunityId?: string;
+  orderId?: string;
 };
 
 async function parseJson<T>(res: Response): Promise<T> {
@@ -108,6 +132,8 @@ export default function CrmGlobalNotifications() {
   const initRef = useRef(false);
   const waBaselineRef = useRef<Map<string, WaBaselineSnap>>(new Map());
   const leadBaselineRef = useRef<{ id: string; createdAt: string }>({ id: "", createdAt: "" });
+  const oppBaselineRef = useRef<{ id: string; createdAt: string }>({ id: "", createdAt: "" });
+  const orderBaselineRef = useRef<{ id: string; createdAt: string }>({ id: "", createdAt: "" });
   const prefsRef = useRef(loadCrmNotificationPrefs());
 
   useEffect(() => {
@@ -146,6 +172,16 @@ export default function CrmGlobalNotifications() {
       } else {
         leadBaselineRef.current = { id: "__none__", createdAt: "" };
       }
+      if (j.latestOpportunity) {
+        oppBaselineRef.current = { id: j.latestOpportunity.id, createdAt: j.latestOpportunity.createdAt };
+      } else {
+        oppBaselineRef.current = { id: "__none__", createdAt: "" };
+      }
+      if (j.latestOrder) {
+        orderBaselineRef.current = { id: j.latestOrder.id, createdAt: j.latestOrder.createdAt };
+      } else {
+        orderBaselineRef.current = { id: "__none__", createdAt: "" };
+      }
       initRef.current = true;
       return;
     }
@@ -176,7 +212,7 @@ export default function CrmGlobalNotifications() {
             threadId: t.id,
           });
         }
-        if (prefs.browserWhatsApp) {
+        if (prefs.browserWhatsApp && prefs.schemaVersion >= CRM_NOTIFICATION_SCHEMA_VERSION) {
           const tagKey = curIn || `${t.lastMessageAt}-${curUn}`;
           pushBrowserNotification("הודעת וואטסאפ חדשה", `מ־${label}`, `wa-${t.id}-${tagKey}`);
         }
@@ -196,7 +232,7 @@ export default function CrmGlobalNotifications() {
             leadId: j.latestLead.id,
           });
         }
-        if (prefs.browserNewLead) {
+        if (prefs.browserNewLead && prefs.schemaVersion >= CRM_NOTIFICATION_SCHEMA_VERSION) {
           pushBrowserNotification(
             "ליד חדש ב־CRM",
             `${j.latestLead.name || "ללא שם"} · ${j.latestLead.phone || "—"}`,
@@ -205,6 +241,50 @@ export default function CrmGlobalNotifications() {
         }
       }
       leadBaselineRef.current = { id: j.latestLead.id, createdAt: j.latestLead.createdAt };
+    }
+
+    if (j.latestOpportunity) {
+      const prev = oppBaselineRef.current;
+      if (j.latestOpportunity.id !== prev.id) {
+        if (prefs.inAppNewOpportunity) {
+          addToast({
+            kind: "opp",
+            title: "הזדמנות חדשה",
+            body: `${j.latestOpportunity.name || "ללא שם"}${j.latestOpportunity.contactName ? ` · ${j.latestOpportunity.contactName}` : ""}`,
+            opportunityId: j.latestOpportunity.id,
+          });
+        }
+        if (prefs.browserNewOpportunity && prefs.schemaVersion >= CRM_NOTIFICATION_SCHEMA_VERSION) {
+          pushBrowserNotification(
+            "הזדמנות חדשה ב־CRM",
+            `${j.latestOpportunity.name || "ללא שם"}`,
+            `opp-${j.latestOpportunity.id}`
+          );
+        }
+      }
+      oppBaselineRef.current = { id: j.latestOpportunity.id, createdAt: j.latestOpportunity.createdAt };
+    }
+
+    if (j.latestOrder) {
+      const prev = orderBaselineRef.current;
+      if (j.latestOrder.id !== prev.id) {
+        if (prefs.inAppNewOrder) {
+          addToast({
+            kind: "order",
+            title: "הזמנה חדשה",
+            body: `${j.latestOrder.orderId}${j.latestOrder.name ? ` · ${j.latestOrder.name}` : ""}`,
+            orderId: j.latestOrder.id,
+          });
+        }
+        if (prefs.browserNewOrder && prefs.schemaVersion >= CRM_NOTIFICATION_SCHEMA_VERSION) {
+          pushBrowserNotification(
+            "הזמנה חדשה במערכת",
+            `${j.latestOrder.orderId}`,
+            `order-${j.latestOrder.id}`
+          );
+        }
+      }
+      orderBaselineRef.current = { id: j.latestOrder.id, createdAt: j.latestOrder.createdAt };
     }
   }, [addToast]);
 
@@ -345,6 +425,48 @@ export default function CrmGlobalNotifications() {
                 }}
               >
                 מעבר לאיש קשר
+              </button>
+            ) : null}
+            {t.kind === "opp" && t.opportunityId ? (
+              <button
+                type="button"
+                onClick={() => {
+                  dismissToast(t.id);
+                  router.push(`/pipeline?openOpportunityId=${encodeURIComponent(t.opportunityId!)}`);
+                }}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                מעבר להזדמנות
+              </button>
+            ) : null}
+            {t.kind === "order" && t.orderId ? (
+              <button
+                type="button"
+                onClick={() => {
+                  dismissToast(t.id);
+                  router.push("/orders");
+                }}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: "linear-gradient(180deg, #a78bfa 0%, #6d28d9 100%)",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                מעבר להזמנות
               </button>
             ) : null}
           </div>

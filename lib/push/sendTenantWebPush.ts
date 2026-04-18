@@ -2,7 +2,7 @@ import type { Firestore } from "firebase-admin/firestore";
 import webpush from "web-push";
 import { getVapidKeys } from "@/lib/push/vapid";
 
-export type TenantPushKind = "whatsapp_inbound" | "new_lead" | "new_order";
+export type TenantPushKind = "whatsapp_inbound" | "new_lead" | "new_order" | "new_opportunity";
 
 export type TenantWebPushInput = {
   kind: TenantPushKind;
@@ -27,11 +27,17 @@ function ensureVapid(): boolean {
 
 function channelAllowed(
   kind: TenantPushKind,
-  prefs: { whatsapp?: boolean; newLead?: boolean; newOrder?: boolean } | undefined
+  prefs: {
+    whatsapp?: boolean;
+    newLead?: boolean;
+    newOrder?: boolean;
+    newOpportunity?: boolean;
+  } | undefined
 ): boolean {
   const p = prefs ?? {};
   if (kind === "whatsapp_inbound") return p.whatsapp !== false;
   if (kind === "new_lead") return p.newLead !== false;
+  if (kind === "new_opportunity") return p.newOpportunity !== false;
   return p.newOrder !== false;
 }
 
@@ -70,7 +76,12 @@ export async function notifyTenantUsersWebPush(db: Firestore, input: TenantWebPu
     if (!Boolean(d.approved)) continue;
     const prefs =
       typeof d.devicePushPrefs === "object" && d.devicePushPrefs !== null
-        ? (d.devicePushPrefs as { whatsapp?: boolean; newLead?: boolean; newOrder?: boolean })
+        ? (d.devicePushPrefs as {
+            whatsapp?: boolean;
+            newLead?: boolean;
+            newOrder?: boolean;
+            newOpportunity?: boolean;
+          })
         : undefined;
     if (!channelAllowed(input.kind, prefs)) continue;
     const subs = Array.isArray(d.webPushSubscriptions) ? d.webPushSubscriptions : [];

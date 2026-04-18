@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 type ApiErr = { ok: false; error: string };
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   const auth = await requireApprovedUser(req);
   if (!auth.ok) {
     return NextResponse.json({ ok: false, error: auth.error } satisfies ApiErr, { status: auth.status });
@@ -48,6 +48,7 @@ export async function PATCH(req: NextRequest) {
       whatsapp: body.whatsapp,
       newLead: body.newLead,
       newOrder: body.newOrder,
+      newOpportunity: body.newOpportunity,
     });
     return NextResponse.json({ ok: true, prefs });
   } catch (e) {

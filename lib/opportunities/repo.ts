@@ -414,6 +414,32 @@ export async function createPipeline(input: CreatePipelineInput): Promise<Pipeli
   };
 }
 
+/** ההזדמנות האחרונה שנוצרה — לסקר התראות */
+export async function getNewestOpportunityByCreatedAt(): Promise<{
+  id: string;
+  name: string;
+  contactName: string;
+  createdAt: string;
+} | null> {
+  const db = await getAdminDb();
+  try {
+    const snap = await db.collection("opportunities").orderBy("createdAt", "desc").limit(1).get();
+    if (snap.empty) return null;
+    const doc = snap.docs[0]!;
+    const d = (doc.data() ?? {}) as Record<string, unknown>;
+    const createdAt = mapTs(d.createdAt);
+    if (!createdAt) return null;
+    return {
+      id: doc.id,
+      name: String(d.name ?? "").trim(),
+      contactName: String(d.contactName ?? "").trim(),
+      createdAt: createdAt.toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function listOpportunities(pipelineId?: string | null): Promise<OpportunityRecord[]> {
   if (await shouldSeedDefaultPipeline()) {
     await ensureDefaultPipeline();
@@ -697,6 +723,18 @@ export async function createOpportunity(input: CreateOpportunityInput): Promise<
       value: typeof input.value === "number" ? input.value : null,
     },
   });
+
+  void import("@/lib/push/sendTenantWebPush")
+    .then(({ notifyTenantUsersWebPush }) =>
+      notifyTenantUsersWebPush(db, {
+        kind: "new_opportunity",
+        title: "הזדמנות חדשה ב־CRM",
+        body: `${oppName} · ${typeof cd.name === "string" ? cd.name : ""}`.trim().slice(0, 180),
+        relativeUrl: `/pipeline?openOpportunityId=${encodeURIComponent(ref.id)}`,
+        tag: `opp-${ref.id}-${Date.now()}`,
+      })
+    )
+    .catch(() => {});
 
   const snap = await ref.get();
   const d = (snap.data() ?? {}) as Record<string, unknown>;

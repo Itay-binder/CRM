@@ -7,6 +7,7 @@ import {
   saveCrmNotificationPrefs,
   type CrmNotificationPrefs,
 } from "@/app/components/CrmGlobalNotifications";
+import { CRM_NOTIFICATION_SCHEMA_VERSION } from "@/lib/crmNotificationPrefsSchema";
 
 type Props = {
   showMovingOrders?: boolean;
@@ -16,9 +17,53 @@ type DevicePushPrefs = {
   whatsapp: boolean;
   newLead: boolean;
   newOrder: boolean;
+  newOpportunity: boolean;
+};
+
+type LogEntry = {
+  at?: string;
+  action?: string;
+  permissionVersion?: number | null;
+  userAgent?: string | null;
+  platform?: string | null;
+  language?: string | null;
+  deviceFingerprint?: string | null;
 };
 
 const VAPID_PUBLIC = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim() ?? "";
+
+const DEVICE_FP_KEY = "crm.notify.deviceFp";
+
+function getDeviceFingerprint(): string {
+  if (typeof window === "undefined") return "";
+  let id = localStorage.getItem(DEVICE_FP_KEY)?.trim();
+  if (!id) {
+    id =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `fp-${Date.now()}`;
+    localStorage.setItem(DEVICE_FP_KEY, id);
+  }
+  return id;
+}
+
+async function logNotificationPermission(
+  action: "request" | "granted" | "denied" | "default" | "unsupported"
+): Promise<void> {
+  await fetch("/api/settings/notification-permission-log", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action,
+      permissionVersion: CRM_NOTIFICATION_SCHEMA_VERSION,
+      userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
+      platform: typeof navigator !== "undefined" ? navigator.platform : "",
+      language: typeof navigator !== "undefined" ? navigator.language : "",
+      deviceFingerprint: getDeviceFingerprint(),
+    }),
+  }).catch(() => {});
+}
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -40,17 +85,39 @@ export default function NotificationsClient({ showMovingOrders }: Props) {
     whatsapp: true,
     newLead: true,
     newOrder: true,
+    newOpportunity: true,
   });
   const [pushConfigured, setPushConfigured] = useState(false);
   const [subscriptionCount, setSubscriptionCount] = useState(0);
   const [pushBusy, setPushBusy] = useState(false);
   const [pushMsg, setPushMsg] = useState<string | null>(null);
+  const [permLog, setPermLog] = useState<LogEntry[]>([]);
+  const [permLast, setPermLast] = useState<LogEntry | null>(null);
+  const [logLoading, setLogLoading] = useState(false);
+
+  const refreshPermissionLog = useCallback(async () => {
+    setLogLoading(true);
+    try {
+      const res = await fetch("/api/settings/notification-permission-log", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      const j = await parseJson<{ ok?: boolean; log?: LogEntry[]; last?: LogEntry | null }>(res);
+      if (res.ok && j.ok) {
+        setPermLog(j.log ?? []);
+        setPermLast(j.last ?? null);
+      }
+    } finally {
+      setLogLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     setPrefs(loadCrmNotificationPrefs());
     if (typeof Notification === "undefined") setPerm("unsupported");
     else setPerm(Notification.permission);
-  }, []);
+    void refreshPermissionLog();
+  }, [refreshPermissionLog]);
 
   const loadPushState = useCallback(async () => {
     try {
@@ -79,6 +146,24 @@ export default function NotificationsClient({ showMovingOrders }: Props) {
     saveCrmNotificationPrefs(next);
   }, []);
 
+  const persistBrowserToggles = useCallback(
+    (next: CrmNotificationPrefs) => {
+      const anyBrowser =
+        next.browserWhatsApp ||
+        next.browserNewLead ||
+        next.browserNewOpportunity ||
+        next.browserNewOrder;
+      let out = { ...next };
+      if (typeof Notification !== "undefined" && anyBrowser && Notification.permission !== "granted") {
+        out = { ...out, schemaVersion: 0 };
+      } else if (typeof Notification !== "undefined" && anyBrowser && Notification.permission === "granted") {
+        out = { ...out, schemaVersion: CRM_NOTIFICATION_SCHEMA_VERSION };
+      }
+      persist(out);
+    },
+    [persist]
+  );
+
   const patchDevicePrefs = useCallback(async (next: DevicePushPrefs) => {
     setDevicePrefs(next);
     try {
@@ -96,14 +181,29 @@ export default function NotificationsClient({ showMovingOrders }: Props) {
   }, []);
 
   const requestBrowserPermission = useCallback(async () => {
-    if (typeof Notification === "undefined") return;
+    if (typeof Notification === "undefined") {
+      await logNotificationPermission("unsupported");
+      return;
+    }
+    await logNotificationPermission("request");
     try {
       const p = await Notification.requestPermission();
       setPerm(p);
+      if (p === "granted") await logNotificationPermission("granted");
+      else if (p === "denied") await logNotificationPermission("denied");
+      else await logNotificationPermission("default");
+      const cur = loadCrmNotificationPrefs();
+      if (p === "granted") {
+        persist({ ...cur, schemaVersion: CRM_NOTIFICATION_SCHEMA_VERSION });
+        setPrefs(loadCrmNotificationPrefs());
+      }
+      await refreshPermissionLog();
     } catch {
       setPerm("denied");
+      await logNotificationPermission("denied");
+      await refreshPermissionLog();
     }
-  }, []);
+  }, [persist, refreshPermissionLog]);
 
   const registerWebPush = useCallback(async () => {
     setPushMsg(null);
@@ -117,12 +217,16 @@ export default function NotificationsClient({ showMovingOrders }: Props) {
     }
     setPushBusy(true);
     try {
+      await logNotificationPermission("request");
       const p = await Notification.requestPermission();
       setPerm(p);
       if (p !== "granted") {
+        await logNotificationPermission("default");
         setPushMsg("לא אושרה הרשאת התראות — לא ניתן להפעיל דחיפה למכשיר.");
+        await refreshPermissionLog();
         return;
       }
+      await logNotificationPermission("granted");
       const reg = await navigator.serviceWorker.register("/crm-push-sw.js", { scope: "/" });
       await reg.update();
       const existing = await reg.pushManager.getSubscription();
@@ -144,13 +248,17 @@ export default function NotificationsClient({ showMovingOrders }: Props) {
       const j = await parseJson<{ ok?: boolean; error?: string }>(res);
       if (!res.ok || !j.ok) throw new Error(j.error || "הרשמה נכשלה");
       setPushMsg("התראות דחיפה הופעלו למכשיר זה.");
+      const cur = loadCrmNotificationPrefs();
+      persist({ ...cur, schemaVersion: CRM_NOTIFICATION_SCHEMA_VERSION });
+      setPrefs(loadCrmNotificationPrefs());
       await loadPushState();
+      await refreshPermissionLog();
     } catch (e) {
       setPushMsg(e instanceof Error ? e.message : "הרשמה נכשלה");
     } finally {
       setPushBusy(false);
     }
-  }, [devicePrefs, loadPushState]);
+  }, [devicePrefs, loadPushState, persist, refreshPermissionLog]);
 
   const row = (label: string, description: string, checked: boolean, onChange: (v: boolean) => void) => (
     <label
@@ -177,6 +285,13 @@ export default function NotificationsClient({ showMovingOrders }: Props) {
     </label>
   );
 
+  const browserNeedsConsent =
+    prefs.schemaVersion < CRM_NOTIFICATION_SCHEMA_VERSION &&
+    (prefs.browserWhatsApp ||
+      prefs.browserNewLead ||
+      prefs.browserNewOpportunity ||
+      prefs.browserNewOrder);
+
   return (
     <>
       <SettingsSectionNav active="notifications" showMovingOrders={showMovingOrders} />
@@ -186,6 +301,24 @@ export default function NotificationsClient({ showMovingOrders }: Props) {
           התראות צפות בתוך ה־CRM (בחלק העליון של המסך), ובנוסף אפשר התראות מהדפדפן או דחיפה אמיתית למכשיר כשהמערכת
           סגורה — ראו למטה.
         </p>
+
+        {browserNeedsConsent ? (
+          <div
+            style={{
+              marginBottom: 18,
+              padding: 14,
+              borderRadius: 12,
+              background: "#fffbeb",
+              border: "1px solid #fcd34d",
+              color: "#92400e",
+              fontSize: 14,
+              lineHeight: 1.5,
+            }}
+          >
+            נוספו סוגי התראות חדשים (גרסה {CRM_NOTIFICATION_SCHEMA_VERSION}). יש לאשר שוב הרשאת דפדפן כדי לקבל
+            התראות מערכת — לחצו על &quot;בקש הרשאת התראות מהדפדפן&quot; למטה.
+          </div>
+        ) : null}
 
         <section style={{ marginBottom: 28 }}>
           <h2 style={{ fontSize: 16, fontWeight: 800, margin: "0 0 12px" }}>בתוך המערכת</h2>
@@ -202,6 +335,20 @@ export default function NotificationsClient({ showMovingOrders }: Props) {
               prefs.inAppNewLead,
               (v) => persist({ ...prefs, inAppNewLead: v })
             )}
+            {row(
+              "התראה צפה — הזדמנות חדשה",
+              "כרטיס כשנוצרת הזדמנות חדשה.",
+              prefs.inAppNewOpportunity,
+              (v) => persist({ ...prefs, inAppNewOpportunity: v })
+            )}
+            {showMovingOrders
+              ? row(
+                  "התראה צפה — הזמנה חדשה",
+                  "כרטיס כשנוצרת הזמנת הובלה חדשה.",
+                  prefs.inAppNewOrder,
+                  (v) => persist({ ...prefs, inAppNewOrder: v })
+                )
+              : null}
           </div>
         </section>
 
@@ -244,6 +391,12 @@ export default function NotificationsClient({ showMovingOrders }: Props) {
               "נשלח כשנוצר איש קשר חדש במסד הנוכחי.",
               devicePrefs.newLead,
               (v) => void patchDevicePrefs({ ...devicePrefs, newLead: v })
+            )}
+            {row(
+              "דחיפה — הזדמנות חדשה",
+              "נשלח כשנוצרת הזדמנות חדשה.",
+              devicePrefs.newOpportunity,
+              (v) => void patchDevicePrefs({ ...devicePrefs, newOpportunity: v })
             )}
             {showMovingOrders ? (
               row(
@@ -343,13 +496,90 @@ export default function NotificationsClient({ showMovingOrders }: Props) {
               "התראת דפדפן — וואטסאפ",
               "מופעל רק אם ההרשאה מאושרת וגם אפשרות זו מסומנת.",
               prefs.browserWhatsApp,
-              (v) => persist({ ...prefs, browserWhatsApp: v })
+              (v) => persistBrowserToggles({ ...prefs, browserWhatsApp: v })
             )}
             {row(
               "התראת דפדפן — ליד חדש",
               "מופעל רק אם ההרשאה מאושרת וגם אפשרות זו מסומנת.",
               prefs.browserNewLead,
-              (v) => persist({ ...prefs, browserNewLead: v })
+              (v) => persistBrowserToggles({ ...prefs, browserNewLead: v })
+            )}
+            {row(
+              "התראת דפדפן — הזדמנות חדשה",
+              "מופעל רק אם ההרשאה מאושרת וגם אפשרות זו מסומנת.",
+              prefs.browserNewOpportunity,
+              (v) => persistBrowserToggles({ ...prefs, browserNewOpportunity: v })
+            )}
+            {showMovingOrders ? (
+              row(
+                "התראת דפדפן — הזמנה חדשה",
+                "מופעל רק אם ההרשאה מאושרת וגם אפשרות זו מסומנת.",
+                prefs.browserNewOrder,
+                (v) => persistBrowserToggles({ ...prefs, browserNewOrder: v })
+              )
+            ) : null}
+          </div>
+        </section>
+
+        <section>
+          <h2 style={{ fontSize: 16, fontWeight: 800, margin: "0 0 12px" }}>יומן בקשות הרשאה (בשרת)</h2>
+          <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 10, lineHeight: 1.5 }}>
+            נשמר תחת מסמך המשתמש שלך — זמן, פעולה, טביעת מכשיר, ודפדפן.
+          </p>
+          <button
+            type="button"
+            onClick={() => void refreshPermissionLog()}
+            disabled={logLoading}
+            style={{
+              marginBottom: 10,
+              padding: "8px 14px",
+              borderRadius: 8,
+              border: "1px solid #e5e7eb",
+              background: "#fff",
+              cursor: logLoading ? "wait" : "pointer",
+            }}
+          >
+            רענן יומן
+          </button>
+          {permLast?.at ? (
+            <div style={{ fontSize: 13, marginBottom: 10, color: "#374151" }}>
+              <strong>אחרון:</strong> {String(permLast.action)} · {permLast.at}
+              {permLast.deviceFingerprint ? (
+                <>
+                  {" "}
+                  · מכשיר <code dir="ltr">{String(permLast.deviceFingerprint).slice(0, 10)}…</code>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+          <div style={{ maxHeight: 260, overflow: "auto", border: "1px solid #e5e7eb", borderRadius: 10 }}>
+            {logLoading ? (
+              <div style={{ padding: 12 }}>טוען…</div>
+            ) : permLog.length === 0 ? (
+              <div style={{ padding: 12, color: "#6b7280" }}>אין רישומים.</div>
+            ) : (
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: "#f3f4f6", textAlign: "right" }}>
+                    <th style={{ padding: 8 }}>זמן</th>
+                    <th style={{ padding: 8 }}>פעולה</th>
+                    <th style={{ padding: 8 }}>מכשיר</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...permLog].reverse().map((rowItem, i) => (
+                    <tr key={i} style={{ borderTop: "1px solid #eee" }}>
+                      <td style={{ padding: 8 }} dir="ltr">
+                        {rowItem.at ?? "—"}
+                      </td>
+                      <td style={{ padding: 8 }}>{rowItem.action ?? "—"}</td>
+                      <td style={{ padding: 8 }} dir="ltr">
+                        {(rowItem.deviceFingerprint ?? "").slice(0, 8) || "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
           </div>
         </section>

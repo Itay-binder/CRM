@@ -113,7 +113,15 @@ function validateTemplateForMeta(template: WhatsAppTemplateRecord): void {
   if (/\{\{\s*\d+\s*\}\}/.test(template.headerText ?? "")) {
     issues.push("בכותרת טקסט אין תמיכה במשתנים ({{n}}) בגרסה זו.");
   }
-  for (const btn of template.buttonRows ?? []) {
+  const btnRows = template.buttonRows ?? [];
+  if (btnRows.length > 10) {
+    issues.push("מותר עד 10 כפתורים בתבנית (מדיניות Meta).");
+  }
+  const urlBtnCount = btnRows.filter((b) => b.type === "URL").length;
+  if (urlBtnCount > 2) {
+    issues.push("מותר עד 2 כפתורי URL בתבנית (מדיניות Meta).");
+  }
+  for (const btn of btnRows) {
     if (btn.type === "URL") {
       const url = (btn.url ?? "").trim();
       if (!url) {
@@ -192,7 +200,7 @@ export async function submitTemplateToMeta(
     });
   }
 
-  const buttons = t.buttonRows?.slice(0, 3) ?? [];
+  const buttons = t.buttonRows?.slice(0, 10) ?? [];
   if (buttons.length > 0) {
     const buttonsPayload = buttons.map((b) => {
       if (b.type === "URL") {
@@ -374,18 +382,21 @@ function mapMetaTemplateNode(node: MetaTemplateNode): MetaTemplateSnapshot | nul
     .map((x) => String(x ?? "").trim())
     .filter(Boolean);
   const buttons: Array<{ type: "QUICK_REPLY" | "URL"; text: string; url?: string }> = [];
+  let syncedUrl = 0;
   for (const b of buttonsComp?.buttons ?? []) {
+    if (buttons.length >= 10) break;
     const type = String(b.type ?? "").trim().toUpperCase();
     const text = String(b.text ?? "").trim().slice(0, 25);
     if (!text) continue;
     if (type === "URL") {
+      if (syncedUrl >= 2) continue;
       const url = String(b.url ?? "").trim();
       if (!url) continue;
       buttons.push({ type: "URL", text, url });
+      syncedUrl += 1;
     } else {
       buttons.push({ type: "QUICK_REPLY", text });
     }
-    if (buttons.length >= 3) break;
   }
 
   const headerFormat = mapMetaHeaderFormat(String(header?.format ?? ""));

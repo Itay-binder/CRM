@@ -81,7 +81,7 @@ export default function TemplatesPageClient() {
           if (b.type === "URL") return Boolean(b.url);
           return true;
         })
-        .slice(0, 3),
+        .slice(0, LIMITS.maxButtons),
     [tplButtonRows]
   );
 
@@ -100,7 +100,7 @@ export default function TemplatesPageClient() {
 
   const hasBlockingValidation = validationIssues.some((i) => i.level === "error");
 
-  const hasUrlButton = tplButtonRows.some((r) => r.type === "URL");
+  const urlButtonCount = tplButtonRows.filter((r) => r.type === "URL").length;
 
   useEffect(() => {
     setTplParameterSources((prev) => {
@@ -519,10 +519,13 @@ export default function TemplatesPageClient() {
           </div>
         ) : null}
         <div style={{ display: "grid", gap: 8 }}>
-          <div style={{ fontWeight: 700, fontSize: 13 }}>כפתורים (עד 3 — Quick Reply / URL)</div>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>
+            כפתורים (עד {LIMITS.maxButtons} — Quick Reply / URL)
+          </div>
           <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>
-            עד 3 כפתורים בסך הכול, ולכל היותר כפתור URL אחד. טקסט כפתור עד {LIMITS.buttonLabelMax} תווים (מטא).
-            URL מלא לכפתור קישור (ללא משתני דינמיקה בכתובת בגרסה זו).
+            לפי Meta Cloud API: עד {LIMITS.maxButtons} כפתורים, מתוכם עד {LIMITS.maxUrlButtons} מסוג URL; השאר — Quick
+            Reply. טקסט כפתור עד {LIMITS.buttonLabelMax} תווים. URL מלא לכפתור קישור (ללא משתני דינמיקה בכתובת בגרסה
+            זו).
           </p>
           {tplButtonRows.map((row, i) => (
             <div
@@ -549,8 +552,8 @@ export default function TemplatesPageClient() {
                 style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e5e7eb" }}
               >
                 <option value="QUICK_REPLY">Quick Reply</option>
-                <option value="URL" disabled={hasUrlButton && row.type !== "URL"}>
-                  URL (מקסימום 1)
+                <option value="URL" disabled={urlButtonCount >= LIMITS.maxUrlButtons && row.type !== "URL"}>
+                  URL (מקסימום {LIMITS.maxUrlButtons})
                 </option>
               </select>
               <input
@@ -591,7 +594,7 @@ export default function TemplatesPageClient() {
           ))}
           <button
             type="button"
-            disabled={tplButtonRows.length >= 3}
+            disabled={tplButtonRows.length >= LIMITS.maxButtons}
             onClick={() => setTplButtonRows((rows) => [...rows, { type: "QUICK_REPLY", text: "", url: "" }])}
             style={{
               justifySelf: "start",
@@ -600,7 +603,7 @@ export default function TemplatesPageClient() {
               border: "1px dashed #cbd5e1",
               background: "#f8fafc",
               fontWeight: 700,
-              cursor: tplButtonRows.length >= 3 ? "not-allowed" : "pointer",
+              cursor: tplButtonRows.length >= LIMITS.maxButtons ? "not-allowed" : "pointer",
             }}
           >
             + כפתור

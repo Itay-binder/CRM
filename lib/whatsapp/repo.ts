@@ -71,7 +71,7 @@ export type WhatsAppTemplateRecord = {
   footerText?: string;
   /** מיפוי {{1}}, {{2}}… — manual = מהדיוור או ערכי דוגמה */
   parameterSources?: TemplateParamSource[];
-  /** עד 3 כפתורים (Quick Reply / URL) לאישור במטא */
+  /** עד 10 כפתורים (Quick Reply / URL), עד 2 מסוג URL — לפי מדיניות Meta Cloud API */
   buttonRows?: WhatsAppTemplateButton[];
   status: WhatsAppTemplateStatus;
   metaTemplateId?: string;
@@ -81,6 +81,14 @@ export type WhatsAppTemplateRecord = {
   updatedAt: string;
 };
 
+/** לחיצה/בחירה על כפתור Quick Reply (או תשובת רשימה) ביחס להודעת התבנית שנשלחה בדיוור */
+export type WhatsAppDispatchInteraction = {
+  kind: "quick_reply" | "list_reply" | "button";
+  text: string;
+  payload?: string;
+  at: string;
+};
+
 export type WhatsAppCampaignDispatch = {
   contactId: string;
   contactName: string;
@@ -88,6 +96,12 @@ export type WhatsAppCampaignDispatch = {
   status: "sent" | "failed";
   messageId?: string;
   error?: string;
+  /** ISO — מ־webhook statuses כשמטא מדווחת מסירה */
+  deliveredAt?: string;
+  /** ISO — מ־webhook statuses כשמטא מדווחת קריאה */
+  readAt?: string;
+  /** תשובות משתמש לכפתורי תבנית (לא כולל לחיצות URL — אין webhook מטא לכך) */
+  interactions?: WhatsAppDispatchInteraction[];
 };
 
 export type WhatsAppCampaignRecord = {
@@ -154,18 +168,22 @@ function asStringArray(v: unknown): string[] {
     .filter(Boolean);
 }
 
+const META_MAX_TEMPLATE_BUTTONS = 10;
+const META_MAX_URL_BUTTONS = 2;
+
 function parseButtonRows(raw: unknown): WhatsAppTemplateRecord["buttonRows"] {
   if (!Array.isArray(raw)) return undefined;
   const out: NonNullable<WhatsAppTemplateRecord["buttonRows"]> = [];
   let urlUsed = 0;
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
+    if (out.length >= META_MAX_TEMPLATE_BUTTONS) break;
     const o = item as Record<string, unknown>;
     const type = asString(o.type).trim().toUpperCase();
     const text = asString(o.text).trim().slice(0, 25);
     if (!text) continue;
     if (type === "URL") {
-      if (urlUsed >= 1) continue;
+      if (urlUsed >= META_MAX_URL_BUTTONS) continue;
       const url = asString(o.url).trim();
       if (!url) continue;
       out.push({ type: "URL", text, url });
@@ -173,7 +191,28 @@ function parseButtonRows(raw: unknown): WhatsAppTemplateRecord["buttonRows"] {
     } else {
       out.push({ type: "QUICK_REPLY", text });
     }
-    if (out.length >= 3) break;
+  }
+  return out.length ? out : undefined;
+}
+
+function parseDispatchInteractions(raw: unknown): WhatsAppDispatchInteraction[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: WhatsAppDispatchInteraction[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    const kindRaw = asString(o.kind).trim().toLowerCase();
+    const text = asString(o.text).trim();
+    const at = asString(o.at).trim();
+    if (!text || !at) continue;
+    const kind =
+      kindRaw === "list_reply" ? "list_reply" : kindRaw === "button" ? "button" : "quick_reply";
+    out.push({
+      kind,
+      text,
+      at,
+      payload: asString(o.payload).trim() || undefined,
+    });
   }
   return out.length ? out : undefined;
 }
@@ -407,9 +446,14 @@ export async function listWhatsAppCampaigns(db: Firestore): Promise<WhatsAppCamp
             status: asString(x.status) === "sent" ? "sent" : "failed",
             messageId: asString(x.messageId) || undefined,
             error: asString(x.error) || undefined,
+            deliveredAt: asString(x.deliveredAt).trim() || undefined,
+            readAt: asString(x.readAt).trim() || undefined,
+            interactions: parseDispatchInteractions(x.interactions),
           };
         })
         .filter((x): x is WhatsAppCampaignDispatch => Boolean(x));
+      const sentCount = dispatches.filter((d) => d.status === "sent").length;
+      const failedCount = dispatches.filter((d) => d.status === "failed").length;
       return {
         id,
         broadcastName: asString(row.broadcastName).trim() || undefined,
@@ -417,9 +461,9 @@ export async function listWhatsAppCampaigns(db: Firestore): Promise<WhatsAppCamp
         templateName: asString(row.templateName),
         templateLanguage: asString(row.templateLanguage),
         parameterValues: asStringArray(row.parameterValues),
-        recipientCount: Number(row.recipientCount ?? 0),
-        sentCount: Number(row.sentCount ?? 0),
-        failedCount: Number(row.failedCount ?? 0),
+        recipientCount: dispatches.length,
+        sentCount,
+        failedCount,
         createdBy: asString(row.createdBy),
         createdAt: asString(row.createdAt),
         dispatches,
@@ -439,6 +483,101 @@ export async function appendWhatsAppCampaign(
     .collection(COLLECTION)
     .doc(CAMPAIGNS_DOC_ID)
     .set(stripUndefinedForFirestore({ campaigns: next }), { merge: true });
+}
+
+/** עדכון סטטוסי מסירה/קריאה/כשל מ־webhook מטא (התאמה לפי wamid של ההודעה היוצאת) */
+export async function applyWhatsAppCampaignMessageStatuses(
+  db: Firestore,
+  rows: Array<{ messageId: string; status: string; tsIso: string; error?: string }>
+): Promise<void> {
+  if (!rows.length) return;
+  const byMid = new Map<string, { failed?: string; deliveredAt?: string; readAt?: string }>();
+  for (const r of rows) {
+    const mid = r.messageId.trim();
+    if (!mid) continue;
+    const acc = byMid.get(mid) ?? {};
+    const st = r.status.trim().toLowerCase();
+    if (st === "failed" || st === "undeliverable") {
+      acc.failed = r.error?.trim() || "Delivery failed";
+    } else if (!acc.failed) {
+      if (st === "delivered") {
+        acc.deliveredAt = acc.deliveredAt ?? r.tsIso;
+      } else if (st === "read") {
+        acc.readAt = r.tsIso;
+        acc.deliveredAt = acc.deliveredAt ?? r.tsIso;
+      }
+    }
+    byMid.set(mid, acc);
+  }
+  if (!byMid.size) return;
+
+  const campaigns = await listWhatsAppCampaigns(db);
+  let changed = false;
+  const next = campaigns.map((c) => {
+    let touched = false;
+    const dispatches = c.dispatches.map((d) => {
+      const mid = (d.messageId ?? "").trim();
+      if (!mid) return d;
+      const acc = byMid.get(mid);
+      if (!acc) return d;
+      touched = true;
+      let nextD: WhatsAppCampaignDispatch = { ...d };
+      if (acc.failed) {
+        nextD = {
+          ...nextD,
+          status: "failed",
+          error: acc.failed,
+        };
+      }
+      if (acc.deliveredAt) {
+        nextD = { ...nextD, deliveredAt: nextD.deliveredAt ?? acc.deliveredAt };
+      }
+      if (acc.readAt) {
+        nextD = { ...nextD, readAt: acc.readAt, deliveredAt: nextD.deliveredAt ?? acc.deliveredAt };
+      }
+      return nextD;
+    });
+    if (!touched) return c;
+    changed = true;
+    const sentCount = dispatches.filter((x) => x.status === "sent").length;
+    const failedCount = dispatches.filter((x) => x.status === "failed").length;
+    return { ...c, dispatches, sentCount, failedCount, recipientCount: dispatches.length };
+  });
+  if (!changed) return;
+  await db
+    .collection(COLLECTION)
+    .doc(CAMPAIGNS_DOC_ID)
+    .set(stripUndefinedForFirestore({ campaigns: next }), { merge: true });
+}
+
+/** רישום בחירת כפתור/תשובה מהלקוח על הודעת תבנית (context.id = wamid של ההודעה שנשלחה בדיוור) */
+export async function appendWhatsAppCampaignDispatchInteraction(
+  db: Firestore,
+  contextMessageId: string,
+  interaction: WhatsAppDispatchInteraction
+): Promise<boolean> {
+  const ctx = contextMessageId.trim();
+  if (!ctx) return false;
+  const campaigns = await listWhatsAppCampaigns(db);
+  let changed = false;
+  const next = campaigns.map((c) => {
+    let touched = false;
+    const dispatches = c.dispatches.map((d) => {
+      if ((d.messageId ?? "").trim() !== ctx) return d;
+      touched = true;
+      const prev = d.interactions ?? [];
+      return { ...d, interactions: [...prev, interaction] };
+    });
+    if (!touched) return c;
+    changed = true;
+    return { ...c, dispatches };
+  });
+  if (!changed) return false;
+  await db
+    .collection(COLLECTION)
+    .doc(CAMPAIGNS_DOC_ID)
+    .set(stripUndefinedForFirestore({ campaigns: next }), { merge: true });
+  return true;
 }
 
 function parseAudienceConditions(raw: unknown): AudienceCondition[] {

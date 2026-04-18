@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 
@@ -9,6 +9,18 @@ type DraftRow = {
   name: string;
   templateId: string;
   updatedAt: string;
+};
+
+type CampaignDispatchRow = {
+  contactId: string;
+  contactName: string;
+  to: string;
+  status: "sent" | "failed";
+  messageId?: string;
+  error?: string;
+  deliveredAt?: string;
+  readAt?: string;
+  interactions?: Array<{ kind: string; text: string; payload?: string; at: string }>;
 };
 
 type CampaignRow = {
@@ -22,10 +34,41 @@ type CampaignRow = {
   failedCount: number;
   createdBy: string;
   createdAt: string;
+  dispatches?: CampaignDispatchRow[];
 };
+
+type ModalState = { title: string; rows: CampaignDispatchRow[] } | null;
 
 async function parseJson<T>(res: Response): Promise<T> {
   return (await res.json().catch(() => ({}))) as T;
+}
+
+function countDelivered(dispatches: CampaignDispatchRow[] | undefined): number {
+  const d = dispatches ?? [];
+  return d.filter((x) => x.status === "sent" && (Boolean(x.deliveredAt) || Boolean(x.readAt))).length;
+}
+
+function countRead(dispatches: CampaignDispatchRow[] | undefined): number {
+  const d = dispatches ?? [];
+  return d.filter((x) => Boolean(x.readAt)).length;
+}
+
+function countWithInteractions(dispatches: CampaignDispatchRow[] | undefined): number {
+  const d = dispatches ?? [];
+  return d.filter((x) => (x.interactions?.length ?? 0) > 0).length;
+}
+
+function countBtnStyle(disabled: boolean): CSSProperties {
+  return {
+    border: "none",
+    background: "transparent",
+    cursor: disabled ? "default" : "pointer",
+    padding: 0,
+    font: "inherit",
+    fontWeight: 800,
+    color: disabled ? "#9ca3af" : "#2563eb",
+    textDecoration: disabled ? "none" : "underline",
+  };
 }
 
 export default function BroadcastsHomeClient() {
@@ -33,6 +76,7 @@ export default function BroadcastsHomeClient() {
   const [err, setErr] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<DraftRow[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  const [modal, setModal] = useState<ModalState>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -134,6 +178,123 @@ export default function BroadcastsHomeClient() {
         <div style={{ padding: 12, borderRadius: 10, background: "#fef2f2", color: "#991b1b", marginBottom: 12 }}>{err}</div>
       ) : null}
 
+      {modal ? (
+        <div
+          role="dialog"
+          aria-modal
+          aria-labelledby="campaign-detail-title"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 50,
+            background: "rgba(15,23,42,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+          onClick={() => setModal(null)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setModal(null);
+          }}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: 14,
+              maxWidth: 720,
+              width: "100%",
+              maxHeight: "min(85vh, 720px)",
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+              boxShadow: "0 20px 50px rgba(0,0,0,0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: "14px 18px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", gap: 12 }}>
+              <h2 id="campaign-detail-title" style={{ margin: 0, fontSize: 17, fontWeight: 900, flex: 1 }}>
+                {modal.title}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setModal(null)}
+                style={{
+                  border: "none",
+                  background: "#f3f4f6",
+                  borderRadius: 10,
+                  padding: "8px 14px",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                }}
+              >
+                סגור
+              </button>
+            </div>
+            <div style={{ overflow: "auto", padding: "0 12px 12px" }}>
+              {modal.rows.length === 0 ? (
+                <p style={{ padding: 16, color: "#6b7280", margin: 0 }}>אין רשומות בקבוצה זו (או שעדיין לא התקבל מידע ממטא).</p>
+              ) : (
+                <table style={{ ...tableStyle, fontSize: 13 }}>
+                  <thead>
+                    <tr>
+                      <th style={th}>איש קשר</th>
+                      <th style={th}>טלפון</th>
+                      <th style={th}>סטטוס שליחה</th>
+                      <th style={th}>נמסר</th>
+                      <th style={th}>נקרא</th>
+                      <th style={th}>בחירות / כפתורים</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {modal.rows.map((r, idx) => (
+                      <tr key={`${r.contactId}-${r.to}-${idx}`}>
+                        <td style={{ ...td, fontWeight: 700 }}>{r.contactName || "—"}</td>
+                        <td style={{ ...td }} dir="ltr">
+                          {r.to}
+                        </td>
+                        <td style={{ ...td }}>
+                          {r.status === "sent" ? (
+                            <span style={{ color: "#065f46" }}>נשלח</span>
+                          ) : (
+                            <span style={{ color: "#b91c1c" }}>נכשל{r.error ? `: ${r.error}` : ""}</span>
+                          )}
+                        </td>
+                        <td style={{ ...td, fontSize: 12 }} dir="ltr">
+                          {r.deliveredAt ? formatIsraelDateTime(r.deliveredAt) : "—"}
+                        </td>
+                        <td style={{ ...td, fontSize: 12 }} dir="ltr">
+                          {r.readAt ? formatIsraelDateTime(r.readAt) : "—"}
+                        </td>
+                        <td style={{ ...td, fontSize: 12, maxWidth: 260 }}>
+                          {(r.interactions ?? []).length ? (
+                            <ul style={{ margin: 0, paddingInlineStart: 18 }}>
+                              {(r.interactions ?? []).map((it, i) => (
+                                <li key={i} style={{ marginBottom: 4 }}>
+                                  <strong>{it.text}</strong>
+                                  {it.payload ? (
+                                    <span style={{ color: "#64748b" }}> ({it.payload})</span>
+                                  ) : null}
+                                  <div style={{ color: "#94a3b8", fontSize: 11 }} dir="ltr">
+                                    {formatIsraelDateTime(it.at)} · {it.kind}
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {loading ? (
         <div style={{ color: "#6b7280" }}>טוען…</div>
       ) : (
@@ -212,38 +373,131 @@ export default function BroadcastsHomeClient() {
                     <th style={th} />
                     <th style={th}>שם</th>
                     <th style={th}>התחלה</th>
-                    <th style={th}>נשלחו</th>
+                    <th style={th}>נמענים</th>
                     <th style={th}>הצליחו</th>
                     <th style={th}>נכשלו</th>
+                    <th style={th}>נמסרו</th>
+                    <th style={th}>נקראו</th>
+                    <th style={th}>בחירות</th>
                     <th style={th}>פעולות</th>
                   </tr>
                 </thead>
                 <tbody>
                   {campaigns.length === 0 ? (
                     <tr>
-                      <td colSpan={7} style={{ ...td, color: "#6b7280" }}>
+                      <td colSpan={10} style={{ ...td, color: "#6b7280" }}>
                         עדיין לא נשלחו ברודקאסטים.
                       </td>
                     </tr>
                   ) : (
                     campaigns.map((c) => {
-                      const pct =
-                        c.recipientCount > 0 ? ((100 * c.sentCount) / c.recipientCount).toFixed(1) : "0";
+                      const disp = c.dispatches ?? [];
+                      const pct = c.recipientCount > 0 ? ((100 * c.sentCount) / c.recipientCount).toFixed(1) : "0";
+                      const del = countDelivered(disp);
+                      const reads = countRead(disp);
+                      const inter = countWithInteractions(disp);
                       return (
                         <tr key={c.id}>
                           <td style={td}>
-                            <span style={{ fontSize: 18 }} title="WhatsApp">📱</span>
+                            <span style={{ fontSize: 18 }} title="WhatsApp">
+                              📱
+                            </span>
                           </td>
                           <td style={{ ...td, fontWeight: 700 }}>{c.broadcastName || c.templateName}</td>
                           <td style={{ ...td, fontSize: 13, color: "#6b7280" }} dir="ltr">
                             {formatIsraelDateTime(c.createdAt)}
                           </td>
-                          <td style={td}>{c.recipientCount}</td>
-                          <td style={{ ...td, color: "#065f46", fontWeight: 700 }}>
-                            {c.sentCount}{" "}
-                            <span style={{ fontWeight: 500, color: "#6b7280", fontSize: 12 }}>({pct}%)</span>
+                          <td style={td}>
+                            <button
+                              type="button"
+                              style={countBtnStyle(disp.length === 0)}
+                              disabled={disp.length === 0}
+                              onClick={() =>
+                                setModal({
+                                  title: `${c.broadcastName || c.templateName} — כל הנמענים`,
+                                  rows: disp,
+                                })
+                              }
+                            >
+                              {c.recipientCount}
+                            </button>
                           </td>
-                          <td style={{ ...td, color: c.failedCount ? "#b91c1c" : "#6b7280" }}>{c.failedCount}</td>
+                          <td style={{ ...td, color: "#065f46", fontWeight: 700 }}>
+                            <button
+                              type="button"
+                              style={countBtnStyle(c.sentCount === 0)}
+                              disabled={c.sentCount === 0}
+                              onClick={() =>
+                                setModal({
+                                  title: `${c.broadcastName || c.templateName} — נשלחו בהצלחה`,
+                                  rows: disp.filter((d) => d.status === "sent"),
+                                })
+                              }
+                            >
+                              {c.sentCount}
+                            </button>
+                            <span style={{ fontWeight: 500, color: "#6b7280", fontSize: 12 }}> ({pct}%)</span>
+                          </td>
+                          <td style={{ ...td, color: c.failedCount ? "#b91c1c" : "#6b7280" }}>
+                            <button
+                              type="button"
+                              style={countBtnStyle(c.failedCount === 0)}
+                              disabled={c.failedCount === 0}
+                              onClick={() =>
+                                setModal({
+                                  title: `${c.broadcastName || c.templateName} — כשלון שליחה`,
+                                  rows: disp.filter((d) => d.status === "failed"),
+                                })
+                              }
+                            >
+                              {c.failedCount}
+                            </button>
+                          </td>
+                          <td style={td}>
+                            <button
+                              type="button"
+                              style={countBtnStyle(del === 0)}
+                              disabled={del === 0}
+                              onClick={() =>
+                                setModal({
+                                  title: `${c.broadcastName || c.templateName} — נמסרו (מסירת מטא)`,
+                                  rows: disp.filter((d) => d.status === "sent" && (d.deliveredAt || d.readAt)),
+                                })
+                              }
+                            >
+                              {del}
+                            </button>
+                          </td>
+                          <td style={td}>
+                            <button
+                              type="button"
+                              style={countBtnStyle(reads === 0)}
+                              disabled={reads === 0}
+                              onClick={() =>
+                                setModal({
+                                  title: `${c.broadcastName || c.templateName} — נקראו`,
+                                  rows: disp.filter((d) => Boolean(d.readAt)),
+                                })
+                              }
+                            >
+                              {reads}
+                            </button>
+                          </td>
+                          <td style={td}>
+                            <button
+                              type="button"
+                              style={countBtnStyle(inter === 0)}
+                              disabled={inter === 0}
+                              onClick={() =>
+                                setModal({
+                                  title: `${c.broadcastName || c.templateName} — בחירות בכפתור / תשובה`,
+                                  rows: disp.filter((d) => (d.interactions?.length ?? 0) > 0),
+                                })
+                              }
+                            >
+                              {inter}
+                            </button>
+                          </td>
                           <td style={{ ...td, width: 170 }}>
                             <Link
                               href={`/whatsapp-automations/broadcasts/new?campaign=${encodeURIComponent(c.id)}`}
@@ -269,8 +523,11 @@ export default function BroadcastsHomeClient() {
                 </tbody>
               </table>
             </div>
-            <div style={{ fontSize: 12, color: "#9ca3af", padding: "10px 16px", borderTop: "1px solid #f9fafb" }}>
-              אחוזי מסירה/נקרא/קליק דורשים Webhook סטטוסים ממטא — ניתן להוסיף בשלב הבא.
+            <div style={{ fontSize: 12, color: "#64748b", padding: "10px 16px", borderTop: "1px solid #f9fafb", lineHeight: 1.55 }}>
+              נמסרו / נקראו מתעדכנים מ־webhook מטא (שדה <code style={{ fontSize: 11 }}>statuses</code>). בחירות בכפתור Quick Reply או
+              תשובת רשימה נרשמות כשמטא שולחת הודעה נכנסת עם <code style={{ fontSize: 11 }}>context.id</code> של הודעת התבנית.
+              <strong> לחיצות על כפתור URL</strong> בתבנית <strong>אינן</strong> נשלחות ל־webhook — מעקב אפשרי רק עם קישורים ייעודיים
+              (למשל עם פרמטרים לשרת האתר שלכם). תבניות: עד 10 כפתורים, עד 2 מסוג URL — לפי מדיניות Meta Cloud API.
             </div>
           </div>
         </>

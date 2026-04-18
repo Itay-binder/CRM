@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getFirestoreForWhatsAppWebhook } from "@/lib/firebase/admin";
 import { normalizePhone, setLeadWhatsAppMarketingApprovalByPhone } from "@/lib/leads/repo";
-import { appendWhatsAppChatMessage } from "@/lib/whatsapp/repo";
+import {
+  appendWhatsAppCampaignDispatchInteraction,
+  appendWhatsAppChatMessage,
+  applyWhatsAppCampaignMessageStatuses,
+  type WhatsAppDispatchInteraction,
+} from "@/lib/whatsapp/repo";
 
 export const dynamic = "force-dynamic";
 
@@ -11,14 +16,28 @@ type MetaWebhookMessage = {
   timestamp?: string | number;
   type?: string;
   text?: { body?: string };
-  button?: { text?: string };
-  interactive?: { button_reply?: { title?: string }; list_reply?: { title?: string } };
+  button?: { text?: string; payload?: string };
+  interactive?: {
+    type?: string;
+    button_reply?: { id?: string; title?: string };
+    list_reply?: { id?: string; title?: string };
+  };
+  context?: { from?: string; id?: string };
+};
+
+type MetaWebhookStatus = {
+  id?: string;
+  status?: string;
+  timestamp?: string | number;
+  recipient_id?: string;
+  errors?: Array<{ code?: unknown; title?: string; message?: string }>;
 };
 
 type MetaWebhookValue = {
   metadata?: { display_phone_number?: string };
   contacts?: Array<{ wa_id?: string; profile?: { name?: string } }>;
   messages?: MetaWebhookMessage[];
+  statuses?: MetaWebhookStatus[];
 };
 
 function extractInboundText(message: MetaWebhookMessage): string {
@@ -31,6 +50,83 @@ function extractInboundText(message: MetaWebhookMessage): string {
   const listReply = message.interactive?.list_reply?.title?.trim();
   if (listReply) return listReply;
   return "";
+}
+
+function extractDispatchInteraction(
+  message: MetaWebhookMessage,
+  tsIso: string
+): { interaction: WhatsAppDispatchInteraction; contextMessageId: string } | null {
+  const ctxId = message.context?.id?.trim();
+  if (!ctxId) return null;
+  const t = (message.type ?? "").trim().toLowerCase();
+  if (t === "button") {
+    const text = message.button?.text?.trim() || "";
+    if (!text) return null;
+    return {
+      contextMessageId: ctxId,
+      interaction: {
+        kind: "button",
+        text,
+        payload: message.button?.payload?.trim() || undefined,
+        at: tsIso,
+      },
+    };
+  }
+  if (t === "interactive") {
+    const it = message.interactive?.type?.trim().toLowerCase();
+    if (it === "button_reply") {
+      const title = message.interactive?.button_reply?.title?.trim() || "";
+      if (!title) return null;
+      return {
+        contextMessageId: ctxId,
+        interaction: {
+          kind: "quick_reply",
+          text: title,
+          payload: message.interactive?.button_reply?.id?.trim() || undefined,
+          at: tsIso,
+        },
+      };
+    }
+    if (it === "list_reply") {
+      const title = message.interactive?.list_reply?.title?.trim() || "";
+      if (!title) return null;
+      return {
+        contextMessageId: ctxId,
+        interaction: {
+          kind: "list_reply",
+          text: title,
+          payload: message.interactive?.list_reply?.id?.trim() || undefined,
+          at: tsIso,
+        },
+      };
+    }
+  }
+  return null;
+}
+
+function messageTimestampToIso(raw: string | number | undefined): string {
+  const rawTs = raw;
+  const tsSec =
+    typeof rawTs === "number" && Number.isFinite(rawTs)
+      ? rawTs
+      : typeof rawTs === "string" && /^\d+$/.test(rawTs.trim())
+        ? Number.parseInt(rawTs.trim(), 10)
+        : NaN;
+  return Number.isFinite(tsSec) ? new Date(tsSec * 1000).toISOString() : new Date().toISOString();
+}
+
+function statusErrorsText(errors: MetaWebhookStatus["errors"]): string | undefined {
+  if (!Array.isArray(errors) || errors.length === 0) return undefined;
+  const parts = errors
+    .map((e) => {
+      if (!e || typeof e !== "object") return "";
+      const title = typeof e.title === "string" ? e.title.trim() : "";
+      const msg = typeof e.message === "string" ? e.message.trim() : "";
+      const code = e.code !== undefined ? String(e.code) : "";
+      return [title, msg, code ? `#${code}` : ""].filter(Boolean).join(" ");
+    })
+    .filter(Boolean);
+  return parts.length ? parts.join("; ") : undefined;
 }
 
 function isOptOutKeyword(text: string): boolean {
@@ -71,26 +167,36 @@ export async function POST(req: NextRequest) {
 
   try {
     const db = getFirestoreForWhatsAppWebhook();
+    const statusRows: Array<{ messageId: string; status: string; tsIso: string; error?: string }> = [];
     const entries = Array.isArray(body.entry) ? body.entry : [];
     for (const entry of entries) {
       const changes = Array.isArray(entry.changes) ? entry.changes : [];
       for (const change of changes) {
         const value = change.value;
         if (!value) continue;
+
+        const statuses = Array.isArray(value.statuses) ? value.statuses : [];
+        for (const st of statuses) {
+          const messageId = (st.id ?? "").trim();
+          const status = (st.status ?? "").trim();
+          if (!messageId || !status) continue;
+          const tsIso = messageTimestampToIso(st.timestamp);
+          const err = statusErrorsText(st.errors);
+          statusRows.push({ messageId, status, tsIso, error: err });
+        }
+
         const messages = Array.isArray(value.messages) ? value.messages : [];
         const businessPhone = normalizePhone(value.metadata?.display_phone_number) ?? "";
         for (const msg of messages) {
           const from = normalizePhone(msg.from) ?? "";
           if (!from) continue;
+          const tsInbound = messageTimestampToIso(msg.timestamp);
+          const extracted = extractDispatchInteraction(msg, tsInbound);
+          if (extracted) {
+            await appendWhatsAppCampaignDispatchInteraction(db, extracted.contextMessageId, extracted.interaction);
+          }
+
           const text = extractInboundText(msg);
-          const rawTs = msg.timestamp;
-          const tsSec =
-            typeof rawTs === "number" && Number.isFinite(rawTs)
-              ? rawTs
-              : typeof rawTs === "string" && /^\d+$/.test(rawTs.trim())
-                ? Number.parseInt(rawTs.trim(), 10)
-                : NaN;
-          const ts = Number.isFinite(tsSec) ? new Date(tsSec * 1000).toISOString() : new Date().toISOString();
           const contacts = Array.isArray(value.contacts) ? value.contacts : [];
           const byWa = contacts.find((c) => (normalizePhone(c.wa_id) ?? "") === from);
           const fallback = contacts[0];
@@ -115,8 +221,8 @@ export async function POST(req: NextRequest) {
             text: text || `[${msg.type || "message"}]`,
             from,
             to: businessPhone || "business",
-            createdAt: ts,
-            messageId: msg.id,
+            createdAt: tsInbound,
+            messageId: msg.id?.trim(),
             contactId: leadId,
             contactName,
             marketingApproved,
@@ -124,6 +230,11 @@ export async function POST(req: NextRequest) {
         }
       }
     }
+
+    if (statusRows.length > 0) {
+      await applyWhatsAppCampaignMessageStatuses(db, statusRows);
+    }
+
     return NextResponse.json({ ok: true, received: true });
   } catch (e) {
     return NextResponse.json(

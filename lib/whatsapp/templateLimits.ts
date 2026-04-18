@@ -1,13 +1,16 @@
 import type { WhatsAppTemplateButton, WhatsAppTemplateRecord } from "@/lib/whatsapp/repo";
 
-/** מגבלות נפוצות לתבניות WhatsApp (Marketing/Utility) — לעדכון לפי מדיניות מטא */
+/**
+ * מגבלות תבנית WhatsApp Cloud API (כפתורי BODY / BUTTONS).
+ * לפי תיעוד Meta: עד 10 כפתורים בסך הכול, מתוכם עד 2 מסוג URL (שאר — Quick Reply וכו׳).
+ */
 export const LIMITS = {
   bodyTextMax: 1024,
   footerMax: 60,
   headerTextMax: 60,
   buttonLabelMax: 25,
-  maxButtons: 3,
-  maxUrlButtons: 1,
+  maxButtons: 10,
+  maxUrlButtons: 2,
 } as const;
 
 export type TemplateValidationIssue = { level: "error" | "warn"; message: string };

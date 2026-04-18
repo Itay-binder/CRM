@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const SESSION_MS = 24 * 60 * 60 * 1000;
 
@@ -156,6 +156,9 @@ export default function ChatsInboxClient() {
   const [sending, setSending] = useState(false);
   const [isNarrow, setIsNarrow] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("list");
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
+  const prevMsgLenRef = useRef(0);
+  const prevLastMsgIdRef = useRef("");
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 768px)");
@@ -245,16 +248,16 @@ export default function ChatsInboxClient() {
     })();
   }, [loadThreads]);
 
-  /** פולינג: רשימה = query אחד; שיחה פתוחה = רק מסמך השיחה (לא טוען את כל הרשימה בכל פעם). רענון רשימה מלא מדי ~60 שניות כשיש שיחה פתוחה. */
+  /** פולינג: שיחה פתוחה נטענת בתדירות גבוהה; רשימת השיחות — בתדירות נמוכה יותר כדי לחסוך קריאות. */
   useEffect(() => {
     let tick = 0;
-    const POLL_MS = 15_000;
+    const POLL_MS = 8000;
     const t = window.setInterval(() => {
       tick += 1;
       if (document.visibilityState === "hidden") return;
       if (selectedId) {
         void loadThread(selectedId).catch(() => {});
-        if (tick % 4 === 0) void loadThreads().catch(() => {});
+        if (tick % 3 === 0) void loadThreads().catch(() => {});
       } else {
         void loadThreads().catch(() => {});
       }
@@ -266,6 +269,24 @@ export default function ChatsInboxClient() {
     if (!selectedId) return;
     void loadThread(selectedId).catch((e) => setErr(e instanceof Error ? e.message : "שגיאה"));
   }, [selectedId, loadThread]);
+
+  useEffect(() => {
+    prevMsgLenRef.current = 0;
+    prevLastMsgIdRef.current = "";
+  }, [selectedId]);
+
+  useEffect(() => {
+    const el = messagesScrollRef.current;
+    const list = active?.messages;
+    if (!el || !list?.length) return;
+    const last = list[list.length - 1];
+    const lastId = last?.id ?? "";
+    const len = list.length;
+    const grew = len > prevMsgLenRef.current || lastId !== prevLastMsgIdRef.current;
+    prevMsgLenRef.current = len;
+    prevLastMsgIdRef.current = lastId;
+    if (grew) el.scrollTop = el.scrollHeight;
+  }, [active?.messages]);
 
   const selectedMeta = useMemo(() => threads.find((t) => t.id === selectedId) ?? null, [threads, selectedId]);
 
@@ -444,10 +465,12 @@ export default function ChatsInboxClient() {
           gridTemplateColumns: isNarrow
             ? "1fr"
             : "minmax(280px, 1fr) minmax(0, 2.2fr) minmax(220px, 1fr)",
+          gridTemplateRows: "1fr",
           border: `1px solid ${C.hairline}`,
           borderRadius: 12,
           overflow: "hidden",
           minHeight: isNarrow ? 420 : 560,
+          height: isNarrow ? "min(calc(100dvh - 280px), 720px)" : "min(78vh, 820px)",
           maxHeight: isNarrow ? "min(calc(100dvh - 280px), 720px)" : "min(78vh, 820px)",
           background: C.panel,
           boxShadow: "0 1px 3px rgba(11,20,26,0.08)",
@@ -461,6 +484,9 @@ export default function ChatsInboxClient() {
             borderInlineEnd: isNarrow ? "none" : `1px solid ${C.hairline}`,
             background: C.panel,
             minWidth: 0,
+            minHeight: 0,
+            height: "100%",
+            overflow: "hidden",
           }}
         >
           <div
@@ -636,6 +662,9 @@ export default function ChatsInboxClient() {
             display: isNarrow && mobilePanel !== "chat" ? "none" : "flex",
             flexDirection: "column",
             minWidth: 0,
+            minHeight: 0,
+            height: "100%",
+            overflow: "hidden",
             background: C.chatWall,
           }}
         >
@@ -706,6 +735,7 @@ export default function ChatsInboxClient() {
           </header>
 
           <div
+            ref={messagesScrollRef}
             style={{
               flex: 1,
               overflow: "auto",
@@ -916,6 +946,8 @@ export default function ChatsInboxClient() {
             flexDirection: "column",
             overflow: "auto",
             minWidth: 0,
+            minHeight: 0,
+            height: "100%",
           }}
         >
           <div style={{ padding: 20, textAlign: "center", borderBottom: `1px solid ${C.hairline}` }}>

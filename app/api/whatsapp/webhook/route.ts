@@ -247,6 +247,17 @@ export async function POST(req: NextRequest) {
             waProfilePictureUrl,
             marketingApproved,
           });
+          void import("@/lib/push/sendTenantWebPush")
+            .then(({ notifyTenantUsersWebPush }) =>
+              notifyTenantUsersWebPush(db, {
+                kind: "whatsapp_inbound",
+                title: "הודעת וואטסאפ נכנסה",
+                body: `מ־${from}${contactName ? ` · ${contactName}` : ""}`.trim().slice(0, 180),
+                relativeUrl: `/whatsapp-automations/chats?thread=${encodeURIComponent(from)}`,
+                tag: `wa-${from}-${msg.id?.trim() || tsInbound}`,
+              })
+            )
+            .catch(() => {});
         }
       }
     }

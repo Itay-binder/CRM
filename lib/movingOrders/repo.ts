@@ -293,6 +293,17 @@ export async function upsertMovingOrderFromIngest(
       },
       { merge: true }
     );
+    void import("@/lib/push/sendTenantWebPush")
+      .then(({ notifyTenantUsersWebPush }) =>
+        notifyTenantUsersWebPush(d, {
+          kind: "new_order",
+          title: "הזמנה חדשה במערכת",
+          body: `${orderId} · ${payload.name ?? ""}`.trim().slice(0, 180),
+          relativeUrl: "/orders",
+          tag: `order-${docId}-${Date.now()}`,
+        })
+      )
+      .catch(() => {});
   }
   const again = await ref.get();
   return mapDoc(again.id, (again.data() ?? {}) as Record<string, unknown>);
@@ -363,6 +374,17 @@ export async function createMovingOrderManual(
     status: "pending" as MovingOrderStatus,
     dispatchedAt: null,
   });
+  void import("@/lib/push/sendTenantWebPush")
+    .then(({ notifyTenantUsersWebPush }) =>
+      notifyTenantUsersWebPush(d, {
+        kind: "new_order",
+        title: "הזמנה חדשה במערכת",
+        body: `${orderId} · ${payload.name ?? ""}`.trim().slice(0, 180),
+        relativeUrl: "/orders",
+        tag: `order-${docId}-${Date.now()}`,
+      })
+    )
+    .catch(() => {});
   const again = await ref.get();
   return mapDoc(again.id, (again.data() ?? {}) as Record<string, unknown>);
 }

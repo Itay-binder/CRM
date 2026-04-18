@@ -260,6 +260,17 @@ export async function upsertLead(input: LeadUpsertInput): Promise<LeadRecord> {
         source: source ?? null,
       },
     });
+    void import("@/lib/push/sendTenantWebPush")
+      .then(({ notifyTenantUsersWebPush }) =>
+        notifyTenantUsersWebPush(db, {
+          kind: "new_lead",
+          title: "ליד חדש ב־CRM",
+          body: `${name || "ללא שם"} · ${picked.phone ?? picked.email ?? ""}`.trim().slice(0, 180),
+          relativeUrl: `/contacts?openContactId=${encodeURIComponent(picked.docId)}`,
+          tag: `lead-${picked.docId}-${Date.now()}`,
+        })
+      )
+      .catch(() => {});
   } else {
     const prev = (snap.data() ?? {}) as Record<string, unknown>;
     const payload: Record<string, unknown> = {

@@ -9,7 +9,8 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-function userDocumentId(email: string | undefined, uid: string): string {
+/** מזהה מסמך users — זהה ל־ensureUserDoc / getUserProfile */
+export function userFirestoreDocumentId(email: string | undefined, uid: string): string {
   if (email?.includes("@")) return normalizeEmail(email);
   return uid;
 }
@@ -44,7 +45,7 @@ export async function getUserProfile(
   email: string | undefined,
   db: Firestore
 ): Promise<UserProfile | null> {
-  const docId = userDocumentId(email, uid);
+  const docId = userFirestoreDocumentId(email, uid);
   const snap = await db.collection("users").doc(docId).get();
   if (!snap.exists) return null;
 
@@ -65,7 +66,7 @@ export async function ensureUserDoc(
 ): Promise<UserProfile> {
   const admin = isAdminEmail(email);
   const member = isTenantMember(email, tenant);
-  const docId = userDocumentId(email, uid);
+  const docId = userFirestoreDocumentId(email, uid);
   const ref = db.collection("users").doc(docId);
 
   const snap = await ref.get();

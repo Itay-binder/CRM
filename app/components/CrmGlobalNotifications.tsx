@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import { mutate } from "swr";
 import { CRM_NOTIFICATION_SCHEMA_VERSION } from "@/lib/crmNotificationPrefsSchema";
 
 const PREFS_KEY = "liftygo_crm_notification_prefs";
@@ -283,6 +284,9 @@ export default function CrmGlobalNotifications() {
             `order-${j.latestOrder.id}`
           );
         }
+        /** אותו poll כבר רץ כל ~4ש׳ — מרענן את רשימות ההזמנות בלי להמתין ל־focus */
+        void mutate("crm-moving-orders");
+        void mutate("crm-moving-orders-by-opportunities");
       }
       orderBaselineRef.current = { id: j.latestOrder.id, createdAt: j.latestOrder.createdAt };
     }

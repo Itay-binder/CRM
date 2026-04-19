@@ -207,6 +207,18 @@ export function readSmallMoverAnswer(merged: Record<string, unknown> | undefined
   return readBoolYes(merged, [MOVER_FIELD_IDS.small]) ? "כן" : "לא";
 }
 
+/**
+ * בהתאמת הזמנת הובלה קטנה: ערך מפורש ב־opportunity_small_mover קובע לפני נפילה לשדות איש הקשר,
+ * כדי ש־TRUE בהזדמנות יספיק גם כששדות אחרים על הליד אינם מיושרים.
+ */
+export function readSmallMoverAnswerForSmallMoveOrder(merged: Record<string, unknown> | undefined): string {
+  const rawOpp = merged?.[MOVER_OPPORTUNITY_FIELD_IDS.smallMover];
+  const tOpp = triStateYesNo(rawOpp);
+  if (tOpp === true) return "כן";
+  if (tOpp === false) return "לא";
+  return readSmallMoverAnswer(merged);
+}
+
 export function readApartmentMoverAnswer(merged: Record<string, unknown> | undefined): string {
   const rawOpp = readFirstTruthyField(merged, [MOVER_OPPORTUNITY_FIELD_IDS.apartmentMover]);
   let t = triStateYesNo(rawOpp);

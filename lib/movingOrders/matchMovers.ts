@@ -17,7 +17,7 @@ import {
   readApartmentMoverAnswer,
   readFirstTruthyField,
   readMoverRegionsText,
-  readSmallMoverAnswer,
+  readSmallMoverAnswerForSmallMoveOrder,
   triStateYesNo,
 } from "@/lib/movingOrders/moverFieldReaders";
 
@@ -215,14 +215,34 @@ export function resolveOrderCities(
   return { pickupCity, dropCity };
 }
 
+/** פיילואד לאחר השלמת שדות שמקורם ב־customValues (Make לעיתים שולח רק moving_order_*) */
+function orderPayloadForMoveKind(payload: MovingOrderPayload, cv: Record<string, unknown> | undefined): MovingOrderPayload {
+  if (!cv) return payload;
+  const out: MovingOrderPayload = { ...payload };
+  const mtCv = cv.moving_order_move_type;
+  if (typeof mtCv === "string" && mtCv.trim() && !(out.move_type ?? "").trim()) {
+    out.move_type = mtCv.trim();
+  }
+  const ilCv = cv.moving_order_items_list;
+  if (typeof ilCv === "string" && ilCv.trim() && !(out.items_list ?? "").trim()) {
+    out.items_list = ilCv.trim();
+  }
+  const uCv = cv.moving_order_is_urgent;
+  if (uCv !== undefined && uCv !== null && String(uCv).trim() && !(out.is_urgent ?? "").trim()) {
+    out.is_urgent = String(uCv);
+  }
+  return out;
+}
+
 function resolveMoveKind(
   payload: MovingOrderPayload,
   cv: Record<string, unknown> | undefined
 ): "small" | "large" | "unknown" {
-  const mt = String(cv?.moving_order_move_type ?? payload.move_type ?? "").trim();
+  const eff = orderPayloadForMoveKind(payload, cv);
+  const mt = String(cv?.moving_order_move_type ?? eff.move_type ?? "").trim();
   if (/הובל[הת]\s*קטנ|הובלה\s*קטנה|בקטנה|קטנה(?!\s*דיר)/i.test(mt)) return "small";
   if (/הובל[הת]\s*דיר|הובלת\s*דירה|הובלה\s*דירתית|גדולה/i.test(mt)) return "large";
-  const caps = deriveOrderCapabilities(payload);
+  const caps = deriveOrderCapabilities(eff);
   if (caps.needsSmall && !caps.needsApartment) return "small";
   if (caps.needsApartment || caps.needsLarge) return "large";
   return "unknown";
@@ -375,7 +395,7 @@ export function matchMoversForOrderDetailed(
       issuesHe.push(MATCH_ISSUE_MOVER_NOT_ACTIVE_FOR_WORK);
     }
 
-    if (moveKind === "small" && normHe(readSmallMoverAnswer(merged)) === normHe("לא")) {
+    if (moveKind === "small" && normHe(readSmallMoverAnswerForSmallMoveOrder(merged)) === normHe("לא")) {
       flag = combineFlags(flag, "orange");
       issuesHe.push("סוג הובלה (קטנה)");
     }

@@ -6,6 +6,12 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Liftygo CRM",
   description: "CRM MVP",
+  themeColor: "#0f766e",
+  appleWebApp: {
+    capable: true,
+    title: "Liftygo CRM",
+    statusBarStyle: "default",
+  },
 };
 
 export default function RootLayout({

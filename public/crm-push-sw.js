@@ -1,6 +1,14 @@
 /* eslint-disable no-undef */
+/** Service Worker — Web Push ל־CRM. לא מחליף «התראות חירום» מדינתיות; כפוף להגדרות מערכת/דפדפן. */
 self.addEventListener("push", (event) => {
-  let data = { title: "Liftygo CRM", body: "", url: "/", tag: "crm" };
+  let data = {
+    title: "Liftygo CRM",
+    body: "",
+    url: "/",
+    tag: "crm",
+    priority: "high",
+    ts: Date.now(),
+  };
   try {
     if (event.data) {
       const j = event.data.json();
@@ -10,16 +18,22 @@ self.addEventListener("push", (event) => {
     /* ignore */
   }
   const url = typeof data.url === "string" && data.url.startsWith("/") ? data.url : "/";
+  const baseTag = String(data.tag || "crm");
+  const uniqueTag = `${baseTag}-${data.ts || Date.now()}`;
+  const title = String(data.title || "CRM");
+  const body = String(data.body || "");
+
   event.waitUntil(
-    self.registration.showNotification(String(data.title || "CRM"), {
-      body: String(data.body || ""),
+    self.registration.showNotification(title, {
+      body,
       icon: "/favicon.ico",
       badge: "/favicon.ico",
-      tag: String(data.tag || "crm"),
+      tag: uniqueTag,
       renotify: true,
-      requireInteraction: false,
+      requireInteraction: true,
       silent: false,
-      vibrate: [180, 80, 180],
+      vibrate: [400, 120, 400, 120, 600],
+      timestamp: typeof data.ts === "number" ? data.ts : Date.now(),
       data: { url },
     })
   );
@@ -30,5 +44,13 @@ self.addEventListener("notificationclick", (event) => {
   const raw = event.notification.data && event.notification.data.url;
   const path = typeof raw === "string" && raw.startsWith("/") ? raw : "/";
   const target = self.location.origin + path;
-  event.waitUntil(self.clients.openWindow ? self.clients.openWindow(target) : Promise.resolve());
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      for (const c of clientList) {
+        if (c.url && "focus" in c) return c.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(target);
+      return Promise.resolve();
+    })
+  );
 });

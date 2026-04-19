@@ -64,6 +64,9 @@ export async function notifyTenantUsersWebPush(db: Firestore, input: TenantWebPu
     body: input.body,
     url: input.relativeUrl.startsWith("/") ? input.relativeUrl : `/${input.relativeUrl}`,
     tag: input.tag,
+    /** ל-Service Worker — עדיפות גבוהה במכשירים שמכבדים (לא עוקף «נא לא להפריע») */
+    priority: "high",
+    ts: Date.now(),
   });
   let snap;
   try {

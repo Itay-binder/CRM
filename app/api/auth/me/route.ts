@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getVerifiedAuthFromRequest } from "@/lib/auth/fromRequest";
 import { getCrmSession } from "@/lib/auth/crmSession";
+import { isAdminEmail } from "@/lib/auth/profile";
 import { authDisabled } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -49,5 +50,6 @@ export async function GET(req: NextRequest) {
     profile: ctx.profile,
     tenants: tenantsPayload,
     currentTenantId: ctx.tenant.id,
+    isAdmin: ctx.profile.role === "admin" || isAdminEmail(ctx.email),
   });
 }

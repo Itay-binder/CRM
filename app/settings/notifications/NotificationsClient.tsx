@@ -80,6 +80,9 @@ async function parseJson<T>(res: Response): Promise<T> {
 
 export default function NotificationsClient({ showMovingOrders }: Props) {
   const [prefs, setPrefs] = useState<CrmNotificationPrefs>(() => loadCrmNotificationPrefs());
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetMsg, setResetMsg] = useState<string | null>(null);
   const [perm, setPerm] = useState<NotificationPermission | "unsupported">("default");
   const [devicePrefs, setDevicePrefs] = useState<DevicePushPrefs>({
     whatsapp: true,
@@ -117,6 +120,15 @@ export default function NotificationsClient({ showMovingOrders }: Props) {
     if (typeof Notification === "undefined") setPerm("unsupported");
     else setPerm(Notification.permission);
     void refreshPermissionLog();
+    void (async () => {
+      try {
+        const res = await fetch("/api/auth/me", { credentials: "include", cache: "no-store" });
+        const j = (await res.json().catch(() => ({}))) as { ok?: boolean; isAdmin?: boolean };
+        if (res.ok && j.ok && j.isAdmin) setIsAdmin(true);
+      } catch {
+        /* ignore */
+      }
+    })();
   }, [refreshPermissionLog]);
 
   const loadPushState = useCallback(async () => {
@@ -227,6 +239,8 @@ export default function NotificationsClient({ showMovingOrders }: Props) {
         return;
       }
       await logNotificationPermission("granted");
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
       const reg = await navigator.serviceWorker.register("/crm-push-sw.js", { scope: "/" });
       await reg.update();
       const existing = await reg.pushManager.getSubscription();
@@ -259,6 +273,30 @@ export default function NotificationsClient({ showMovingOrders }: Props) {
       setPushBusy(false);
     }
   }, [devicePrefs, loadPushState, persist, refreshPermissionLog]);
+
+  const resetAllDeviceSubscriptions = useCallback(async () => {
+    if (!isAdmin) return;
+    if (!window.confirm("לאפס את כל מנויי הדחיפה לכל המשתמשים בטננט? כל אחד יצטרך שוב «הפעל התראות דחיפה למכשיר».")) {
+      return;
+    }
+    setResetBusy(true);
+    setResetMsg(null);
+    try {
+      const res = await fetch("/api/push/reset-all-subscriptions", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: true }),
+      });
+      const j = await parseJson<{ ok?: boolean; usersUpdated?: number; error?: string }>(res);
+      if (!res.ok || !j.ok) throw new Error(j.error || "איפוס נכשל");
+      setResetMsg(`אופסו מנויים אצל ${j.usersUpdated ?? 0} משתמשים.`);
+    } catch (e) {
+      setResetMsg(e instanceof Error ? e.message : "איפוס נכשל");
+    } finally {
+      setResetBusy(false);
+    }
+  }, [isAdmin]);
 
   const row = (label: string, description: string, checked: boolean, onChange: (v: boolean) => void) => (
     <label
@@ -301,6 +339,24 @@ export default function NotificationsClient({ showMovingOrders }: Props) {
           התראות צפות בתוך ה־CRM (בחלק העליון של המסך), ובנוסף אפשר התראות מהדפדפן או דחיפה אמיתית למכשיר כשהמערכת
           סגורה — ראו למטה.
         </p>
+        <div
+          style={{
+            marginBottom: 20,
+            padding: 14,
+            borderRadius: 12,
+            border: "1px solid #bfdbfe",
+            background: "#eff6ff",
+            color: "#1e3a5f",
+            fontSize: 13,
+            lineHeight: 1.55,
+          }}
+        >
+          <strong>דחיפה לטלפון (אנדרואיד / iOS):</strong> זה מתבצע דרך <strong>Web Push</strong> (דפדפן או אפליקציית
+          הבית). <strong>אין דרך לאתר</strong> לשכפל את התנהגות «התראות חירום» של המדינה — זה ערוץ סלולרי נפרד.
+          ב־<strong>מצב «נא לא להפריע»</strong> או כשהמסך כבוי, מה שיקרה תלוי ב־Android / iOS ובהגדרות הדפדפן (Chrome
+          וכו׳); לעיתים ההתראה תגיע בשקט או רק ברקע. ב־<strong>iPhone</strong> מומלץ להוסיף את האתר ל־
+          <strong>מסך הבית</strong> ולפתוח ממנו — כך דחיפה ברקע עובדת טוב יותר מאשר טאב רגיל בספארי.
+        </div>
 
         {browserNeedsConsent ? (
           <div
@@ -435,6 +491,36 @@ export default function NotificationsClient({ showMovingOrders }: Props) {
             <p style={{ margin: "10px 0 0", fontSize: 13, color: pushMsg.includes("נכשל") ? "#b91c1c" : "#0369a1" }}>
               {pushMsg}
             </p>
+          ) : null}
+          {isAdmin ? (
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #e5e7eb" }}>
+              <div style={{ fontWeight: 800, marginBottom: 8, fontSize: 14 }}>מנהל מערכת</div>
+              <p style={{ margin: "0 0 10px", fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>
+                איפוס מנויי דחיפה לכל המשתמשים בטננט הנוכחי — כדי שכולם יאשרו מחדש מהטלפון אחרי עדכון.
+              </p>
+              <button
+                type="button"
+                disabled={resetBusy || !pushConfigured}
+                onClick={() => void resetAllDeviceSubscriptions()}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: 8,
+                  border: "1px solid #fecaca",
+                  background: resetBusy || !pushConfigured ? "#f3f4f6" : "#fff",
+                  color: "#991b1b",
+                  fontWeight: 700,
+                  cursor: resetBusy || !pushConfigured ? "not-allowed" : "pointer",
+                  fontSize: 13,
+                }}
+              >
+                {resetBusy ? "מאפס…" : "אפס מנויי דחיפה לכל המשתמשים"}
+              </button>
+              {resetMsg ? (
+                <p style={{ margin: "8px 0 0", fontSize: 13, color: resetMsg.includes("נכשל") ? "#b91c1c" : "#0369a1" }}>
+                  {resetMsg}
+                </p>
+              ) : null}
+            </div>
           ) : null}
         </section>
 

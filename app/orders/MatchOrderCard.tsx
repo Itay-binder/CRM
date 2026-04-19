@@ -4,6 +4,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { WhatsAppIconLink } from "@/app/components/InlineFieldShell";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 import { moverExcludedAsInactiveForWork } from "@/lib/movingOrders/matchInactiveWork";
+import { resolveOrderMoveKind } from "@/lib/movingOrders/orderMoveKindResolve";
 import type {
   DriverSummary,
   MoverMatchEnrichment,
@@ -86,7 +87,11 @@ function orderItemsBlock(order: MovingOrderRecord): string {
   if (txt) chunks.push(txt);
   const what = p.what_moving?.trim();
   if (what) chunks.push(what);
-  const rawList = p.items_list?.trim();
+  const rawListCv =
+    typeof cv.moving_order_items_list === "string" && cv.moving_order_items_list.trim()
+      ? cv.moving_order_items_list.trim()
+      : "";
+  const rawList = (p.items_list?.trim() || rawListCv) || "";
   if (rawList) {
     try {
       const parsed = JSON.parse(rawList) as unknown;
@@ -113,6 +118,15 @@ function truncateToMaxChars(input: string, maxChars: number): string {
   return `${t.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
 }
 
+/** שורה אחת לתצוגה מקוצרת — פריטים / מה מובילים (ללא שבירת שורות ארוכות) */
+function orderItemsSummaryOneLine(order: MovingOrderRecord, maxChars: number): string {
+  const block = orderItemsBlock(order);
+  const t = block.trim();
+  if (!t) return "";
+  const oneLine = t.replace(/\s*\n\s*/g, " · ").replace(/\s+/g, " ").trim();
+  return truncateToMaxChars(oneLine, maxChars);
+}
+
 function orderRoomsText(order: MovingOrderRecord): string {
   const cv = order.customValues ?? {};
   const raw = cv.moving_order_rooms ?? cv.apartment_rooms;
@@ -124,9 +138,17 @@ function orderRoomsText(order: MovingOrderRecord): string {
 
 function orderShortSummary(order: MovingOrderRecord): string {
   const cv = order.customValues ?? {};
+  const moveKind = resolveOrderMoveKind(order.payload, cv);
   const moveType = String(cv.moving_order_move_type ?? order.payload.move_type ?? "").trim();
-  const rooms = orderRoomsText(order);
-  const parts = [moveType, rooms].filter(Boolean);
+  const parts: string[] = [];
+  if (moveType) parts.push(moveType);
+  if (moveKind === "small") {
+    const itemsLine = orderItemsSummaryOneLine(order, 72);
+    if (itemsLine) parts.push(itemsLine);
+  } else {
+    const rooms = orderRoomsText(order);
+    if (rooms) parts.push(rooms);
+  }
   return truncateToMaxChars(parts.join(" | "), 100);
 }
 

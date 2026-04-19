@@ -2,7 +2,8 @@ import type { LeadRecord } from "@/lib/leads/repo";
 import type { OpportunityRecord } from "@/lib/opportunities/repo";
 import { lookupRegionForSettlement } from "@/lib/movingOrders/cityRegionSettingsRepo";
 import { extractCityHints } from "@/lib/movingOrders/israelCities";
-import { deriveOrderCapabilities, driverWorksOnDay, orderDateToJerusalemWeekdayMarkers } from "@/lib/movingOrders/matchDrivers";
+import { driverWorksOnDay, orderDateToJerusalemWeekdayMarkers } from "@/lib/movingOrders/matchDrivers";
+import { resolveOrderMoveKind } from "@/lib/movingOrders/orderMoveKindResolve";
 import { movingOrderDateYmdIsrael } from "@/lib/movingOrders/orderMoveDate";
 import { MOVER_OPPORTUNITY_FIELD_IDS, PAYING_CUSTOMERS_PIPELINE_ID } from "@/lib/movingOrders/fieldIds";
 import { MATCH_ISSUE_MOVER_NOT_ACTIVE_FOR_WORK } from "@/lib/movingOrders/matchInactiveWork";
@@ -215,39 +216,6 @@ export function resolveOrderCities(
   return { pickupCity, dropCity };
 }
 
-/** פיילואד לאחר השלמת שדות שמקורם ב־customValues (Make לעיתים שולח רק moving_order_*) */
-function orderPayloadForMoveKind(payload: MovingOrderPayload, cv: Record<string, unknown> | undefined): MovingOrderPayload {
-  if (!cv) return payload;
-  const out: MovingOrderPayload = { ...payload };
-  const mtCv = cv.moving_order_move_type;
-  if (typeof mtCv === "string" && mtCv.trim() && !(out.move_type ?? "").trim()) {
-    out.move_type = mtCv.trim();
-  }
-  const ilCv = cv.moving_order_items_list;
-  if (typeof ilCv === "string" && ilCv.trim() && !(out.items_list ?? "").trim()) {
-    out.items_list = ilCv.trim();
-  }
-  const uCv = cv.moving_order_is_urgent;
-  if (uCv !== undefined && uCv !== null && String(uCv).trim() && !(out.is_urgent ?? "").trim()) {
-    out.is_urgent = String(uCv);
-  }
-  return out;
-}
-
-function resolveMoveKind(
-  payload: MovingOrderPayload,
-  cv: Record<string, unknown> | undefined
-): "small" | "large" | "unknown" {
-  const eff = orderPayloadForMoveKind(payload, cv);
-  const mt = String(cv?.moving_order_move_type ?? eff.move_type ?? "").trim();
-  if (/הובל[הת]\s*קטנ|הובלה\s*קטנה|בקטנה|קטנה(?!\s*דיר)/i.test(mt)) return "small";
-  if (/הובל[הת]\s*דיר|הובלת\s*דירה|הובלה\s*דירתית|גדולה/i.test(mt)) return "large";
-  const caps = deriveOrderCapabilities(eff);
-  if (caps.needsSmall && !caps.needsApartment) return "small";
-  if (caps.needsApartment || caps.needsLarge) return "large";
-  return "unknown";
-}
-
 function orderIsUrgentByField(payload: MovingOrderPayload, cv: Record<string, unknown> | undefined): boolean {
   const raw = cv?.moving_order_is_urgent ?? payload.is_urgent;
   if (triStateYesNo(raw) === true) return true;
@@ -362,7 +330,7 @@ export function matchMoversForOrderDetailed(
   const regionGroups = coalesceMetroRegionGroups(
     buildRegionRuleGroups(pickupCity, dropCity, settlementRegionMap)
   );
-  const moveKind = resolveMoveKind(payload, cv);
+  const moveKind = resolveOrderMoveKind(payload, cv);
   const sosCapabilityRequired = orderRequiresSosCapabilityForMatch(payload, cv, moveKind);
   const dayMarkers = dayMarkersFromOrder(cv, payload);
 

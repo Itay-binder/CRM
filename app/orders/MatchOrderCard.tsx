@@ -248,7 +248,7 @@ function MoverMatchTable({
       <table
         style={{
           width: "100%",
-          minWidth: compact ? 880 : showOpportunityLinks ? 1200 : 1060,
+          minWidth: compact ? 1020 : showOpportunityLinks ? 1360 : 1220,
           borderCollapse: "collapse",
           background: "#fff",
         }}
@@ -259,6 +259,7 @@ function MoverMatchTable({
             <th style={{ ...thStyle, width: 96, whiteSpace: "normal" }}>שליחת ליד</th>
             <th style={thStyle}>מוביל</th>
             <th style={thStyle}>התאמה</th>
+            <th style={{ ...thStyle, minWidth: 160, whiteSpace: "normal" }}>הערות התאמה</th>
             <th style={{ ...thStyle, minWidth: 220 }}>הערות מוביל</th>
             <th style={thStyle}>אזורי פעילות</th>
             <th style={thStyle}>זמינות לעבודה</th>
@@ -320,6 +321,9 @@ function MoverMatchTable({
                 </td>
                 <td style={{ ...tdStyle, fontWeight: 700 }}>{rowLabel(id)}</td>
                 <td style={tdStyle}>{flagLabelHe(flag)}</td>
+                <td style={{ ...tdStyle, color: issues.length ? "#9a3412" : "#6b7280", fontSize: 11, whiteSpace: "pre-wrap" }}>
+                  {issues.length ? issues.join(" · ") : "—"}
+                </td>
                 <td style={{ ...tdStyle, fontSize: 11, whiteSpace: "pre-wrap" }}>
                   {en?.opportunityNotes?.trim() || "—"}
                 </td>

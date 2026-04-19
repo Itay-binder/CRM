@@ -272,8 +272,18 @@ function orderIsTodayOrTomorrowIsrael(
   return ds === today || ds === tomorrow;
 }
 
-function orderIsUrgent(payload: MovingOrderPayload, cv: Record<string, unknown> | undefined): boolean {
-  return orderIsUrgentByField(payload, cv) || orderIsTodayOrTomorrowIsrael(payload, cv);
+/**
+ * מתי לבדוק התאמת SOS מול המוביל.
+ * בהובלה קטנה לא מסמנים כתום רק בגלל שתאריך ההובלה הוא היום/מחר — רק כשיש דחיפות מפורשת בשדה (הזמנות בדיקה וכו׳).
+ */
+function orderRequiresSosCapabilityForMatch(
+  payload: MovingOrderPayload,
+  cv: Record<string, unknown> | undefined,
+  moveKind: "small" | "large" | "unknown"
+): boolean {
+  if (orderIsUrgentByField(payload, cv)) return true;
+  if (moveKind === "small") return false;
+  return orderIsTodayOrTomorrowIsrael(payload, cv);
 }
 
 export function syntheticLeadFromOpportunity(opp: OpportunityRecord): LeadRecord {
@@ -353,7 +363,7 @@ export function matchMoversForOrderDetailed(
     buildRegionRuleGroups(pickupCity, dropCity, settlementRegionMap)
   );
   const moveKind = resolveMoveKind(payload, cv);
-  const urgent = orderIsUrgent(payload, cv);
+  const sosCapabilityRequired = orderRequiresSosCapabilityForMatch(payload, cv, moveKind);
   const dayMarkers = dayMarkersFromOrder(cv, payload);
 
   const rows: Array<{ id: string; flag: DriverMatchFlag; name: string }> = [];
@@ -404,7 +414,7 @@ export function matchMoversForOrderDetailed(
       issuesHe.push("סוג הובלה (דירה)");
     }
 
-    if (urgent && !immediateSosIndicatesYes(merged)) {
+    if (sosCapabilityRequired && !immediateSosIndicatesYes(merged)) {
       flag = combineFlags(flag, "orange");
       issuesHe.push("דחיפות · SOS");
     }

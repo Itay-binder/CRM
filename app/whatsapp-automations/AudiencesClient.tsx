@@ -28,6 +28,14 @@ type CampaignVm = {
 
 type LabelOpt = { id: string; name: string };
 
+type TagStatVm = {
+  id: string;
+  name: string;
+  color: string;
+  count: number;
+  contacts: Array<{ id: string; name: string; phone: string; email: string }>;
+};
+
 async function parseJson<T>(res: Response): Promise<T> {
   return (await res.json().catch(() => ({}))) as T;
 }
@@ -57,6 +65,8 @@ export default function AudiencesClient() {
   const [audiences, setAudiences] = useState<AudienceVm[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignVm[]>([]);
   const [labels, setLabels] = useState<LabelOpt[]>([]);
+  const [tagStats, setTagStats] = useState<TagStatVm[]>([]);
+  const [openedTagId, setOpenedTagId] = useState("");
 
   const [name, setName] = useState("");
   const [mode, setMode] = useState<AudienceMode>("filters");
@@ -69,10 +79,11 @@ export default function AudiencesClient() {
     setLoading(true);
     setErr(null);
     try {
-      const [aRes, cRes, lRes] = await Promise.all([
+      const [aRes, cRes, lRes, tsRes] = await Promise.all([
         fetch("/api/whatsapp/audiences", { credentials: "include", cache: "no-store" }),
         fetch("/api/whatsapp/campaigns/send", { credentials: "include", cache: "no-store" }),
         fetch("/api/labels", { credentials: "include", cache: "no-store" }),
+        fetch("/api/whatsapp/audiences/tag-stats", { credentials: "include", cache: "no-store" }),
       ]);
       if (aRes.status === 401) {
         window.location.href = `/login?returnTo=${encodeURIComponent("/whatsapp-automations/audiences")}`;
@@ -81,10 +92,13 @@ export default function AudiencesClient() {
       const aj = await parseJson<{ ok?: boolean; audiences?: AudienceVm[]; error?: string }>(aRes);
       const cj = await parseJson<{ ok?: boolean; campaigns?: CampaignVm[]; error?: string }>(cRes);
       const lj = await parseJson<{ ok?: boolean; labels?: LabelOpt[] }>(lRes);
+      const tsj = await parseJson<{ ok?: boolean; tagStats?: TagStatVm[]; error?: string }>(tsRes);
       if (!aj.ok) throw new Error(aj.error || "טעינת קהלים נכשלה");
       if (!cj.ok) throw new Error(cj.error || "טעינת דיוורים נכשלה");
+      if (!tsj.ok) throw new Error(tsj.error || "טעינת תגיות נכשלה");
       setAudiences(aj.audiences ?? []);
       setCampaigns(cj.campaigns ?? []);
+      setTagStats(tsj.tagStats ?? []);
       if (lj.ok) setLabels(lj.labels ?? []);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "שגיאה");
@@ -178,6 +192,7 @@ export default function AudiencesClient() {
       })),
     [campaigns]
   );
+  const openedTag = tagStats.find((x) => x.id === openedTagId) ?? null;
 
   return (
     <div style={{ display: "grid", gap: 18 }}>
@@ -436,6 +451,109 @@ export default function AudiencesClient() {
           </table>
         </div>
       </section>
+
+      <section style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 14, overflow: "hidden" }}>
+        <div style={{ padding: "14px 16px", borderBottom: "1px solid #f3f4f6", fontWeight: 900, fontSize: 16 }}>
+          כל התגיות וכמות בכל תגית
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+            <thead>
+              <tr>
+                <th style={th}>תגית</th>
+                <th style={th}>כמות אנשי קשר</th>
+                <th style={th}>פירוט</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={3} style={{ ...td, color: "#6b7280" }}>
+                    טוען...
+                  </td>
+                </tr>
+              ) : tagStats.length === 0 ? (
+                <tr>
+                  <td colSpan={3} style={{ ...td, color: "#6b7280" }}>
+                    לא נמצאו תגיות.
+                  </td>
+                </tr>
+              ) : (
+                tagStats.map((t) => (
+                  <tr key={t.id}>
+                    <td style={td}>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 8,
+                          fontWeight: 700,
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: "50%",
+                            background: t.color || "#9ca3af",
+                          }}
+                        />
+                        {t.name}
+                      </span>
+                    </td>
+                    <td style={{ ...td, fontWeight: 800 }}>{t.count}</td>
+                    <td style={td}>
+                      <button
+                        type="button"
+                        onClick={() => setOpenedTagId((prev) => (prev === t.id ? "" : t.id))}
+                        style={actionBtn}
+                      >
+                        {openedTagId === t.id ? "הסתר שמות" : "הצג שמות"}
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {openedTag ? (
+        <section style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 14, padding: 16 }}>
+          <h3 style={{ margin: "0 0 10px", fontSize: 16, fontWeight: 900 }}>
+            פירוט שמי לתגית: {openedTag.name}
+          </h3>
+          {openedTag.contacts.length === 0 ? (
+            <p style={{ margin: 0, color: "#6b7280" }}>אין אנשי קשר בתגית זו.</p>
+          ) : (
+            <div style={{ maxHeight: 280, overflow: "auto", border: "1px solid #f1f5f9", borderRadius: 10 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    <th style={th}>שם</th>
+                    <th style={th}>טלפון</th>
+                    <th style={th}>אימייל</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {openedTag.contacts.map((c) => (
+                    <tr key={`${openedTag.id}-${c.id}`}>
+                      <td style={td}>{c.name}</td>
+                      <td style={td} dir="ltr">
+                        {c.phone || "—"}
+                      </td>
+                      <td style={td} dir="ltr">
+                        {c.email || "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      ) : null}
     </div>
   );
 }

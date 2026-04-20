@@ -15,7 +15,7 @@ import {
 import { mergeTaskArrays, type RawTaskIn } from "@/lib/tasks/merge";
 import { reconcileTasksGoogleCalendar } from "@/lib/googleCalendar/taskSync";
 import { fireServerWebhooks } from "@/lib/webhooks/dispatchServerWebhooks";
-import { normalizeIncomingLabelIds } from "@/lib/labels/repo";
+import { listLabelsFromDb, normalizeIncomingLabelIds } from "@/lib/labels/repo";
 import { parseYmdBoundary } from "@/lib/datetime/ymdBoundary";
 
 export type LeadRecord = {
@@ -58,6 +58,9 @@ export function isLeadWhatsAppMarketingApproved(lead: Pick<LeadRecord, "customFi
   const raw = lead.customFields?.whatsappMarketingApproved;
   return raw !== false;
 }
+
+const HASER_LABEL_NAME = "הסר";
+const HASER_LABEL_COLOR = "#b91c1c";
 
 export type LeadUpsertInput = {
   id?: string;
@@ -537,9 +540,20 @@ async function applyLeadWhatsAppMarketingApprovalUpdates(
   approved: boolean,
   reason?: string
 ): Promise<void> {
+  const firstRef = Array.from(refs.values())[0];
+  if (!firstRef) return;
+  const db = firstRef.firestore;
+  const haserLabelId = await getOrCreateHaserLabelId(db);
+  const entries = await Promise.all(
+    Array.from(refs.entries()).map(async ([id, ref]) => {
+      const snap = await ref.get();
+      return { id, ref, data: (snap.data() ?? {}) as Record<string, unknown> };
+    })
+  );
   const nowIso = new Date().toISOString();
-  const updates = Array.from(refs.values()).map((ref) =>
-    ref.set(
+  const updates = entries.map(({ ref, data }) => {
+    const nextLabelIds = nextLeadLabelIdsForHaser(data.labelIds, haserLabelId, approved);
+    return ref.set(
       {
         "customFields.whatsappMarketingApproved": approved,
         "customFields.whatsappMarketingApprovalUpdatedAt": nowIso,
@@ -548,12 +562,91 @@ async function applyLeadWhatsAppMarketingApprovalUpdates(
           : {
               "customFields.whatsappMarketingApprovalReason": reason?.trim() || "opt_out_keyword",
             }),
+        labelIds: nextLabelIds,
+        tags: FieldValue.delete(),
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true }
-    )
-  );
+    );
+  });
   await Promise.all(updates);
+}
+
+function nextLeadLabelIdsForHaser(
+  rawLabelIds: unknown,
+  haserLabelId: string,
+  approved: boolean
+): string[] {
+  const cur = Array.isArray(rawLabelIds)
+    ? Array.from(new Set(rawLabelIds.map((x) => String(x).trim()).filter(Boolean)))
+    : [];
+  if (!haserLabelId) return cur;
+  if (!approved) {
+    return cur.includes(haserLabelId) ? cur : [...cur, haserLabelId];
+  }
+  return cur.filter((id) => id !== haserLabelId);
+}
+
+async function getOrCreateHaserLabelId(db: Firestore): Promise<string> {
+  const labels = await listLabelsFromDb(db);
+  const existing = labels.find((l) => l.name.trim() === HASER_LABEL_NAME);
+  if (existing) return existing.id;
+  const id = `lbl_${randomUUID().replace(/-/g, "")}`;
+  const maxOrder = labels.reduce((m, x) => Math.max(m, x.sortOrder), 0);
+  await db.collection("labels").doc(id).set({
+    name: HASER_LABEL_NAME,
+    color: HASER_LABEL_COLOR,
+    sortOrder: maxOrder + 1,
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  return id;
+}
+
+export async function backfillHaserLabelFromMarketingStatus(
+  dbOverride?: Firestore
+): Promise<{ processed: number; updated: number; haserLabelId?: string }> {
+  const db = dbOverride ?? (await getAdminDb());
+  const haserLabelId = await getOrCreateHaserLabelId(db);
+  const snap = await db.collection("leads").get();
+  let processed = 0;
+  let updated = 0;
+  let batch = db.batch();
+  let writes = 0;
+  const commitIfNeeded = async () => {
+    if (writes >= 400) {
+      await batch.commit();
+      batch = db.batch();
+      writes = 0;
+    }
+  };
+  for (const doc of snap.docs) {
+    processed += 1;
+    const data = (doc.data() ?? {}) as Record<string, unknown>;
+    const custom = (data.customFields as Record<string, unknown> | undefined) ?? {};
+    const approved = custom.whatsappMarketingApproved !== false;
+    const nextIds = nextLeadLabelIdsForHaser(data.labelIds, haserLabelId, approved);
+    const curIds = Array.isArray(data.labelIds)
+      ? Array.from(new Set(data.labelIds.map((x) => String(x).trim()).filter(Boolean)))
+      : [];
+    const changed =
+      curIds.length !== nextIds.length || curIds.some((id) => !nextIds.includes(id));
+    if (!changed) continue;
+    updated += 1;
+    batch.set(
+      doc.ref,
+      {
+        labelIds: nextIds,
+        tags: FieldValue.delete(),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    writes += 1;
+    await commitIfNeeded();
+  }
+  if (writes > 0) await batch.commit();
+  return { processed, updated, haserLabelId };
 }
 
 export async function getLeadWhatsAppMarketingApprovalByPhone(

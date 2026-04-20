@@ -5,12 +5,32 @@ import { TENANT_DB_HEADER, getTenantConfigs } from "@/lib/tenant/config";
 
 let init = false;
 
+function parseServiceAccountJson(raw: string): Record<string, unknown> {
+  const direct = raw.trim();
+  try {
+    return JSON.parse(direct) as Record<string, unknown>;
+  } catch {
+    // Some env providers may materialize private_key with literal newlines.
+    const patched = direct.replace(
+      /"private_key"\s*:\s*"([\s\S]*?)"\s*,\s*"client_email"/,
+      (_m, pk) => {
+        const escaped = String(pk)
+          .replace(/\\/g, "\\\\")
+          .replace(/\r?\n/g, "\\n")
+          .replace(/"/g, '\\"');
+        return `"private_key":"${escaped}","client_email"`;
+      }
+    );
+    return JSON.parse(patched) as Record<string, unknown>;
+  }
+}
+
 function ensureAdmin() {
   if (init) return;
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
   if (!raw) throw new Error("Missing FIREBASE_SERVICE_ACCOUNT_JSON");
 
-  const cred = JSON.parse(raw) as Record<string, unknown>;
+  const cred = parseServiceAccountJson(raw);
   if (typeof cred.private_key === "string") {
     cred.private_key = cred.private_key.replace(/\\n/g, "\n");
   }

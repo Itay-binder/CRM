@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getFirestoreForWhatsAppWebhook } from "@/lib/firebase/admin";
-import { normalizePhone, setLeadWhatsAppMarketingApprovalByPhone } from "@/lib/leads/repo";
+import {
+  getLeadWhatsAppMarketingApprovalByPhone,
+  normalizePhone,
+  setLeadWhatsAppMarketingApprovalByPhone,
+} from "@/lib/leads/repo";
 import {
   appendWhatsAppCampaignDispatchInteraction,
   appendWhatsAppChatMessage,
@@ -220,9 +224,9 @@ export async function POST(req: NextRequest) {
           const fallback = contacts[0];
           const contactName = byWa?.profile?.name?.trim() || fallback?.profile?.name?.trim() || undefined;
           const waProfilePictureUrl = extractWaProfilePictureUrl(contacts, from);
-          const byPhone = await db.collection("leads").where("phone", "==", from).limit(1).get();
-          const leadId = byPhone.docs[0]?.id;
-          let marketingApproved = byPhone.docs[0]?.data()?.customFields?.whatsappMarketingApproved !== false;
+          const marketingState = await getLeadWhatsAppMarketingApprovalByPhone(from, db);
+          const leadId = marketingState.leadIds[0];
+          let marketingApproved = marketingState.approved;
 
           if (text && isOptOutKeyword(text)) {
             const opt = await setLeadWhatsAppMarketingApprovalByPhone(

@@ -3,8 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { getAdminDb } from "@/lib/firebase/admin";
 import {
+  getLeadWhatsAppMarketingApprovalByPhone,
   getLeadById,
-  isLeadWhatsAppMarketingApproved,
   listLeadsFiltered,
   normalizePhone,
 } from "@/lib/leads/repo";
@@ -225,7 +225,8 @@ export async function POST(req: NextRequest) {
         });
         continue;
       }
-      const marketingOk = isLeadWhatsAppMarketingApproved(lead);
+      const marketingState = await getLeadWhatsAppMarketingApprovalByPhone(normalized, db);
+      const marketingOk = marketingState.approved;
       const allowOneTimeInactive = !marketingOk && oneTimeOverrideSet.has(lead.id);
       if (!marketingOk && !allowOneTimeInactive) {
         dispatches.push({

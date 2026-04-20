@@ -512,6 +512,16 @@ export async function setLeadWhatsAppMarketingApprovalByPhone(
   const normalizedPhone = normalizePhone(phoneRaw);
   if (!normalizedPhone) return { normalizedPhone: undefined, updatedLeadIds: [] };
   const db = dbOverride ?? (await getAdminDb());
+  const refs = await collectLeadRefsByPhone(db, normalizedPhone);
+  if (!refs.size) return { normalizedPhone, updatedLeadIds: [] };
+  await applyLeadWhatsAppMarketingApprovalUpdates(refs, approved, reason);
+  return { normalizedPhone, updatedLeadIds: Array.from(refs.keys()) };
+}
+
+async function collectLeadRefsByPhone(
+  db: Firestore,
+  normalizedPhone: string
+): Promise<Map<string, DocumentReference<DocumentData>>> {
   const refs = new Map<string, DocumentReference<DocumentData>>();
 
   const byPhone = await db.collection("leads").where("phone", "==", normalizedPhone).limit(50).get();
@@ -519,9 +529,14 @@ export async function setLeadWhatsAppMarketingApprovalByPhone(
 
   const byId = await db.collection("leads").doc(normalizedPhone).get();
   if (byId.exists) refs.set(byId.id, byId.ref);
+  return refs;
+}
 
-  if (!refs.size) return { normalizedPhone, updatedLeadIds: [] };
-
+async function applyLeadWhatsAppMarketingApprovalUpdates(
+  refs: Map<string, DocumentReference<DocumentData>>,
+  approved: boolean,
+  reason?: string
+): Promise<void> {
   const nowIso = new Date().toISOString();
   const updates = Array.from(refs.values()).map((ref) =>
     ref.set(
@@ -539,7 +554,44 @@ export async function setLeadWhatsAppMarketingApprovalByPhone(
     )
   );
   await Promise.all(updates);
-  return { normalizedPhone, updatedLeadIds: Array.from(refs.keys()) };
+}
+
+export async function getLeadWhatsAppMarketingApprovalByPhone(
+  phoneRaw: string,
+  dbOverride?: Firestore
+): Promise<{ normalizedPhone?: string; approved: boolean; leadIds: string[] }> {
+  const normalizedPhone = normalizePhone(phoneRaw);
+  if (!normalizedPhone) return { normalizedPhone: undefined, approved: true, leadIds: [] };
+  const db = dbOverride ?? (await getAdminDb());
+  const refs = await collectLeadRefsByPhone(db, normalizedPhone);
+  if (!refs.size) return { normalizedPhone, approved: true, leadIds: [] };
+  const snaps = await Promise.all(Array.from(refs.values()).map((ref) => ref.get()));
+  const approved = !snaps.some((snap) => {
+    const custom = (snap.data()?.customFields as Record<string, unknown> | undefined) ?? {};
+    return custom.whatsappMarketingApproved === false;
+  });
+  return { normalizedPhone, approved, leadIds: Array.from(refs.keys()) };
+}
+
+export async function setLeadWhatsAppMarketingApprovalByLeadId(
+  leadIdRaw: string,
+  approved: boolean,
+  reason?: string,
+  dbOverride?: Firestore
+): Promise<{ normalizedPhone?: string; updatedLeadIds: string[] }> {
+  const leadId = normalizeUniqueKey(leadIdRaw);
+  if (!leadId) return { normalizedPhone: undefined, updatedLeadIds: [] };
+  const db = dbOverride ?? (await getAdminDb());
+  const ref = db.collection("leads").doc(leadId);
+  const snap = await ref.get();
+  if (!snap.exists) return { normalizedPhone: undefined, updatedLeadIds: [] };
+  const data = (snap.data() ?? {}) as Record<string, unknown>;
+  const normalizedPhone = normalizePhone(String(data.phone ?? "")) ?? normalizePhone(leadId);
+  if (normalizedPhone) {
+    return setLeadWhatsAppMarketingApprovalByPhone(normalizedPhone, approved, reason, db);
+  }
+  await applyLeadWhatsAppMarketingApprovalUpdates(new Map([[leadId, ref]]), approved, reason);
+  return { normalizedPhone: undefined, updatedLeadIds: [leadId] };
 }
 
 /** הליד האחרון שנוצר — לסקר התראות (השוואת מזהה בין קריאות). */

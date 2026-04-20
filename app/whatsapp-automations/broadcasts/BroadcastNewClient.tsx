@@ -49,6 +49,17 @@ type CampaignVm = {
   parameterValues: string[];
 };
 
+type AudienceVm = {
+  id: string;
+  name: string;
+  mode: "filters" | "contact_ids";
+  conditions: AudienceCondition[];
+  logic: AudienceLogic;
+  contactIds: string[];
+  sourceCampaignId?: string;
+  sourceCampaignName?: string;
+};
+
 async function parseJson<T>(res: Response): Promise<T> {
   return (await res.json().catch(() => ({}))) as T;
 }
@@ -87,6 +98,7 @@ export default function BroadcastNewClient() {
 
   const [templates, setTemplates] = useState<TemplateVm[]>([]);
   const [labels, setLabels] = useState<LabelOpt[]>([]);
+  const [audiences, setAudiences] = useState<AudienceVm[]>([]);
   const [tplSearch, setTplSearch] = useState("");
 
   const [broadcastName, setBroadcastName] = useState("דיוור ללא שם");
@@ -94,6 +106,8 @@ export default function BroadcastNewClient() {
   const [parameterValuesStr, setParameterValuesStr] = useState("");
   const [logic, setLogic] = useState<AudienceLogic>("and");
   const [conditions, setConditions] = useState<AudienceCondition[]>([]);
+  const [selectedAudienceId, setSelectedAudienceId] = useState("");
+  const [audiencePinnedIds, setAudiencePinnedIds] = useState<string[]>([]);
   const [previewCount, setPreviewCount] = useState<number | null>(null);
   const [draftId, setDraftId] = useState<string | null>(null);
   const [audienceContacts, setAudienceContacts] = useState<AudienceContactRow[]>([]);
@@ -102,9 +116,10 @@ export default function BroadcastNewClient() {
   const [audienceTruncated, setAudienceTruncated] = useState(false);
 
   const loadBase = useCallback(async () => {
-    const [tRes, lRes] = await Promise.all([
+    const [tRes, lRes, aRes] = await Promise.all([
       fetch("/api/whatsapp/templates", { credentials: "include", cache: "no-store" }),
       fetch("/api/labels", { credentials: "include", cache: "no-store" }),
+      fetch("/api/whatsapp/audiences", { credentials: "include", cache: "no-store" }),
     ]);
     if (tRes.status === 401) {
       window.location.href = `/login?returnTo=${encodeURIComponent("/whatsapp-automations/broadcasts/new")}`;
@@ -112,8 +127,10 @@ export default function BroadcastNewClient() {
     }
     const tj = await parseJson<{ ok?: boolean; templates?: TemplateVm[] }>(tRes);
     const lj = await parseJson<{ ok?: boolean; labels?: LabelOpt[] }>(lRes);
+    const aj = await parseJson<{ ok?: boolean; audiences?: AudienceVm[] }>(aRes);
     if (tj.ok) setTemplates(tj.templates ?? []);
     if (lj.ok) setLabels(lj.labels ?? []);
+    if (aj.ok) setAudiences(aj.audiences ?? []);
   }, []);
 
   const loadDraft = useCallback(async () => {
@@ -170,7 +187,11 @@ export default function BroadcastNewClient() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conditions, logic }),
+        body: JSON.stringify({
+          conditions,
+          logic,
+          ...(audiencePinnedIds.length > 0 ? { recipientIds: audiencePinnedIds } : {}),
+        }),
       });
       const j = await parseJson<{
         ok?: boolean;
@@ -190,7 +211,7 @@ export default function BroadcastNewClient() {
     } finally {
       setAudienceLoading(false);
     }
-  }, [conditions, logic]);
+  }, [conditions, logic, audiencePinnedIds]);
 
   useEffect(() => {
     if (loading) return;
@@ -198,7 +219,28 @@ export default function BroadcastNewClient() {
       void refreshAudience();
     }, 450);
     return () => window.clearTimeout(t);
-  }, [loading, conditions, logic, refreshAudience]);
+  }, [loading, conditions, logic, audiencePinnedIds, refreshAudience]);
+
+  function applySavedAudience(audienceId: string) {
+    setSelectedAudienceId(audienceId);
+    const a = audiences.find((x) => x.id === audienceId);
+    if (!a) {
+      setAudiencePinnedIds([]);
+      return;
+    }
+    const pinned = Array.isArray(a.contactIds)
+      ? Array.from(new Set(a.contactIds.map((x) => String(x).trim()).filter(Boolean)))
+      : [];
+    if (a.mode === "contact_ids") {
+      setLogic("and");
+      setConditions([]);
+      setAudiencePinnedIds(pinned);
+      return;
+    }
+    setLogic(a.logic === "or" ? "or" : "and");
+    setConditions(Array.isArray(a.conditions) ? a.conditions : []);
+    setAudiencePinnedIds(pinned);
+  }
 
   const filteredTemplates = useMemo(() => {
     const q = tplSearch.trim().toLowerCase();
@@ -602,6 +644,23 @@ export default function BroadcastNewClient() {
             }}
           >
             <h2 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 900 }}>קהל יעד</h2>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 10 }}>
+              <select
+                value={selectedAudienceId}
+                onChange={(e) => applySavedAudience(e.target.value)}
+                style={{ minWidth: 280, padding: "8px 12px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+              >
+                <option value="">— בחר קהל שמור —</option>
+                {audiences.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} {a.mode === "contact_ids" ? "· מדיוור קודם" : "· תנאים"}
+                  </option>
+                ))}
+              </select>
+              <Link href="/whatsapp-automations/audiences" style={{ fontSize: 13, fontWeight: 700, color: "#2563eb" }}>
+                ניהול קהלים
+              </Link>
+            </div>
             <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>
               הוסף תנאים (תגית, שם, טלפון וכו׳). בלי תנאים — נכללים כל אנשי הקשר. הרשימה והצ&apos;קבוקסים מתעדכנים
               אוטומטית כשמשנים תנאים. ניתן לבטל סימון ליחידים לפני שליחה. שורות באפור — לא פעילים לדיוור (סנכרון עם

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const items = [
   { href: "/whatsapp-automations", label: "ברודקאסטים", match: (p: string) => p === "/whatsapp-automations" || p.startsWith("/whatsapp-automations/broadcasts") },
+  { href: "/whatsapp-automations/audiences", label: "קהלים", match: (p: string) => p.startsWith("/whatsapp-automations/audiences") },
   { href: "/whatsapp-automations/chats", label: "צ׳אטים", match: (p: string) => p.startsWith("/whatsapp-automations/chats") },
   { href: "/whatsapp-automations/marketing-status", label: "סטטוס דיוור", match: (p: string) => p.startsWith("/whatsapp-automations/marketing-status") },
   { href: "/whatsapp-automations/templates", label: "תבניות הודעה", match: (p: string) => p.startsWith("/whatsapp-automations/templates") },

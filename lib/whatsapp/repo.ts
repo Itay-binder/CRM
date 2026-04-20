@@ -17,6 +17,7 @@ function stripUndefinedForFirestore<T>(value: T): T {
 }
 const CAMPAIGNS_DOC_ID = "whatsappCampaigns";
 const DRAFTS_DOC_ID = "whatsappBroadcastDrafts";
+const AUDIENCES_DOC_ID = "whatsappAudiences";
 const CHATS_COLLECTION = "whatsappChats";
 /** הודעות במסמכי משנה — מונע מסמך שיחה ענק ומאיץ טעינת רשימת שיחות */
 const CHAT_THREAD_MESSAGES_SUB = "thread_messages";
@@ -128,6 +129,23 @@ export type WhatsAppBroadcastDraftRecord = {
   parameterValues: string[];
   conditions: AudienceCondition[];
   logic: AudienceLogic;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+};
+
+export type WhatsAppAudienceMode = "filters" | "contact_ids";
+
+export type WhatsAppAudienceRecord = {
+  id: string;
+  name: string;
+  mode: WhatsAppAudienceMode;
+  conditions: AudienceCondition[];
+  logic: AudienceLogic;
+  /** רשימת אנשי קשר קבועה (ליצירה מדיוורים קודמים / בחירה ידנית). */
+  contactIds: string[];
+  sourceCampaignId?: string;
+  sourceCampaignName?: string;
   createdAt: string;
   updatedAt: string;
   createdBy: string;
@@ -734,6 +752,97 @@ export async function deleteWhatsAppBroadcastDraft(db: Firestore, id: string): P
   const drafts = await listWhatsAppBroadcastDrafts(db);
   const next = drafts.filter((d) => d.id !== id);
   await db.collection(COLLECTION).doc(DRAFTS_DOC_ID).set({ drafts: next }, { merge: true });
+}
+
+export async function listWhatsAppAudiences(db: Firestore): Promise<WhatsAppAudienceRecord[]> {
+  const snap = await db.collection(COLLECTION).doc(AUDIENCES_DOC_ID).get();
+  if (!snap.exists) return [];
+  const raw = (snap.data() as { audiences?: unknown } | undefined)?.audiences;
+  if (!Array.isArray(raw)) return [];
+  const rows = raw
+    .map((item): WhatsAppAudienceRecord | null => {
+      if (!item || typeof item !== "object") return null;
+      const row = item as Record<string, unknown>;
+      const id = asString(row.id).trim();
+      if (!id) return null;
+      const modeRaw = asString(row.mode).trim().toLowerCase();
+      const mode: WhatsAppAudienceMode = modeRaw === "contact_ids" ? "contact_ids" : "filters";
+      const logicRaw = asString(row.logic).trim();
+      const logic: AudienceLogic = logicRaw === "or" ? "or" : "and";
+      return {
+        id,
+        name: asString(row.name).trim() || "קהל ללא שם",
+        mode,
+        conditions: parseAudienceConditions(row.conditions),
+        logic,
+        contactIds: asStringArray(row.contactIds),
+        sourceCampaignId: asString(row.sourceCampaignId).trim() || undefined,
+        sourceCampaignName: asString(row.sourceCampaignName).trim() || undefined,
+        createdAt: asString(row.createdAt),
+        updatedAt: asString(row.updatedAt),
+        createdBy: asString(row.createdBy),
+      };
+    })
+    .filter((x): x is WhatsAppAudienceRecord => Boolean(x));
+  return rows.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export async function saveWhatsAppAudience(
+  db: Firestore,
+  input: Omit<WhatsAppAudienceRecord, "createdAt" | "updatedAt"> &
+    Partial<Pick<WhatsAppAudienceRecord, "createdAt">>
+): Promise<WhatsAppAudienceRecord> {
+  const audiences = await listWhatsAppAudiences(db);
+  const now = new Date().toISOString();
+  const idx = audiences.findIndex((x) => x.id === input.id);
+  const cleanedIds = Array.from(new Set(input.contactIds.map((x) => x.trim()).filter(Boolean)));
+  if (idx >= 0) {
+    const prev = audiences[idx];
+    const updated: WhatsAppAudienceRecord = {
+      ...prev,
+      name: input.name.trim() || prev.name,
+      mode: input.mode,
+      conditions: input.conditions,
+      logic: input.logic,
+      contactIds: cleanedIds,
+      sourceCampaignId: input.sourceCampaignId?.trim() || undefined,
+      sourceCampaignName: input.sourceCampaignName?.trim() || undefined,
+      updatedAt: now,
+    };
+    audiences[idx] = updated;
+    await db
+      .collection(COLLECTION)
+      .doc(AUDIENCES_DOC_ID)
+      .set(stripUndefinedForFirestore({ audiences }), { merge: true });
+    return updated;
+  }
+  const created: WhatsAppAudienceRecord = {
+    id: input.id,
+    name: input.name.trim() || "קהל ללא שם",
+    mode: input.mode,
+    conditions: input.conditions,
+    logic: input.logic,
+    contactIds: cleanedIds,
+    sourceCampaignId: input.sourceCampaignId?.trim() || undefined,
+    sourceCampaignName: input.sourceCampaignName?.trim() || undefined,
+    createdAt: input.createdAt ?? now,
+    updatedAt: now,
+    createdBy: input.createdBy,
+  };
+  await db
+    .collection(COLLECTION)
+    .doc(AUDIENCES_DOC_ID)
+    .set(stripUndefinedForFirestore({ audiences: [created, ...audiences] }), { merge: true });
+  return created;
+}
+
+export async function deleteWhatsAppAudience(db: Firestore, id: string): Promise<void> {
+  const audiences = await listWhatsAppAudiences(db);
+  const next = audiences.filter((x) => x.id !== id);
+  await db
+    .collection(COLLECTION)
+    .doc(AUDIENCES_DOC_ID)
+    .set(stripUndefinedForFirestore({ audiences: next }), { merge: true });
 }
 
 export async function listWhatsAppChatThreads(

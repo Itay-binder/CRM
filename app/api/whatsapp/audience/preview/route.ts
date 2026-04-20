@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
   let body: {
     conditions?: AudienceCondition[];
     logic?: AudienceLogic;
+    recipientIds?: string[];
   };
   try {
     body = (await req.json()) as typeof body;
@@ -27,12 +28,17 @@ export async function POST(req: NextRequest) {
 
   const conditions = Array.isArray(body.conditions) ? body.conditions : [];
   const logic: AudienceLogic = body.logic === "or" ? "or" : "and";
+  const recipientIds = Array.isArray(body.recipientIds)
+    ? Array.from(new Set(body.recipientIds.map((x) => String(x).trim()).filter(Boolean)))
+    : [];
 
   const MAX_LIST = 500;
 
   try {
     const leads = await listLeadsFiltered(null, null);
-    const matched = filterLeadsByAudience(leads, conditions, logic);
+    const matchedBase = filterLeadsByAudience(leads, conditions, logic);
+    const matched =
+      recipientIds.length > 0 ? matchedBase.filter((l) => recipientIds.includes(l.id)) : matchedBase;
     const ids = matched.map((l) => l.id);
     const slice = matched.slice(0, MAX_LIST);
     const contacts = slice.map((l) => ({

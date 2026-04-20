@@ -38,7 +38,8 @@ export async function GET(req: NextRequest) {
             typeof custom.whatsappMarketingApprovalUpdatedAt === "string"
               ? custom.whatsappMarketingApprovalUpdatedAt
               : "",
-          canManageMarketing: Boolean(phone),
+          // ניהול הסטטוס נעשה לפי מזהה איש קשר; אין תלות חובה במספר תקין כדי לאפשר כיבוי ידני.
+          canManageMarketing: true,
           updatedAt: lead.updatedAt ? lead.updatedAt.toISOString() : "",
         };
       })

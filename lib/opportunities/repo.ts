@@ -1174,7 +1174,7 @@ export async function updateOpportunity(
       const now = FieldValue.serverTimestamp();
       await db.collection("opportunities").add({
         opportunityCode,
-        name: exName ? `${exName} — לקוח` : "לקוח חדש",
+        name: exName || "לקוח חדש",
         contactId: cid,
         contactName: typeof after.contactName === "string" ? after.contactName : "",
         contactEmail: typeof after.contactEmail === "string" ? after.contactEmail : "",

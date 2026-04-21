@@ -1091,50 +1091,55 @@ export async function updateOpportunity(
   let winNoteForContact: { id: string; text: string; createdAt: string; createdBy?: string } | null =
     null;
   let firstCustomerStageForNewOpp: string | null = null;
+  let targetCustomersPipelineIdForNewOpp: string | null = null;
 
-  if (
-    (await shouldSeedDefaultPipeline()) &&
-    becameWon &&
-    targetPipelineId !== CUSTOMERS_PIPELINE_ID &&
-    existing.winAutomationDone !== true
-  ) {
-    const dupSnap = await db
-      .collection("opportunities")
-      .where("sourceOpportunityId", "==", id)
-      .limit(1)
-      .get();
-    if (dupSnap.empty) {
-      await ensureCustomersPipeline();
-      const cpSnap = await db.collection("pipelines").doc(CUSTOMERS_PIPELINE_ID).get();
-      const cpd = (cpSnap.data() ?? {}) as Record<string, unknown>;
-      const custStages = normalizeStages((cpd.stages as string[] | undefined) ?? ["חדש"]);
-      firstCustomerStageForNewOpp = custStages[0] || "חדש";
+  if ((await shouldSeedDefaultPipeline()) && becameWon && existing.winAutomationDone !== true) {
+    const payingCustomersPipelineId = await getPayingCustomersPipelineId();
+    if (targetPipelineId !== payingCustomersPipelineId) {
+      const dupSnap = await db
+        .collection("opportunities")
+        .where("sourceOpportunityId", "==", id)
+        .get();
+      const hasDupInTargetPipeline = dupSnap.docs.some((doc) => {
+        const d = (doc.data() ?? {}) as Record<string, unknown>;
+        return String(d.pipelineId ?? "").trim() === payingCustomersPipelineId;
+      });
+      if (!hasDupInTargetPipeline) {
+        if (payingCustomersPipelineId === CUSTOMERS_PIPELINE_ID) {
+          await ensureCustomersPipeline();
+        }
+        const cpSnap = await db.collection("pipelines").doc(payingCustomersPipelineId).get();
+        const cpd = (cpSnap.data() ?? {}) as Record<string, unknown>;
+        const custStages = normalizeStages((cpd.stages as string[] | undefined) ?? ["חדש"]);
+        firstCustomerStageForNewOpp = custStages[0] || "חדש";
+        targetCustomersPipelineIdForNewOpp = payingCustomersPipelineId;
 
-      const winNote = {
-        id: randomUUID(),
-        text: "לקוח חדש",
-        createdAt: new Date().toISOString(),
-        createdBy: "המערכת",
-      };
-      winNoteForContact = winNote;
+        const winNote = {
+          id: randomUUID(),
+          text: "לקוח חדש",
+          createdAt: new Date().toISOString(),
+          createdBy: "המערכת",
+        };
+        winNoteForContact = winNote;
 
-      const baseNotes =
-        input.notes !== undefined
-          ? [...input.notes]
-          : Array.isArray(existing.notes)
-            ? [
-                ...(existing.notes as Array<{
-                  id: string;
-                  text: string;
-                  createdAt: string;
-                  createdBy?: string;
-                }>),
-              ]
-            : [];
-      payload.notes = [...baseNotes, winNote];
-      payload.winAutomationDone = true;
-    } else {
-      payload.winAutomationDone = true;
+        const baseNotes =
+          input.notes !== undefined
+            ? [...input.notes]
+            : Array.isArray(existing.notes)
+              ? [
+                  ...(existing.notes as Array<{
+                    id: string;
+                    text: string;
+                    createdAt: string;
+                    createdBy?: string;
+                  }>),
+                ]
+              : [];
+        payload.notes = [...baseNotes, winNote];
+        payload.winAutomationDone = true;
+      } else {
+        payload.winAutomationDone = true;
+      }
     }
   }
 
@@ -1164,7 +1169,7 @@ export async function updateOpportunity(
     });
   }
 
-  if (winNoteForContact && firstCustomerStageForNewOpp) {
+  if (winNoteForContact && firstCustomerStageForNewOpp && targetCustomersPipelineIdForNewOpp) {
     const afterSnap = await ref.get();
     const after = (afterSnap.data() ?? {}) as Record<string, unknown>;
     const cid = String(after.contactId ?? "").trim();
@@ -1181,7 +1186,7 @@ export async function updateOpportunity(
         contactPhone: typeof after.contactPhone === "string" ? after.contactPhone : "",
         email: typeof after.email === "string" ? after.email : "",
         phone: typeof after.phone === "string" ? after.phone : "",
-        pipelineId: CUSTOMERS_PIPELINE_ID,
+        pipelineId: targetCustomersPipelineIdForNewOpp,
         stage: firstCustomerStageForNewOpp,
         status: "פתוח",
         value: null,

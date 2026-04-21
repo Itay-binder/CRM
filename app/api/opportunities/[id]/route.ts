@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser, requireApprovedUserOrIngestApiKey } from "@/lib/auth/guard";
 import { enrichOpportunitiesForApi, listLabels } from "@/lib/labels/repo";
+import { reconcileContactNotesAcrossEntities } from "@/lib/notes/contactNotesSync";
 import { attachContactLastLeadAt } from "@/lib/opportunities/attachContactLastLeadAt";
 import { deleteOpportunity, getOpportunityById, updateOpportunity } from "@/lib/opportunities/repo";
 import { validateCustomValues } from "@/lib/customFields/repo";
@@ -21,12 +22,24 @@ export async function GET(
     );
   }
   const { id } = await params;
-  const opportunity = await getOpportunityById(id);
+  let opportunity = await getOpportunityById(id);
   if (!opportunity) {
     return NextResponse.json(
       { ok: false, error: "Opportunity not found" } satisfies ApiErr,
       { status: 404 }
     );
+  }
+  const contactId = String(opportunity.contactId ?? "").trim();
+  if (contactId) {
+    // Ensure the notes shown in opportunity details always include full contact history.
+    await reconcileContactNotesAcrossEntities(contactId);
+    opportunity = await getOpportunityById(id);
+    if (!opportunity) {
+      return NextResponse.json(
+        { ok: false, error: "Opportunity not found" } satisfies ApiErr,
+        { status: 404 }
+      );
+    }
   }
   const catalog = await listLabels();
   const [withContact] = await attachContactLastLeadAt([opportunity]);

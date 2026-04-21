@@ -21,6 +21,9 @@ export const MOVER_WELCOME_OPPORTUNITY_FIELD_IDS = {
   activityHours: "opportunity_mover_welcome_activity_hours",
   immediateAvailability: "opportunity_mover_welcome_immediate_availability",
   moverServices: "opportunity_mover_welcome_mover_services",
+  workAvailabilityStatus: "opportunity_work_availability_status",
+  currentPackageLeadsCount: "opportunity_package_current_leads_count",
+  leadsCount: "opportunity_leads_count",
   notes: "opportunity_mover_welcome_notes",
 } as const;
 
@@ -50,6 +53,7 @@ export const MOVER_OPPORTUNITY_FIELD_IDS = {
   apartmentMover: "opportunity_apartment_mover",
   workAvailabilityStatus: "opportunity_work_availability_status",
   immediateAvailability: "opportunity_immediate_availability",
+  currentPackageLeadsCount: "opportunity_package_current_leads_count",
   leadsCount: "opportunity_leads_count",
 } as const;
 

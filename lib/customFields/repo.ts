@@ -75,6 +75,39 @@ function readPipelineIds(d: Record<string, unknown>): string[] {
   );
 }
 
+/**
+ * סדר תצוגה מועדף לשדות מוביל/שאלון בפייפליין לקוחות משלמים.
+ * שדות שלא מופיעים כאן ימשיכו במיון אלפביתי רגיל.
+ */
+function moverQuestionnairePriority(fieldId: string): number {
+  const base = fieldId
+    .trim()
+    .toLowerCase()
+    .replace(/^(contact|opportunity|moving_order)_+/g, "");
+  const ranks = new Map<string, number>([
+    ["mover_welcome_activity_days_text", 1],
+    ["mover_days", 1],
+    ["mover_welcome_activity_flexible", 2],
+    ["mover_flexible_hours", 2],
+    ["mover_welcome_activity_start", 3],
+    ["mover_hour_start", 3],
+    ["mover_welcome_activity_end", 4],
+    ["mover_hour_end", 4],
+    ["mover_welcome_activity_regions", 5],
+    ["mover_regions", 5],
+    ["mover_nationwide", 6],
+    ["mover_apartment", 7],
+    ["mover_small", 8],
+    ["mover_crane", 9],
+    ["mover_welcome_immediate_availability", 10],
+    ["mover_same_day", 10],
+    ["leads_count", 11],
+    ["package_current_leads_count", 12],
+    ["work_availability_status", 13],
+  ]);
+  return ranks.get(base) ?? Number.MAX_SAFE_INTEGER;
+}
+
 /** רשימה ריקה = כל הפייפליינים */
 export function customFieldAppliesToPipeline(
   f: CustomFieldRecord,
@@ -126,7 +159,12 @@ async function listCustomFieldsFromDb(
     rows = rows.filter((r) => customFieldAppliesToPipeline(r, options.pipelineId ?? null));
   }
 
-  return rows.sort((a, b) => a.label.localeCompare(b.label, "he"));
+  return rows.sort((a, b) => {
+    const pa = moverQuestionnairePriority(a.fieldId);
+    const pb = moverQuestionnairePriority(b.fieldId);
+    if (pa !== pb) return pa - pb;
+    return a.label.localeCompare(b.label, "he");
+  });
 }
 
 export async function listCustomFields(

@@ -16,6 +16,10 @@ export type MoverWelcomeWebhookItem = {
   activity_flexible?: boolean;
   activity_hours?: string | null;
   immediate_availability?: string;
+  available_for_leads?: string | boolean;
+  work_availability_status?: string | boolean;
+  leads_count?: number | string;
+  package_current_leads_count?: number | string;
   mover_services?: string;
   notes?: string;
   /** אופציונלי — מזהה הזדמנות בפייפליין לקוחות משלמים (בדיקות / זימון מפורש) */
@@ -38,6 +42,24 @@ export function buildWelcomeOpportunityCustomValues(
   item: MoverWelcomeWebhookItem
 ): Record<string, unknown> {
   const F = MOVER_WELCOME_OPPORTUNITY_FIELD_IDS;
+  const leadsCountRaw = item.leads_count;
+  const leadsCount =
+    typeof leadsCountRaw === "number"
+      ? leadsCountRaw
+      : typeof leadsCountRaw === "string" && leadsCountRaw.trim()
+        ? Number(leadsCountRaw)
+        : null;
+  const packageLeadsRaw = item.package_current_leads_count;
+  const packageLeadsCount =
+    typeof packageLeadsRaw === "number"
+      ? packageLeadsRaw
+      : typeof packageLeadsRaw === "string" && packageLeadsRaw.trim()
+        ? Number(packageLeadsRaw)
+        : null;
+  const workAvailabilityRaw =
+    item.work_availability_status !== undefined
+      ? item.work_availability_status
+      : item.available_for_leads;
   return {
     [F.fullName]: String(item.name ?? ""),
     [F.phone]: String(item.phone ?? "").trim(),
@@ -54,6 +76,12 @@ export function buildWelcomeOpportunityCustomValues(
         ? ""
         : String(item.activity_hours),
     [F.immediateAvailability]: String(item.immediate_availability ?? ""),
+    [F.workAvailabilityStatus]:
+      workAvailabilityRaw === undefined || workAvailabilityRaw === null
+        ? ""
+        : String(workAvailabilityRaw),
+    [F.leadsCount]: Number.isFinite(leadsCount) ? leadsCount : 0,
+    [F.currentPackageLeadsCount]: Number.isFinite(packageLeadsCount) ? packageLeadsCount : 0,
     [F.moverServices]: String(item.mover_services ?? ""),
     [F.notes]: String(item.notes ?? ""),
   };

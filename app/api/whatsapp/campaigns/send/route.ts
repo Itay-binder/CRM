@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { getAdminDb } from "@/lib/firebase/admin";
+import { listLabels } from "@/lib/labels/repo";
 import {
   getLeadWhatsAppMarketingApprovalByPhone,
   getLeadById,
@@ -25,6 +26,23 @@ import {
 export const dynamic = "force-dynamic";
 
 const MAX_RECIPIENTS = 500;
+
+async function normalizeTagConditions(
+  conditions: AudienceCondition[]
+): Promise<AudienceCondition[]> {
+  if (!conditions.some((c) => c.field === "tag" && c.value.trim())) return conditions;
+  const labels = await listLabels();
+  const ids = new Set(labels.map((l) => l.id));
+  const byName = new Map(labels.map((l) => [l.name.trim().toLowerCase(), l.id]));
+  return conditions.map((c) => {
+    if (c.field !== "tag") return c;
+    const raw = c.value.trim();
+    if (!raw) return c;
+    if (ids.has(raw)) return c;
+    const mapped = byName.get(raw.toLowerCase());
+    return mapped ? { ...c, value: mapped } : c;
+  });
+}
 
 export async function GET(req: NextRequest) {
   const auth = await requireApprovedUser(req);
@@ -98,15 +116,17 @@ export async function POST(req: NextRequest) {
       // תצוגת הקהל במסך משתמשת במצב הנוכחי; אם לא ממזגים כאן, שליחה עם draftId
       // הייתה מתעלמת מתנאים שעודכנו בממשק בלי «שמור טיוטה» — ואז recipientIds יתרוקנו.
       if (Array.isArray(body.conditions)) {
-        audienceConditions = body.conditions;
+        audienceConditions = await normalizeTagConditions(body.conditions);
         audienceLogic = body.logic === "or" ? "or" : "and";
       } else {
-        audienceConditions = draft.conditions;
+        audienceConditions = await normalizeTagConditions(draft.conditions);
         audienceLogic = draft.logic;
       }
     } else if (body.conditions !== undefined) {
       useAudienceFilter = true;
-      audienceConditions = Array.isArray(body.conditions) ? body.conditions : [];
+      audienceConditions = Array.isArray(body.conditions)
+        ? await normalizeTagConditions(body.conditions)
+        : [];
       audienceLogic = body.logic === "or" ? "or" : "and";
     }
 

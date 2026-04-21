@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
+import { listLabels } from "@/lib/labels/repo";
 import { isLeadWhatsAppMarketingApproved, listLeadsFiltered } from "@/lib/leads/repo";
 import {
   filterLeadsByAudience,
@@ -8,6 +9,23 @@ import {
 } from "@/lib/whatsapp/audienceFilter";
 
 export const dynamic = "force-dynamic";
+
+async function normalizeTagConditions(
+  conditions: AudienceCondition[]
+): Promise<AudienceCondition[]> {
+  if (!conditions.some((c) => c.field === "tag" && c.value.trim())) return conditions;
+  const labels = await listLabels();
+  const ids = new Set(labels.map((l) => l.id));
+  const byName = new Map(labels.map((l) => [l.name.trim().toLowerCase(), l.id]));
+  return conditions.map((c) => {
+    if (c.field !== "tag") return c;
+    const raw = c.value.trim();
+    if (!raw) return c;
+    if (ids.has(raw)) return c;
+    const mapped = byName.get(raw.toLowerCase());
+    return mapped ? { ...c, value: mapped } : c;
+  });
+}
 
 export async function POST(req: NextRequest) {
   const auth = await requireApprovedUser(req);
@@ -26,7 +44,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
 
-  const conditions = Array.isArray(body.conditions) ? body.conditions : [];
+  const conditionsRaw = Array.isArray(body.conditions) ? body.conditions : [];
   const logic: AudienceLogic = body.logic === "or" ? "or" : "and";
   const recipientIds = Array.isArray(body.recipientIds)
     ? Array.from(new Set(body.recipientIds.map((x) => String(x).trim()).filter(Boolean)))
@@ -35,6 +53,7 @@ export async function POST(req: NextRequest) {
   const MAX_LIST = 500;
 
   try {
+    const conditions = await normalizeTagConditions(conditionsRaw);
     const leads = await listLeadsFiltered(null, null);
     const matchedBase = filterLeadsByAudience(leads, conditions, logic);
     const matched =

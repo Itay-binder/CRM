@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
+import type { MetaAdsCampaignVm, MetaAdSetVm, MetaAdVm } from "@/lib/metaAds/graph";
 
 type SettingsVm = {
   appId: string;
@@ -20,33 +21,7 @@ type TokenStatus = {
   error: string | null;
 };
 
-type CampaignVm = {
-  id: string;
-  name: string;
-  status: string;
-  effectiveStatus: string;
-  objective: string;
-  spend: number;
-  impressions: number;
-  reach: number;
-  clicks: number;
-  cpc: number;
-  ctr: number;
-  dailyBudget: number;
-  lifetimeBudget: number;
-  startTime?: string;
-  stopTime?: string;
-  updatedTime?: string;
-};
-
-type CampaignsResponse = {
-  ok?: boolean;
-  adAccountId?: string;
-  datePreset?: string;
-  fetchedAt?: string;
-  campaigns?: CampaignVm[];
-  error?: string;
-};
+type Tab = "campaigns" | "adsets" | "ads";
 
 function money(v: number): string {
   return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" }).format(v || 0);
@@ -54,6 +29,11 @@ function money(v: number): string {
 
 function intFmt(v: number): string {
   return new Intl.NumberFormat("he-IL").format(v || 0);
+}
+
+function cpr(spend: number, results: number): string {
+  if (!results || !spend) return "—";
+  return money(spend / results);
 }
 
 async function parseJson<T>(res: Response): Promise<T> {
@@ -66,6 +46,59 @@ function daysUntil(isoDate: string): number | null {
   return Math.ceil(ms / (1000 * 60 * 60 * 24));
 }
 
+const STATUS_COLORS: Record<string, string> = {
+  ACTIVE: "#16a34a",
+  PAUSED: "#ca8a04",
+  DELETED: "#dc2626",
+  ARCHIVED: "#6b7280",
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const color = STATUS_COLORS[status] ?? "#6b7280";
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        padding: "2px 8px",
+        borderRadius: 6,
+        fontSize: 11,
+        fontWeight: 700,
+        color,
+        background: `${color}18`,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {status}
+    </span>
+  );
+}
+
+const DATE_PRESETS = [
+  { value: "today", label: "היום" },
+  { value: "yesterday", label: "אתמול" },
+  { value: "last_3d", label: "3 ימים" },
+  { value: "last_7d", label: "7 ימים" },
+  { value: "last_14d", label: "14 ימים" },
+  { value: "last_28d", label: "28 ימים" },
+  { value: "last_30d", label: "30 ימים" },
+  { value: "this_month", label: "החודש" },
+  { value: "last_month", label: "חודש קודם" },
+  { value: "this_quarter", label: "רבעון נוכחי" },
+  { value: "maximum", label: "מקסימום" },
+];
+
+const TH_STYLE: React.CSSProperties = {
+  textAlign: "right",
+  padding: "10px 12px",
+  borderBottom: "2px solid #e5e7eb",
+  background: "#f8fafc",
+  fontSize: 12,
+  fontWeight: 900,
+  whiteSpace: "nowrap",
+};
+
+const TD_STYLE: React.CSSProperties = { padding: "10px 12px", fontSize: 13 };
+
 export default function MetaAdsClient() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -76,10 +109,13 @@ export default function MetaAdsClient() {
 
   const [settings, setSettings] = useState<SettingsVm | null>(null);
   const [tokenStatus, setTokenStatus] = useState<TokenStatus | null>(null);
-  const [campaigns, setCampaigns] = useState<CampaignVm[]>([]);
+
+  const [campaigns, setCampaigns] = useState<MetaAdsCampaignVm[]>([]);
+  const [adSets, setAdSets] = useState<MetaAdSetVm[]>([]);
+  const [ads, setAds] = useState<MetaAdVm[]>([]);
   const [fetchedAt, setFetchedAt] = useState("");
 
-  const [adAccountId, setAdAccountId] = useState("");
+  const [activeTab, setActiveTab] = useState<Tab>("campaigns");
   const [datePreset, setDatePreset] = useState("last_7d");
   const [search, setSearch] = useState("");
 
@@ -88,8 +124,8 @@ export default function MetaAdsClient() {
   const [appId, setAppId] = useState("");
   const [businessId, setBusinessId] = useState("");
   const [accessToken, setAccessToken] = useState("");
+  const [adAccountId, setAdAccountId] = useState("");
 
-  // Handle OAuth redirect params on mount
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("meta_connected") === "1") {
@@ -104,10 +140,7 @@ export default function MetaAdsClient() {
   }, []);
 
   const loadSettings = useCallback(async () => {
-    const res = await fetch("/api/meta-ads/settings", {
-      credentials: "include",
-      cache: "no-store",
-    });
+    const res = await fetch("/api/meta-ads/settings", { credentials: "include", cache: "no-store" });
     if (res.status === 401) {
       window.location.href = `/login?returnTo=${encodeURIComponent("/meta-ads")}`;
       return null;
@@ -122,11 +155,14 @@ export default function MetaAdsClient() {
   }, []);
 
   const loadTokenStatus = useCallback(async () => {
-    const res = await fetch("/api/meta-ads/status", {
-      credentials: "include",
-      cache: "no-store",
-    });
-    const j = await parseJson<{ ok?: boolean; connected?: boolean; scopes?: string[]; expiresAt?: string; error?: string | null }>(res);
+    const res = await fetch("/api/meta-ads/status", { credentials: "include", cache: "no-store" });
+    const j = await parseJson<{
+      ok?: boolean;
+      connected?: boolean;
+      scopes?: string[];
+      expiresAt?: string;
+      error?: string | null;
+    }>(res);
     if (res.ok && j.ok) {
       setTokenStatus({
         connected: j.connected ?? false,
@@ -137,22 +173,36 @@ export default function MetaAdsClient() {
     }
   }, []);
 
-  const loadCampaigns = useCallback(async (preset: string) => {
-    const res = await fetch(
-      `/api/meta-ads/campaigns?datePreset=${encodeURIComponent(preset)}`,
-      { credentials: "include", cache: "no-store" }
-    );
-    const j = await parseJson<CampaignsResponse>(res);
-    if (!res.ok || !j.ok) {
-      if (res.status === 400) {
-        setCampaigns([]);
-        setFetchedAt("");
-        return;
-      }
-      throw new Error(j.error || "טעינת קמפיינים נכשלה");
-    }
-    setCampaigns(j.campaigns ?? []);
-    setFetchedAt(j.fetchedAt ?? "");
+  const loadData = useCallback(async (preset: string) => {
+    const [cRes, sRes, aRes] = await Promise.all([
+      fetch(`/api/meta-ads/campaigns?datePreset=${encodeURIComponent(preset)}`, {
+        credentials: "include",
+        cache: "no-store",
+      }),
+      fetch(`/api/meta-ads/adsets?datePreset=${encodeURIComponent(preset)}`, {
+        credentials: "include",
+        cache: "no-store",
+      }),
+      fetch(`/api/meta-ads/ads?datePreset=${encodeURIComponent(preset)}`, {
+        credentials: "include",
+        cache: "no-store",
+      }),
+    ]);
+
+    const [cj, sj, aj] = await Promise.all([
+      parseJson<{ ok?: boolean; campaigns?: MetaAdsCampaignVm[]; fetchedAt?: string; error?: string }>(cRes),
+      parseJson<{ ok?: boolean; adSets?: MetaAdSetVm[]; error?: string }>(sRes),
+      parseJson<{ ok?: boolean; ads?: MetaAdVm[]; error?: string }>(aRes),
+    ]);
+
+    if (cRes.status !== 400 && (!cRes.ok || !cj.ok)) throw new Error(cj.error || "טעינת קמפיינים נכשלה");
+    if (sRes.status !== 400 && (!sRes.ok || !sj.ok)) throw new Error(sj.error || "טעינת סדרות מודעות נכשלה");
+    if (aRes.status !== 400 && (!aRes.ok || !aj.ok)) throw new Error(aj.error || "טעינת מודעות נכשלה");
+
+    setCampaigns(cj.campaigns ?? []);
+    setAdSets(sj.adSets ?? []);
+    setAds(aj.ads ?? []);
+    setFetchedAt(cj.fetchedAt ?? "");
   }, []);
 
   const loadAll = useCallback(
@@ -163,9 +213,11 @@ export default function MetaAdsClient() {
         const cfg = await loadSettings();
         await loadTokenStatus();
         if (cfg?.adAccountId && cfg.hasToken) {
-          await loadCampaigns(preset);
+          await loadData(preset);
         } else {
           setCampaigns([]);
+          setAdSets([]);
+          setAds([]);
           setFetchedAt("");
         }
       } catch (e) {
@@ -174,14 +226,50 @@ export default function MetaAdsClient() {
         setLoading(false);
       }
     },
-    [loadCampaigns, loadSettings, loadTokenStatus]
+    [loadData, loadSettings, loadTokenStatus]
   );
 
   useEffect(() => {
     void loadAll(datePreset);
   }, [datePreset, loadAll]);
 
-  async function saveSettings() {
+  async function refresh() {
+    setRefreshing(true);
+    setErr(null);
+    try {
+      await loadData(datePreset);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "רענון נכשל");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  async function saveAdAccountOnly() {
+    if (!settings?.canManage) return;
+    setSaving(true);
+    setErr(null);
+    setOkMsg(null);
+    try {
+      const res = await fetch("/api/meta-ads/settings", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adAccountId }),
+      });
+      const j = await parseJson<{ ok?: boolean; config?: SettingsVm; error?: string }>(res);
+      if (!res.ok || !j.ok || !j.config) throw new Error(j.error || "שמירה נכשלה");
+      setSettings(j.config);
+      setOkMsg("Ad Account ID נשמר.");
+      if (j.config.hasToken) await loadData(datePreset);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "שמירה נכשלה");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveAdvanced() {
     if (!settings?.canManage) return;
     setSaving(true);
     setErr(null);
@@ -199,36 +287,12 @@ export default function MetaAdsClient() {
         }),
       });
       const j = await parseJson<{ ok?: boolean; config?: SettingsVm; error?: string }>(res);
-      if (!res.ok || !j.ok || !j.config) throw new Error(j.error || "שמירת הגדרות נכשלה");
+      if (!res.ok || !j.ok || !j.config) throw new Error(j.error || "שמירה נכשלה");
       setSettings(j.config);
       setAccessToken("");
       setOkMsg("הגדרות Meta Ads נשמרו.");
       await loadTokenStatus();
-      await loadCampaigns(datePreset);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "שמירת הגדרות נכשלה");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function saveAdAccountOnly() {
-    if (!settings?.canManage) return;
-    setSaving(true);
-    setErr(null);
-    setOkMsg(null);
-    try {
-      const res = await fetch("/api/meta-ads/settings", {
-        method: "PUT",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ adAccountId }),
-      });
-      const j = await parseJson<{ ok?: boolean; config?: SettingsVm; error?: string }>(res);
-      if (!res.ok || !j.ok || !j.config) throw new Error(j.error || "שמירת Ad Account נכשלה");
-      setSettings(j.config);
-      setOkMsg("Ad Account ID נשמר.");
-      if (j.config.hasToken) await loadCampaigns(datePreset);
+      await loadData(datePreset);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "שמירה נכשלה");
     } finally {
@@ -242,18 +306,17 @@ export default function MetaAdsClient() {
     setErr(null);
     setOkMsg(null);
     try {
-      const res = await fetch("/api/meta-ads/disconnect", {
-        method: "POST",
-        credentials: "include",
-      });
+      const res = await fetch("/api/meta-ads/disconnect", { method: "POST", credentials: "include" });
       const j = await parseJson<{ ok?: boolean; error?: string }>(res);
       if (!res.ok || !j.ok) throw new Error(j.error || "ניתוק נכשל");
       setOkMsg("Meta Ads נותק.");
       setTokenStatus({ connected: false, scopes: [], expiresAt: "", error: null });
       setCampaigns([]);
+      setAdSets([]);
+      setAds([]);
       setFetchedAt("");
-      const updatedSettings = await loadSettings();
-      if (updatedSettings) setSettings(updatedSettings);
+      const updated = await loadSettings();
+      if (updated) setSettings(updated);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "ניתוק נכשל");
     } finally {
@@ -261,50 +324,63 @@ export default function MetaAdsClient() {
     }
   }
 
-  async function refreshCampaigns() {
-    setRefreshing(true);
-    setErr(null);
-    try {
-      await loadCampaigns(datePreset);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "רענון נכשל");
-    } finally {
-      setRefreshing(false);
-    }
-  }
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return campaigns;
-    return campaigns.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.id.toLowerCase().includes(q) ||
-        c.status.toLowerCase().includes(q) ||
-        c.effectiveStatus.toLowerCase().includes(q)
-    );
-  }, [campaigns, search]);
+  const q = search.trim().toLowerCase();
+  const filteredCampaigns = useMemo(
+    () =>
+      q
+        ? campaigns.filter(
+            (c) => c.name.toLowerCase().includes(q) || c.id.includes(q) || c.objective.toLowerCase().includes(q)
+          )
+        : campaigns,
+    [campaigns, q]
+  );
+  const filteredAdSets = useMemo(
+    () =>
+      q
+        ? adSets.filter(
+            (s) =>
+              s.name.toLowerCase().includes(q) ||
+              s.id.includes(q) ||
+              s.campaignName.toLowerCase().includes(q)
+          )
+        : adSets,
+    [adSets, q]
+  );
+  const filteredAds = useMemo(
+    () =>
+      q
+        ? ads.filter(
+            (a) =>
+              a.name.toLowerCase().includes(q) ||
+              a.id.includes(q) ||
+              a.adSetName.toLowerCase().includes(q) ||
+              a.campaignName.toLowerCase().includes(q)
+          )
+        : ads,
+    [ads, q]
+  );
 
   const daysLeft = tokenStatus?.expiresAt ? daysUntil(tokenStatus.expiresAt) : null;
   const tokenWarning = daysLeft !== null && daysLeft <= 14;
 
+  const TABS: { id: Tab; label: string; count: number }[] = [
+    { id: "campaigns", label: "קמפיינים", count: campaigns.length },
+    { id: "adsets", label: "סדרות מודעות", count: adSets.length },
+    { id: "ads", label: "מודעות", count: ads.length },
+  ];
+
   return (
     <div style={{ display: "grid", gap: 14 }}>
-      <p style={{ margin: 0, color: "#4b5563", lineHeight: 1.6, fontSize: 14 }}>
-        כאן מחברים את חשבון ה־Meta Ads Manager ומקבלים נתוני קמפיינים פעילים (תקציב, הוצאה,
-        חשיפות, קליקים ו־CTR) ישירות ב־CRM.
-      </p>
-
-      {err ? (
+      {err && (
         <div style={{ padding: 12, borderRadius: 10, background: "#fef2f2", color: "#991b1b" }}>
           {err}
         </div>
-      ) : null}
-      {okMsg ? (
+      )}
+      {okMsg && (
         <div style={{ padding: 12, borderRadius: 10, background: "#ecfdf5", color: "#065f46" }}>
           {okMsg}
         </div>
-      ) : null}
+      )}
 
       {/* ── Connection card ── */}
       <div
@@ -319,7 +395,6 @@ export default function MetaAdsClient() {
       >
         <div style={{ fontWeight: 900, fontSize: 16 }}>חיבור Meta Ads Manager</div>
 
-        {/* Token status */}
         {!loading && (
           <div
             style={{
@@ -328,14 +403,8 @@ export default function MetaAdsClient() {
               gap: 10,
               padding: "10px 14px",
               borderRadius: 10,
-              background: tokenStatus?.connected
-                ? tokenWarning
-                  ? "#fffbeb"
-                  : "#ecfdf5"
-                : "#f9fafb",
-              border: `1px solid ${
-                tokenStatus?.connected ? (tokenWarning ? "#fcd34d" : "#6ee7b7") : "#e5e7eb"
-              }`,
+              background: tokenStatus?.connected ? (tokenWarning ? "#fffbeb" : "#ecfdf5") : "#f9fafb",
+              border: `1px solid ${tokenStatus?.connected ? (tokenWarning ? "#fcd34d" : "#6ee7b7") : "#e5e7eb"}`,
             }}
           >
             <div
@@ -343,11 +412,7 @@ export default function MetaAdsClient() {
                 width: 10,
                 height: 10,
                 borderRadius: "50%",
-                background: tokenStatus?.connected
-                  ? tokenWarning
-                    ? "#f59e0b"
-                    : "#10b981"
-                  : "#d1d5db",
+                background: tokenStatus?.connected ? (tokenWarning ? "#f59e0b" : "#10b981") : "#d1d5db",
                 flexShrink: 0,
               }}
             />
@@ -357,15 +422,13 @@ export default function MetaAdsClient() {
                   <strong>מחובר</strong>
                   {tokenStatus.expiresAt && (
                     <span style={{ color: tokenWarning ? "#92400e" : "#6b7280" }}>
-                      {" "}
-                      · פג תוקף{" "}
+                      {" "}· פג תוקף{" "}
                       {daysLeft !== null && daysLeft > 0
                         ? `בעוד ${daysLeft} ימים (${formatIsraelDateTime(tokenStatus.expiresAt)})`
-                        : daysLeft === 0
-                          ? "היום!"
-                          : "פג תוקף"}
+                        : "היום!"}
                     </span>
                   )}
+                  {tokenStatus.expiresAt === "" && <span style={{ color: "#6b7280" }}> · System User Token (ללא פקיעה)</span>}
                   {tokenStatus.scopes.length > 0 && (
                     <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }} dir="ltr">
                       {tokenStatus.scopes.join(" · ")}
@@ -400,7 +463,6 @@ export default function MetaAdsClient() {
           </div>
         )}
 
-        {/* OAuth connect button */}
         {settings?.canManage && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <a
@@ -429,11 +491,7 @@ export default function MetaAdsClient() {
             </p>
           </div>
         )}
-        {!settings?.canManage && !loading && (
-          <div style={{ fontSize: 12, color: "#92400e" }}>רק מנהל יכול לעדכן את פרטי החיבור.</div>
-        )}
 
-        {/* Ad Account ID */}
         <div style={{ display: "grid", gap: 8 }}>
           <label style={{ fontWeight: 700, fontSize: 14 }}>
             Ad Account ID <span style={{ color: "#dc2626" }}>*</span>
@@ -445,13 +503,7 @@ export default function MetaAdsClient() {
               placeholder="מספר החשבון (עם act_ או בלי)"
               dir="ltr"
               disabled={loading || !settings?.canManage}
-              style={{
-                flex: 1,
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #e5e7eb",
-                fontSize: 14,
-              }}
+              style={{ flex: 1, padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb", fontSize: 14 }}
             />
             {settings?.canManage && (
               <button
@@ -473,31 +525,17 @@ export default function MetaAdsClient() {
               </button>
             )}
           </div>
-          <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>
-            מופיע ב-Meta Business Manager תחת Ad Accounts — בפורמט{" "}
-            <span dir="ltr">act_XXXXXXXXXX</span>
-          </p>
         </div>
 
-        {/* Advanced: manual token */}
         {settings?.canManage && (
-          <details open={showAdvanced} onToggle={(e) => setShowAdvanced((e.target as HTMLDetailsElement).open)}>
-            <summary
-              style={{
-                cursor: "pointer",
-                fontSize: 13,
-                color: "#6b7280",
-                fontWeight: 600,
-                userSelect: "none",
-              }}
-            >
+          <details
+            open={showAdvanced}
+            onToggle={(e) => setShowAdvanced((e.target as HTMLDetailsElement).open)}
+          >
+            <summary style={{ cursor: "pointer", fontSize: 13, color: "#6b7280", fontWeight: 600, userSelect: "none" }}>
               הגדרות מתקדמות — System User Token ידני
             </summary>
             <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
-              <p style={{ margin: 0, fontSize: 12, color: "#92400e" }}>
-                לשימוש עם System User Token שאינו פג תוקף (נוצר ב-Business Manager → System Users).
-                ממלא אוטומטית לאחר חיבור OAuth — אפשר לדרוס ידנית אם צריך.
-              </p>
               <input
                 value={appId}
                 onChange={(e) => setAppId(e.target.value)}
@@ -523,14 +561,12 @@ export default function MetaAdsClient() {
               {settings?.hasToken && (
                 <div style={{ fontSize: 12, color: "#6b7280" }}>
                   טוקן שמור: {settings.tokenPreview}
-                  {settings.updatedAt
-                    ? ` · עודכן ${formatIsraelDateTime(settings.updatedAt)}`
-                    : ""}
+                  {settings.updatedAt ? ` · עודכן ${formatIsraelDateTime(settings.updatedAt)}` : ""}
                 </div>
               )}
               <button
                 type="button"
-                onClick={() => void saveSettings()}
+                onClick={() => void saveAdvanced()}
                 disabled={saving}
                 style={{
                   justifySelf: "start",
@@ -550,8 +586,50 @@ export default function MetaAdsClient() {
         )}
       </div>
 
-      {/* ── Campaigns table ── */}
-      <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: 16 }}>
+      {/* ── Data section ── */}
+      <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, overflow: "hidden" }}>
+        {/* Tabs */}
+        <div style={{ display: "flex", borderBottom: "2px solid #e5e7eb", padding: "0 16px" }}>
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => { setActiveTab(tab.id); setSearch(""); }}
+              style={{
+                padding: "14px 18px",
+                border: "none",
+                borderBottom: activeTab === tab.id ? "2px solid #1d4ed8" : "2px solid transparent",
+                marginBottom: -2,
+                background: "transparent",
+                fontWeight: activeTab === tab.id ? 900 : 600,
+                fontSize: 14,
+                color: activeTab === tab.id ? "#1d4ed8" : "#6b7280",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              {tab.label}
+              {tab.count > 0 && (
+                <span
+                  style={{
+                    background: activeTab === tab.id ? "#dbeafe" : "#f3f4f6",
+                    color: activeTab === tab.id ? "#1d4ed8" : "#6b7280",
+                    borderRadius: 999,
+                    padding: "1px 7px",
+                    fontSize: 11,
+                    fontWeight: 700,
+                  }}
+                >
+                  {tab.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Filters bar */}
         <div
           style={{
             display: "flex",
@@ -559,40 +637,42 @@ export default function MetaAdsClient() {
             alignItems: "center",
             justifyContent: "space-between",
             gap: 10,
-            marginBottom: 10,
+            padding: "12px 16px",
+            borderBottom: "1px solid #f3f4f6",
           }}
         >
-          <div style={{ fontWeight: 900, fontSize: 16 }}>קמפיינים פעילים</div>
+          <div style={{ fontSize: 12, color: "#6b7280" }}>
+            {fetchedAt ? `עודכן: ${formatIsraelDateTime(fetchedAt)}` : "אין נתונים עדיין"}
+          </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             <select
               value={datePreset}
               onChange={(e) => setDatePreset(e.target.value)}
-              style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+              style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", fontSize: 13 }}
             >
-              <option value="today">היום</option>
-              <option value="yesterday">אתמול</option>
-              <option value="last_7d">7 ימים</option>
-              <option value="last_30d">30 ימים</option>
-              <option value="this_month">החודש</option>
-              <option value="last_month">חודש קודם</option>
-              <option value="maximum">מקסימום</option>
+              {DATE_PRESETS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
             </select>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="חיפוש לפי שם/ID"
-              style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+              placeholder="חיפוש לפי שם / ID"
+              style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", fontSize: 13, minWidth: 160 }}
             />
             <button
               type="button"
-              onClick={() => void refreshCampaigns()}
+              onClick={() => void refresh()}
               disabled={refreshing || loading}
               style={{
-                padding: "8px 12px",
+                padding: "8px 14px",
                 borderRadius: 10,
                 border: "1px solid #d1d5db",
                 background: "#fff",
                 fontWeight: 700,
+                fontSize: 13,
                 cursor: "pointer",
               }}
             >
@@ -600,88 +680,148 @@ export default function MetaAdsClient() {
             </button>
           </div>
         </div>
-        <div style={{ marginBottom: 8, fontSize: 12, color: "#6b7280" }}>
-          {fetchedAt
-            ? `עודכן לאחרונה: ${formatIsraelDateTime(fetchedAt)}`
-            : "אין סנכרון נתונים עדיין."}
-        </div>
 
-        {loading ? (
-          <div style={{ color: "#6b7280" }}>טוען...</div>
-        ) : filtered.length === 0 ? (
-          <div style={{ color: "#6b7280" }}>
-            אין קמפיינים פעילים להצגה. בדוק חיבור/הרשאות או שנה טווח זמן.
-          </div>
-        ) : (
-          <div style={{ overflow: "auto" }}>
-            <table style={{ width: "100%", minWidth: 1080, borderCollapse: "collapse" }}>
-              <thead>
-                <tr>
-                  {[
-                    "קמפיין",
-                    "סטטוס",
-                    "מטרה",
-                    "הוצאה",
-                    "חשיפות",
-                    "Reach",
-                    "קליקים",
-                    "CTR",
-                    "CPC",
-                    "תקציב יומי",
-                    "תקציב כולל",
-                  ].map((h) => (
-                    <th
-                      key={h}
-                      style={{
-                        textAlign: "right",
-                        padding: "10px 12px",
-                        borderBottom: "2px solid #e5e7eb",
-                        background: "#f8fafc",
-                        fontSize: 12,
-                        fontWeight: 900,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((c) => (
-                  <tr key={c.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                    <td style={{ padding: "10px 12px" }}>
-                      <div style={{ fontWeight: 800 }}>{c.name}</div>
-                      <div style={{ fontSize: 11, color: "#6b7280" }} dir="ltr">
-                        {c.id}
-                      </div>
-                    </td>
-                    <td style={{ padding: "10px 12px" }}>
-                      <div>{c.status}</div>
-                      <div style={{ fontSize: 11, color: "#6b7280" }}>{c.effectiveStatus}</div>
-                    </td>
-                    <td style={{ padding: "10px 12px" }}>{c.objective || "—"}</td>
-                    <td style={{ padding: "10px 12px" }}>{money(c.spend)}</td>
-                    <td style={{ padding: "10px 12px" }}>{intFmt(c.impressions)}</td>
-                    <td style={{ padding: "10px 12px" }}>{intFmt(c.reach)}</td>
-                    <td style={{ padding: "10px 12px" }}>{intFmt(c.clicks)}</td>
-                    <td style={{ padding: "10px 12px" }}>
-                      {c.ctr ? `${c.ctr.toFixed(2)}%` : "0%"}
-                    </td>
-                    <td style={{ padding: "10px 12px" }}>{money(c.cpc)}</td>
-                    <td style={{ padding: "10px 12px" }}>
-                      {c.dailyBudget ? money(c.dailyBudget) : "—"}
-                    </td>
-                    <td style={{ padding: "10px 12px" }}>
-                      {c.lifetimeBudget ? money(c.lifetimeBudget) : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {/* Tables */}
+        <div style={{ padding: 16 }}>
+          {loading ? (
+            <div style={{ color: "#6b7280", padding: "20px 0" }}>טוען...</div>
+          ) : activeTab === "campaigns" ? (
+            <CampaignsTable rows={filteredCampaigns} />
+          ) : activeTab === "adsets" ? (
+            <AdSetsTable rows={filteredAdSets} />
+          ) : (
+            <AdsTable rows={filteredAds} />
+          )}
+        </div>
       </div>
+    </div>
+  );
+}
+
+// ── Campaigns Table ────────────────────────────────────────────────────────────
+
+function CampaignsTable({ rows }: { rows: MetaAdsCampaignVm[] }) {
+  if (rows.length === 0)
+    return <div style={{ color: "#6b7280" }}>אין קמפיינים להצגה. בדוק חיבור/הרשאות או שנה טווח זמן.</div>;
+  return (
+    <div style={{ overflow: "auto" }}>
+      <table style={{ width: "100%", minWidth: 1100, borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            {["קמפיין", "סטטוס", "מטרה", "תוצאות", "עלות/תוצאה", "הוצאה", "חשיפות", "Reach", "קליקים", "CTR", "CPC", "תקציב יומי", "תקציב כולל"].map((h) => (
+              <th key={h} style={TH_STYLE}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((c) => (
+            <tr key={c.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
+              <td style={TD_STYLE}>
+                <div style={{ fontWeight: 700 }}>{c.name}</div>
+                <div style={{ fontSize: 11, color: "#9ca3af" }} dir="ltr">{c.id}</div>
+              </td>
+              <td style={TD_STYLE}><StatusBadge status={c.effectiveStatus} /></td>
+              <td style={TD_STYLE}><span style={{ fontSize: 12, color: "#6b7280" }}>{c.objective || "—"}</span></td>
+              <td style={{ ...TD_STYLE, fontWeight: 700, color: c.results > 0 ? "#1d4ed8" : undefined }}>{c.results > 0 ? intFmt(c.results) : "—"}</td>
+              <td style={TD_STYLE}>{cpr(c.spend, c.results)}</td>
+              <td style={{ ...TD_STYLE, fontWeight: 700 }}>{money(c.spend)}</td>
+              <td style={TD_STYLE}>{intFmt(c.impressions)}</td>
+              <td style={TD_STYLE}>{intFmt(c.reach)}</td>
+              <td style={TD_STYLE}>{intFmt(c.clicks)}</td>
+              <td style={TD_STYLE}>{c.ctr ? `${c.ctr.toFixed(2)}%` : "—"}</td>
+              <td style={TD_STYLE}>{c.cpc ? money(c.cpc) : "—"}</td>
+              <td style={TD_STYLE}>{c.dailyBudget ? money(c.dailyBudget) : "—"}</td>
+              <td style={TD_STYLE}>{c.lifetimeBudget ? money(c.lifetimeBudget) : "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Ad Sets Table ─────────────────────────────────────────────────────────────
+
+function AdSetsTable({ rows }: { rows: MetaAdSetVm[] }) {
+  if (rows.length === 0)
+    return <div style={{ color: "#6b7280" }}>אין סדרות מודעות להצגה.</div>;
+  return (
+    <div style={{ overflow: "auto" }}>
+      <table style={{ width: "100%", minWidth: 1200, borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            {["סדרת מודעות", "קמפיין", "סטטוס", "אופטימיזציה", "תוצאות", "עלות/תוצאה", "הוצאה", "חשיפות", "Reach", "קליקים", "CTR", "CPC", "CPM", "תקציב"].map((h) => (
+              <th key={h} style={TH_STYLE}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((s) => (
+            <tr key={s.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
+              <td style={TD_STYLE}>
+                <div style={{ fontWeight: 700 }}>{s.name}</div>
+                <div style={{ fontSize: 11, color: "#9ca3af" }} dir="ltr">{s.id}</div>
+              </td>
+              <td style={{ ...TD_STYLE, fontSize: 12, color: "#6b7280", maxWidth: 160 }}>{s.campaignName || "—"}</td>
+              <td style={TD_STYLE}><StatusBadge status={s.effectiveStatus} /></td>
+              <td style={{ ...TD_STYLE, fontSize: 12, color: "#6b7280" }}>{s.optimizationGoal || "—"}</td>
+              <td style={{ ...TD_STYLE, fontWeight: 700, color: s.results > 0 ? "#1d4ed8" : undefined }}>{s.results > 0 ? intFmt(s.results) : "—"}</td>
+              <td style={TD_STYLE}>{cpr(s.spend, s.results)}</td>
+              <td style={{ ...TD_STYLE, fontWeight: 700 }}>{money(s.spend)}</td>
+              <td style={TD_STYLE}>{intFmt(s.impressions)}</td>
+              <td style={TD_STYLE}>{intFmt(s.reach)}</td>
+              <td style={TD_STYLE}>{intFmt(s.clicks)}</td>
+              <td style={TD_STYLE}>{s.ctr ? `${s.ctr.toFixed(2)}%` : "—"}</td>
+              <td style={TD_STYLE}>{s.cpc ? money(s.cpc) : "—"}</td>
+              <td style={TD_STYLE}>{s.cpm ? money(s.cpm) : "—"}</td>
+              <td style={TD_STYLE}>
+                {s.dailyBudget ? money(s.dailyBudget) : s.lifetimeBudget ? money(s.lifetimeBudget) : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Ads Table ─────────────────────────────────────────────────────────────────
+
+function AdsTable({ rows }: { rows: MetaAdVm[] }) {
+  if (rows.length === 0)
+    return <div style={{ color: "#6b7280" }}>אין מודעות להצגה.</div>;
+  return (
+    <div style={{ overflow: "auto" }}>
+      <table style={{ width: "100%", minWidth: 1100, borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            {["מודעה", "סדרת מודעות", "קמפיין", "סטטוס", "תוצאות", "עלות/תוצאה", "הוצאה", "חשיפות", "Reach", "קליקים", "CTR", "CPC"].map((h) => (
+              <th key={h} style={TH_STYLE}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((a) => (
+            <tr key={a.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
+              <td style={TD_STYLE}>
+                <div style={{ fontWeight: 700 }}>{a.name}</div>
+                <div style={{ fontSize: 11, color: "#9ca3af" }} dir="ltr">{a.id}</div>
+              </td>
+              <td style={{ ...TD_STYLE, fontSize: 12, color: "#6b7280", maxWidth: 140 }}>{a.adSetName || "—"}</td>
+              <td style={{ ...TD_STYLE, fontSize: 12, color: "#6b7280", maxWidth: 140 }}>{a.campaignName || "—"}</td>
+              <td style={TD_STYLE}><StatusBadge status={a.effectiveStatus} /></td>
+              <td style={{ ...TD_STYLE, fontWeight: 700, color: a.results > 0 ? "#1d4ed8" : undefined }}>{a.results > 0 ? intFmt(a.results) : "—"}</td>
+              <td style={TD_STYLE}>{cpr(a.spend, a.results)}</td>
+              <td style={{ ...TD_STYLE, fontWeight: 700 }}>{money(a.spend)}</td>
+              <td style={TD_STYLE}>{intFmt(a.impressions)}</td>
+              <td style={TD_STYLE}>{intFmt(a.reach)}</td>
+              <td style={TD_STYLE}>{intFmt(a.clicks)}</td>
+              <td style={TD_STYLE}>{a.ctr ? `${a.ctr.toFixed(2)}%` : "—"}</td>
+              <td style={TD_STYLE}>{a.cpc ? money(a.cpc) : "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

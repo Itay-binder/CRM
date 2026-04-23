@@ -14,6 +14,10 @@ type MetaGraphError = {
   error_user_msg?: string;
 };
 
+type MetaActionStat = { action_type?: string; value?: string };
+
+// ── Campaigns ────────────────────────────────────────────────────────────────
+
 type MetaCampaignInsight = {
   spend?: string;
   impressions?: string;
@@ -21,6 +25,7 @@ type MetaCampaignInsight = {
   clicks?: string;
   cpc?: string;
   ctr?: string;
+  actions?: MetaActionStat[];
 };
 
 type MetaCampaignNode = {
@@ -37,11 +42,6 @@ type MetaCampaignNode = {
   insights?: { data?: MetaCampaignInsight[] };
 };
 
-type MetaCampaignsResponse = {
-  data?: MetaCampaignNode[];
-  error?: MetaGraphError;
-};
-
 export type MetaAdsCampaignVm = {
   id: string;
   name: string;
@@ -56,10 +56,101 @@ export type MetaAdsCampaignVm = {
   ctr: number;
   dailyBudget: number;
   lifetimeBudget: number;
+  results: number;
   startTime?: string;
   stopTime?: string;
   updatedTime?: string;
 };
+
+// ── Ad Sets ───────────────────────────────────────────────────────────────────
+
+type MetaAdSetInsight = {
+  spend?: string;
+  impressions?: string;
+  reach?: string;
+  clicks?: string;
+  cpc?: string;
+  ctr?: string;
+  cpm?: string;
+  actions?: MetaActionStat[];
+};
+
+type MetaAdSetNode = {
+  id?: string;
+  name?: string;
+  status?: string;
+  effective_status?: string;
+  campaign_id?: string;
+  campaign?: { name?: string };
+  daily_budget?: string;
+  lifetime_budget?: string;
+  optimization_goal?: string;
+  insights?: { data?: MetaAdSetInsight[] };
+};
+
+export type MetaAdSetVm = {
+  id: string;
+  name: string;
+  status: string;
+  effectiveStatus: string;
+  campaignId: string;
+  campaignName: string;
+  optimizationGoal: string;
+  spend: number;
+  impressions: number;
+  reach: number;
+  clicks: number;
+  cpc: number;
+  ctr: number;
+  cpm: number;
+  dailyBudget: number;
+  lifetimeBudget: number;
+  results: number;
+};
+
+// ── Ads ───────────────────────────────────────────────────────────────────────
+
+type MetaAdInsight = {
+  spend?: string;
+  impressions?: string;
+  reach?: string;
+  clicks?: string;
+  cpc?: string;
+  ctr?: string;
+  actions?: MetaActionStat[];
+};
+
+type MetaAdNode = {
+  id?: string;
+  name?: string;
+  status?: string;
+  effective_status?: string;
+  adset_id?: string;
+  adset?: { name?: string };
+  campaign_id?: string;
+  campaign?: { name?: string };
+  insights?: { data?: MetaAdInsight[] };
+};
+
+export type MetaAdVm = {
+  id: string;
+  name: string;
+  status: string;
+  effectiveStatus: string;
+  adSetId: string;
+  adSetName: string;
+  campaignId: string;
+  campaignName: string;
+  spend: number;
+  impressions: number;
+  reach: number;
+  clicks: number;
+  cpc: number;
+  ctr: number;
+  results: number;
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function graphBaseUrl(): string {
   return process.env.META_GRAPH_API_BASE?.trim() || "https://graph.facebook.com/v22.0";
@@ -78,6 +169,23 @@ function toInt(raw?: string): number {
 function budgetToCurrency(raw?: string): number {
   const cents = toNum(raw);
   return cents > 0 ? cents / 100 : 0;
+}
+
+const RESULT_ACTION_TYPES = new Set([
+  "lead",
+  "offsite_conversion.fb_pixel_lead",
+  "onsite_conversion.lead_grouped",
+  "purchase",
+  "offsite_conversion.fb_pixel_purchase",
+  "complete_registration",
+  "offsite_conversion.fb_pixel_complete_registration",
+]);
+
+function extractResults(actions?: MetaActionStat[]): number {
+  if (!actions?.length) return 0;
+  return actions
+    .filter((a) => RESULT_ACTION_TYPES.has(a.action_type ?? ""))
+    .reduce((sum, a) => sum + toInt(a.value), 0);
 }
 
 async function callMetaGraph<T>(
@@ -104,6 +212,8 @@ async function callMetaGraph<T>(
   return json;
 }
 
+// ── Token validation ──────────────────────────────────────────────────────────
+
 export async function validateMetaToken(config: MetaAdsConfig): Promise<MetaTokenStatus> {
   const appId = process.env.META_APP_ID?.trim();
   const appSecret = process.env.META_APP_SECRET?.trim();
@@ -124,7 +234,12 @@ export async function validateMetaToken(config: MetaAdsConfig): Promise<MetaToke
       { cache: "no-store" }
     );
     const json = (await res.json().catch(() => ({}))) as {
-      data?: { is_valid?: boolean; scopes?: string[]; expires_at?: number; error?: { message?: string } };
+      data?: {
+        is_valid?: boolean;
+        scopes?: string[];
+        expires_at?: number;
+        error?: { message?: string };
+      };
     };
     const data = json.data;
     if (!data?.is_valid) {
@@ -137,6 +252,8 @@ export async function validateMetaToken(config: MetaAdsConfig): Promise<MetaToke
   }
 }
 
+// ── Campaigns ─────────────────────────────────────────────────────────────────
+
 export async function listActiveMetaAdsCampaigns(
   config: MetaAdsConfig,
   datePreset = "last_7d"
@@ -146,44 +263,149 @@ export async function listActiveMetaAdsCampaigns(
   if (!config.accessToken.trim()) throw new Error("חסר Access Token.");
 
   const fields =
-    "id,name,status,effective_status,objective,daily_budget,lifetime_budget,start_time,stop_time,updated_time,insights.date_preset(" +
+    "id,name,status,effective_status,objective,daily_budget,lifetime_budget,start_time,stop_time,updated_time," +
+    "insights.date_preset(" +
     datePreset +
-    "){spend,impressions,reach,clicks,cpc,ctr}";
+    "){spend,impressions,reach,clicks,cpc,ctr,actions}";
   const query = new URLSearchParams({
     fields,
-    limit: "100",
+    limit: "200",
     effective_status: JSON.stringify(["ACTIVE", "PAUSED", "PENDING_REVIEW", "IN_PROCESS"]),
   });
 
-  const json = await callMetaGraph<MetaCampaignsResponse>(
+  const json = await callMetaGraph<{ data?: MetaCampaignNode[] }>(
     config,
     `/act_${adAccountId}/campaigns`,
     query
   );
   const rows = Array.isArray(json.data) ? json.data : [];
-  const out: MetaAdsCampaignVm[] = [];
-  for (const row of rows) {
-    const id = (row.id ?? "").trim();
-    if (!id) continue;
-    const insight = row.insights?.data?.[0];
-    out.push({
-      id,
-      name: (row.name ?? "").trim() || "ללא שם",
-      status: (row.status ?? "").trim() || "UNKNOWN",
-      effectiveStatus: (row.effective_status ?? "").trim() || "UNKNOWN",
-      objective: (row.objective ?? "").trim() || "",
-      spend: toNum(insight?.spend),
-      impressions: toInt(insight?.impressions),
-      reach: toInt(insight?.reach),
-      clicks: toInt(insight?.clicks),
-      cpc: toNum(insight?.cpc),
-      ctr: toNum(insight?.ctr),
-      dailyBudget: budgetToCurrency(row.daily_budget),
-      lifetimeBudget: budgetToCurrency(row.lifetime_budget),
-      startTime: row.start_time?.trim() || undefined,
-      stopTime: row.stop_time?.trim() || undefined,
-      updatedTime: row.updated_time?.trim() || undefined,
-    });
-  }
-  return out.sort((a, b) => b.spend - a.spend || b.impressions - a.impressions);
+  return rows
+    .filter((r) => r.id)
+    .map((r) => {
+      const insight = r.insights?.data?.[0];
+      return {
+        id: (r.id ?? "").trim(),
+        name: (r.name ?? "").trim() || "ללא שם",
+        status: (r.status ?? "").trim() || "UNKNOWN",
+        effectiveStatus: (r.effective_status ?? "").trim() || "UNKNOWN",
+        objective: (r.objective ?? "").trim() || "",
+        spend: toNum(insight?.spend),
+        impressions: toInt(insight?.impressions),
+        reach: toInt(insight?.reach),
+        clicks: toInt(insight?.clicks),
+        cpc: toNum(insight?.cpc),
+        ctr: toNum(insight?.ctr),
+        dailyBudget: budgetToCurrency(r.daily_budget),
+        lifetimeBudget: budgetToCurrency(r.lifetime_budget),
+        results: extractResults(insight?.actions),
+        startTime: r.start_time?.trim() || undefined,
+        stopTime: r.stop_time?.trim() || undefined,
+        updatedTime: r.updated_time?.trim() || undefined,
+      };
+    })
+    .sort((a, b) => b.spend - a.spend || b.impressions - a.impressions);
+}
+
+// ── Ad Sets ───────────────────────────────────────────────────────────────────
+
+export async function listAdSets(
+  config: MetaAdsConfig,
+  datePreset = "last_7d"
+): Promise<MetaAdSetVm[]> {
+  const adAccountId = normalizeAdAccountId(config.adAccountId);
+  if (!adAccountId.trim()) throw new Error("חסר Ad Account ID.");
+
+  const fields =
+    "id,name,status,effective_status,campaign_id,campaign{name},daily_budget,lifetime_budget,optimization_goal," +
+    "insights.date_preset(" +
+    datePreset +
+    "){spend,impressions,reach,clicks,cpc,ctr,cpm,actions}";
+  const query = new URLSearchParams({
+    fields,
+    limit: "200",
+    effective_status: JSON.stringify(["ACTIVE", "PAUSED", "PENDING_REVIEW", "IN_PROCESS"]),
+  });
+
+  const json = await callMetaGraph<{ data?: MetaAdSetNode[] }>(
+    config,
+    `/act_${adAccountId}/adsets`,
+    query
+  );
+  const rows = Array.isArray(json.data) ? json.data : [];
+  return rows
+    .filter((r) => r.id)
+    .map((r) => {
+      const insight = r.insights?.data?.[0];
+      return {
+        id: (r.id ?? "").trim(),
+        name: (r.name ?? "").trim() || "ללא שם",
+        status: (r.status ?? "").trim() || "UNKNOWN",
+        effectiveStatus: (r.effective_status ?? "").trim() || "UNKNOWN",
+        campaignId: (r.campaign_id ?? "").trim(),
+        campaignName: (r.campaign?.name ?? "").trim(),
+        optimizationGoal: (r.optimization_goal ?? "").trim(),
+        spend: toNum(insight?.spend),
+        impressions: toInt(insight?.impressions),
+        reach: toInt(insight?.reach),
+        clicks: toInt(insight?.clicks),
+        cpc: toNum(insight?.cpc),
+        ctr: toNum(insight?.ctr),
+        cpm: toNum(insight?.cpm),
+        dailyBudget: budgetToCurrency(r.daily_budget),
+        lifetimeBudget: budgetToCurrency(r.lifetime_budget),
+        results: extractResults(insight?.actions),
+      };
+    })
+    .sort((a, b) => b.spend - a.spend);
+}
+
+// ── Ads ───────────────────────────────────────────────────────────────────────
+
+export async function listAds(
+  config: MetaAdsConfig,
+  datePreset = "last_7d"
+): Promise<MetaAdVm[]> {
+  const adAccountId = normalizeAdAccountId(config.adAccountId);
+  if (!adAccountId.trim()) throw new Error("חסר Ad Account ID.");
+
+  const fields =
+    "id,name,status,effective_status,adset_id,adset{name},campaign_id,campaign{name}," +
+    "insights.date_preset(" +
+    datePreset +
+    "){spend,impressions,reach,clicks,cpc,ctr,actions}";
+  const query = new URLSearchParams({
+    fields,
+    limit: "200",
+    effective_status: JSON.stringify(["ACTIVE", "PAUSED", "PENDING_REVIEW", "IN_PROCESS"]),
+  });
+
+  const json = await callMetaGraph<{ data?: MetaAdNode[] }>(
+    config,
+    `/act_${adAccountId}/ads`,
+    query
+  );
+  const rows = Array.isArray(json.data) ? json.data : [];
+  return rows
+    .filter((r) => r.id)
+    .map((r) => {
+      const insight = r.insights?.data?.[0];
+      return {
+        id: (r.id ?? "").trim(),
+        name: (r.name ?? "").trim() || "ללא שם",
+        status: (r.status ?? "").trim() || "UNKNOWN",
+        effectiveStatus: (r.effective_status ?? "").trim() || "UNKNOWN",
+        adSetId: (r.adset_id ?? "").trim(),
+        adSetName: (r.adset?.name ?? "").trim(),
+        campaignId: (r.campaign_id ?? "").trim(),
+        campaignName: (r.campaign?.name ?? "").trim(),
+        spend: toNum(insight?.spend),
+        impressions: toInt(insight?.impressions),
+        reach: toInt(insight?.reach),
+        clicks: toInt(insight?.clicks),
+        cpc: toNum(insight?.cpc),
+        ctr: toNum(insight?.ctr),
+        results: extractResults(insight?.actions),
+      };
+    })
+    .sort((a, b) => b.spend - a.spend);
 }

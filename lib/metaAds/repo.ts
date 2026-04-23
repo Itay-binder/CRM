@@ -8,6 +8,7 @@ export type MetaAdsConfig = {
   businessId: string;
   adAccountId: string;
   accessToken: string;
+  tokenExpiresAt: string; // ISO date, or "" for non-expiring tokens
   updatedAt: string;
 };
 
@@ -30,6 +31,7 @@ export async function getMetaAdsConfig(db: Firestore): Promise<MetaAdsConfig | n
     businessId: asString(d.businessId).trim(),
     adAccountId: normalizeAdAccountId(asString(d.adAccountId)),
     accessToken: asString(d.accessToken).trim(),
+    tokenExpiresAt: asString(d.tokenExpiresAt).trim(),
     updatedAt: asString(d.updatedAt).trim(),
   };
 }
@@ -39,8 +41,9 @@ export async function saveMetaAdsConfig(
   input: {
     appId?: string;
     businessId?: string;
-    adAccountId: string;
+    adAccountId?: string;
     accessToken?: string;
+    tokenExpiresAt?: string;
   }
 ): Promise<MetaAdsConfig> {
   const prev = await getMetaAdsConfig(db);
@@ -48,11 +51,28 @@ export async function saveMetaAdsConfig(
   const next: MetaAdsConfig = {
     appId: input.appId?.trim() ?? prev?.appId ?? "",
     businessId: input.businessId?.trim() ?? prev?.businessId ?? "",
-    adAccountId: normalizeAdAccountId(input.adAccountId),
+    adAccountId:
+      input.adAccountId !== undefined
+        ? normalizeAdAccountId(input.adAccountId)
+        : (prev?.adAccountId ?? ""),
     accessToken:
-      input.accessToken !== undefined ? input.accessToken.trim() : prev?.accessToken ?? "",
+      input.accessToken !== undefined ? input.accessToken.trim() : (prev?.accessToken ?? ""),
+    tokenExpiresAt:
+      input.tokenExpiresAt !== undefined
+        ? input.tokenExpiresAt.trim()
+        : (prev?.tokenExpiresAt ?? ""),
     updatedAt: now,
   };
   await db.collection(COLLECTION).doc(CONFIG_DOC_ID).set(next, { merge: true });
   return next;
+}
+
+export async function clearMetaAdsToken(db: Firestore): Promise<void> {
+  await db
+    .collection(COLLECTION)
+    .doc(CONFIG_DOC_ID)
+    .set(
+      { accessToken: "", tokenExpiresAt: "", updatedAt: new Date().toISOString() },
+      { merge: true }
+    );
 }

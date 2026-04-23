@@ -1,6 +1,13 @@
 import type { MetaAdsConfig } from "@/lib/metaAds/repo";
 import { normalizeAdAccountId } from "@/lib/metaAds/repo";
 
+export type MetaTokenStatus = {
+  valid: boolean;
+  scopes: string[];
+  expiresAt?: string;
+  error?: string;
+};
+
 type MetaGraphError = {
   message?: string;
   error_user_title?: string;
@@ -95,6 +102,39 @@ async function callMetaGraph<T>(
     throw new Error(msg);
   }
   return json;
+}
+
+export async function validateMetaToken(config: MetaAdsConfig): Promise<MetaTokenStatus> {
+  const appId = process.env.META_APP_ID?.trim();
+  const appSecret = process.env.META_APP_SECRET?.trim();
+  if (!appId || !appSecret) {
+    return { valid: false, scopes: [], error: "META_APP_ID / META_APP_SECRET לא מוגדרים." };
+  }
+  if (!config.accessToken.trim()) {
+    return { valid: false, scopes: [], error: "אין Access Token." };
+  }
+  try {
+    const base = graphBaseUrl().replace(/\/$/, "");
+    const res = await fetch(
+      `${base}/debug_token?` +
+        new URLSearchParams({
+          input_token: config.accessToken,
+          access_token: `${appId}|${appSecret}`,
+        }).toString(),
+      { cache: "no-store" }
+    );
+    const json = (await res.json().catch(() => ({}))) as {
+      data?: { is_valid?: boolean; scopes?: string[]; expires_at?: number; error?: { message?: string } };
+    };
+    const data = json.data;
+    if (!data?.is_valid) {
+      return { valid: false, scopes: [], error: data?.error?.message ?? "Token אינו תקף." };
+    }
+    const expiresAt = data.expires_at ? new Date(data.expires_at * 1000).toISOString() : undefined;
+    return { valid: true, scopes: Array.isArray(data.scopes) ? data.scopes : [], expiresAt };
+  } catch (e) {
+    return { valid: false, scopes: [], error: e instanceof Error ? e.message : "Validation failed" };
+  }
 }
 
 export async function listActiveMetaAdsCampaigns(

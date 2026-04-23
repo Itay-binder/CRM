@@ -21,6 +21,17 @@ type DashboardMetricsOk = {
     orderCount: number;
     isActive: boolean;
   }>;
+  activeMoversByRegion: Array<{
+    region: string;
+    activeMoversCount: number;
+    drivers: Array<{
+      contactId: string;
+      name: string;
+      phone: string;
+      opportunityId: string;
+      opportunityName: string;
+    }>;
+  }>;
   movingOrdersWorkspace: boolean;
   warning?: string;
 };
@@ -46,6 +57,7 @@ type WidgetId =
   | "customers_by_channel"
   | "paying_open"
   | "orders_per_mover"
+  | "active_movers_by_region"
   | "sales_mvp"
   | "tasks";
 
@@ -60,6 +72,7 @@ const DEFAULT_WIDGETS: WidgetConfig[] = [
   { id: "customers_by_channel", title: "לקוחות לפי ערוצים", visible: true },
   { id: "paying_open", title: "לקוחות פעילים", visible: true },
   { id: "orders_per_mover", title: "לידים פר מוביל (קאונטר)", visible: true },
+  { id: "active_movers_by_region", title: "מובילים פעילים לפי אזורים", visible: true },
   { id: "sales_mvp", title: "מכירות (MVP)", visible: true },
   { id: "tasks", title: "משימות (היום · מחר · באיחור)", visible: true },
 ];
@@ -78,6 +91,16 @@ export default function DashboardClient() {
   const [err, setErr] = useState<string | null>(null);
   const [widgets, setWidgets] = useState<WidgetConfig[]>(DEFAULT_WIDGETS);
   const [manageOpen, setManageOpen] = useState(false);
+  const [driversRegionOpen, setDriversRegionOpen] = useState<{
+    region: string;
+    drivers: Array<{
+      contactId: string;
+      name: string;
+      phone: string;
+      opportunityId: string;
+      opportunityName: string;
+    }>;
+  } | null>(null);
 
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -386,6 +409,55 @@ export default function DashboardClient() {
         );
       return <div key={id}>{tableShell("לידים פר מוביל (קאונטר)", subtitle, body)}</div>;
     }
+    if (id === "active_movers_by_region") {
+      const rows = m?.activeMoversByRegion ?? [];
+      const body =
+        rows.length === 0 ? (
+          <div style={{ padding: 14, color: "#6b7280", fontWeight: 600 }}>אין נתונים להצגה.</div>
+        ) : (
+          <table style={{ width: "100%", minWidth: 460, borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "right", padding: "10px 12px", borderBottom: "2px solid #e5e7eb", background: "#f8fafc", fontSize: 12, fontWeight: 900 }}>
+                  אזור
+                </th>
+                <th style={{ textAlign: "right", padding: "10px 12px", borderBottom: "2px solid #e5e7eb", background: "#f8fafc", fontSize: 12, fontWeight: 900 }}>
+                  כמות מובילים פעילים
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.region} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                  <td style={{ padding: "10px 12px", fontWeight: 700 }}>{r.region}</td>
+                  <td style={{ padding: "10px 12px" }}>
+                    <button
+                      type="button"
+                      onClick={() => setDriversRegionOpen({ region: r.region, drivers: r.drivers })}
+                      style={{
+                        border: "1px solid #ddd6fe",
+                        background: "#faf5ff",
+                        color: "#5b21b6",
+                        borderRadius: 10,
+                        padding: "6px 10px",
+                        fontWeight: 800,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {prettyCount(r.activeMoversCount)}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        );
+      return (
+        <div key={id}>
+          {tableShell("מובילים פעילים לפי אזורים", "כל האזורים מהגדרות אזורי פעילות. לחיצה על הכמות פותחת רשימת נהגים.", body)}
+        </div>
+      );
+    }
     if (id === "sales_mvp") {
       return (
         <div key={id}>
@@ -603,6 +675,83 @@ export default function DashboardClient() {
       )}
 
       <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 20 }}>{renderedBlocks}</div>
+
+      {driversRegionOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setDriversRegionOpen(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(17,24,39,0.45)",
+            zIndex: 60,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(760px, 96vw)",
+              maxHeight: "88vh",
+              overflow: "auto",
+              background: "#fff",
+              borderRadius: 14,
+              border: "1px solid #e5e7eb",
+            }}
+          >
+            <div style={{ padding: "14px 16px", borderBottom: "1px solid #f3f4f6", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <div style={{ fontWeight: 900 }}>
+                נהגים באזור: {driversRegionOpen.region}
+                <div style={{ marginTop: 4, fontSize: 12, color: "#6b7280", fontWeight: 600 }}>
+                  סה״כ: {prettyCount(driversRegionOpen.drivers.length)}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDriversRegionOpen(null)}
+                style={{ border: "1px solid #e5e7eb", background: "#fff", borderRadius: 10, padding: "6px 10px", cursor: "pointer", fontWeight: 700 }}
+              >
+                סגור
+              </button>
+            </div>
+            {driversRegionOpen.drivers.length === 0 ? (
+              <div style={{ padding: 14, color: "#6b7280", fontWeight: 600 }}>אין נהגים פעילים באזור זה.</div>
+            ) : (
+              <table style={{ width: "100%", minWidth: 560, borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    {["שם נהג", "טלפון", "הזדמנות"].map((h) => (
+                      <th key={h} style={{ textAlign: "right", padding: "10px 12px", borderBottom: "2px solid #e5e7eb", background: "#f8fafc", fontSize: 12, fontWeight: 900 }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {driversRegionOpen.drivers.map((d) => (
+                    <tr key={d.contactId} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                      <td style={{ padding: "10px 12px", fontWeight: 700 }}>{d.name || "ללא שם"}</td>
+                      <td style={{ padding: "10px 12px" }}>{d.phone || "—"}</td>
+                      <td style={{ padding: "10px 12px" }}>
+                        <a
+                          href={`/pipeline?openOpportunityId=${encodeURIComponent(d.opportunityId)}`}
+                          style={{ color: "#4c1d95", fontWeight: 700 }}
+                        >
+                          {d.opportunityName || "הזדמנות"}
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

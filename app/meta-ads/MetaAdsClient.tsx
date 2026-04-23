@@ -13,6 +13,13 @@ type SettingsVm = {
   canManage: boolean;
 };
 
+type TokenStatus = {
+  connected: boolean;
+  scopes: string[];
+  expiresAt: string;
+  error: string | null;
+};
+
 type CampaignVm = {
   id: string;
   name: string;
@@ -53,62 +60,99 @@ async function parseJson<T>(res: Response): Promise<T> {
   return (await res.json().catch(() => ({}))) as T;
 }
 
+function daysUntil(isoDate: string): number | null {
+  if (!isoDate) return null;
+  const ms = new Date(isoDate).getTime() - Date.now();
+  return Math.ceil(ms / (1000 * 60 * 60 * 24));
+}
+
 export default function MetaAdsClient() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
 
   const [settings, setSettings] = useState<SettingsVm | null>(null);
+  const [tokenStatus, setTokenStatus] = useState<TokenStatus | null>(null);
   const [campaigns, setCampaigns] = useState<CampaignVm[]>([]);
   const [fetchedAt, setFetchedAt] = useState("");
 
-  const [appId, setAppId] = useState("");
-  const [businessId, setBusinessId] = useState("");
   const [adAccountId, setAdAccountId] = useState("");
-  const [accessToken, setAccessToken] = useState("");
   const [datePreset, setDatePreset] = useState("last_7d");
   const [search, setSearch] = useState("");
 
+  // Advanced / manual token section
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [appId, setAppId] = useState("");
+  const [businessId, setBusinessId] = useState("");
+  const [accessToken, setAccessToken] = useState("");
+
+  // Handle OAuth redirect params on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("meta_connected") === "1") {
+      setOkMsg("Meta Ads חובר בהצלחה! טוקן נשמר ל-60 יום.");
+      window.history.replaceState({}, "", "/meta-ads");
+    }
+    const metaError = params.get("meta_error");
+    if (metaError) {
+      setErr(decodeURIComponent(metaError));
+      window.history.replaceState({}, "", "/meta-ads");
+    }
+  }, []);
+
   const loadSettings = useCallback(async () => {
-    const settingsRes = await fetch("/api/meta-ads/settings", {
+    const res = await fetch("/api/meta-ads/settings", {
       credentials: "include",
       cache: "no-store",
     });
-    if (settingsRes.status === 401) {
+    if (res.status === 401) {
       window.location.href = `/login?returnTo=${encodeURIComponent("/meta-ads")}`;
       return null;
     }
-    const settingsJson = await parseJson<{ ok?: boolean; config?: SettingsVm; error?: string }>(
-      settingsRes
-    );
-    if (!settingsRes.ok || !settingsJson.ok || !settingsJson.config) {
-      throw new Error(settingsJson.error || "טעינת הגדרות Meta Ads נכשלה");
+    const j = await parseJson<{ ok?: boolean; config?: SettingsVm; error?: string }>(res);
+    if (!res.ok || !j.ok || !j.config) throw new Error(j.error || "טעינת הגדרות נכשלה");
+    setSettings(j.config);
+    setAdAccountId(j.config.adAccountId ?? "");
+    setAppId(j.config.appId ?? "");
+    setBusinessId(j.config.businessId ?? "");
+    return j.config;
+  }, []);
+
+  const loadTokenStatus = useCallback(async () => {
+    const res = await fetch("/api/meta-ads/status", {
+      credentials: "include",
+      cache: "no-store",
+    });
+    const j = await parseJson<{ ok?: boolean; connected?: boolean; scopes?: string[]; expiresAt?: string; error?: string | null }>(res);
+    if (res.ok && j.ok) {
+      setTokenStatus({
+        connected: j.connected ?? false,
+        scopes: j.scopes ?? [],
+        expiresAt: j.expiresAt ?? "",
+        error: j.error ?? null,
+      });
     }
-    setSettings(settingsJson.config);
-    setAppId(settingsJson.config.appId ?? "");
-    setBusinessId(settingsJson.config.businessId ?? "");
-    setAdAccountId(settingsJson.config.adAccountId ?? "");
-    return settingsJson.config;
   }, []);
 
   const loadCampaigns = useCallback(async (preset: string) => {
-    const campaignsRes = await fetch(
+    const res = await fetch(
       `/api/meta-ads/campaigns?datePreset=${encodeURIComponent(preset)}`,
       { credentials: "include", cache: "no-store" }
     );
-    const campaignsJson = await parseJson<CampaignsResponse>(campaignsRes);
-    if (!campaignsRes.ok || !campaignsJson.ok) {
-      if (campaignsRes.status === 400) {
+    const j = await parseJson<CampaignsResponse>(res);
+    if (!res.ok || !j.ok) {
+      if (res.status === 400) {
         setCampaigns([]);
         setFetchedAt("");
         return;
       }
-      throw new Error(campaignsJson.error || "טעינת קמפיינים נכשלה");
+      throw new Error(j.error || "טעינת קמפיינים נכשלה");
     }
-    setCampaigns(campaignsJson.campaigns ?? []);
-    setFetchedAt(campaignsJson.fetchedAt ?? "");
+    setCampaigns(j.campaigns ?? []);
+    setFetchedAt(j.fetchedAt ?? "");
   }, []);
 
   const loadAll = useCallback(
@@ -117,6 +161,7 @@ export default function MetaAdsClient() {
       setErr(null);
       try {
         const cfg = await loadSettings();
+        await loadTokenStatus();
         if (cfg?.adAccountId && cfg.hasToken) {
           await loadCampaigns(preset);
         } else {
@@ -129,7 +174,7 @@ export default function MetaAdsClient() {
         setLoading(false);
       }
     },
-    [loadCampaigns, loadSettings]
+    [loadCampaigns, loadSettings, loadTokenStatus]
   );
 
   useEffect(() => {
@@ -158,11 +203,61 @@ export default function MetaAdsClient() {
       setSettings(j.config);
       setAccessToken("");
       setOkMsg("הגדרות Meta Ads נשמרו.");
+      await loadTokenStatus();
       await loadCampaigns(datePreset);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "שמירת הגדרות נכשלה");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function saveAdAccountOnly() {
+    if (!settings?.canManage) return;
+    setSaving(true);
+    setErr(null);
+    setOkMsg(null);
+    try {
+      const res = await fetch("/api/meta-ads/settings", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adAccountId }),
+      });
+      const j = await parseJson<{ ok?: boolean; config?: SettingsVm; error?: string }>(res);
+      if (!res.ok || !j.ok || !j.config) throw new Error(j.error || "שמירת Ad Account נכשלה");
+      setSettings(j.config);
+      setOkMsg("Ad Account ID נשמר.");
+      if (j.config.hasToken) await loadCampaigns(datePreset);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "שמירה נכשלה");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function disconnect() {
+    if (!settings?.canManage) return;
+    setDisconnecting(true);
+    setErr(null);
+    setOkMsg(null);
+    try {
+      const res = await fetch("/api/meta-ads/disconnect", {
+        method: "POST",
+        credentials: "include",
+      });
+      const j = await parseJson<{ ok?: boolean; error?: string }>(res);
+      if (!res.ok || !j.ok) throw new Error(j.error || "ניתוק נכשל");
+      setOkMsg("Meta Ads נותק.");
+      setTokenStatus({ connected: false, scopes: [], expiresAt: "", error: null });
+      setCampaigns([]);
+      setFetchedAt("");
+      const updatedSettings = await loadSettings();
+      if (updatedSettings) setSettings(updatedSettings);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "ניתוק נכשל");
+    } finally {
+      setDisconnecting(false);
     }
   }
 
@@ -190,11 +285,14 @@ export default function MetaAdsClient() {
     );
   }, [campaigns, search]);
 
+  const daysLeft = tokenStatus?.expiresAt ? daysUntil(tokenStatus.expiresAt) : null;
+  const tokenWarning = daysLeft !== null && daysLeft <= 14;
+
   return (
     <div style={{ display: "grid", gap: 14 }}>
       <p style={{ margin: 0, color: "#4b5563", lineHeight: 1.6, fontSize: 14 }}>
-        כאן מחברים את חשבון ה־Meta Ads Manager ומקבלים נתונים לקמפיינים פעילים (תקציב, הוצאה, חשיפות,
-        קליקים ו־CTR) ישירות בתוך ה־CRM.
+        כאן מחברים את חשבון ה־Meta Ads Manager ומקבלים נתוני קמפיינים פעילים (תקציב, הוצאה,
+        חשיפות, קליקים ו־CTR) ישירות ב־CRM.
       </p>
 
       {err ? (
@@ -208,6 +306,7 @@ export default function MetaAdsClient() {
         </div>
       ) : null}
 
+      {/* ── Connection card ── */}
       <div
         style={{
           background: "#fff",
@@ -215,73 +314,243 @@ export default function MetaAdsClient() {
           borderRadius: 16,
           padding: 16,
           display: "grid",
-          gap: 10,
+          gap: 12,
         }}
       >
         <div style={{ fontWeight: 900, fontSize: 16 }}>חיבור Meta Ads Manager</div>
-        <input
-          value={appId}
-          onChange={(e) => setAppId(e.target.value)}
-          placeholder="Meta App ID (אופציונלי)"
-          dir="ltr"
-          disabled={loading || !settings?.canManage}
-          style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb" }}
-        />
-        <input
-          value={businessId}
-          onChange={(e) => setBusinessId(e.target.value)}
-          placeholder="Meta Business ID (אופציונלי)"
-          dir="ltr"
-          disabled={loading || !settings?.canManage}
-          style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb" }}
-        />
-        <input
-          value={adAccountId}
-          onChange={(e) => setAdAccountId(e.target.value)}
-          placeholder="Ad Account ID (עם או בלי act_)"
-          dir="ltr"
-          disabled={loading || !settings?.canManage}
-          style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb" }}
-        />
-        <input
-          value={accessToken}
-          onChange={(e) => setAccessToken(e.target.value)}
-          placeholder="System User Access Token (ads_read)"
-          dir="ltr"
-          disabled={loading || !settings?.canManage}
-          style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb" }}
-        />
-        <div style={{ fontSize: 13, color: "#6b7280" }}>
-          טוקן שמור: {settings?.hasToken ? settings.tokenPreview : "לא הוגדר"}
-          {settings?.updatedAt ? ` · עודכן ${formatIsraelDateTime(settings.updatedAt)}` : ""}
-        </div>
-        <p style={{ margin: 0, fontSize: 12, color: "#92400e", lineHeight: 1.5 }}>
-          נדרש טוקן עם הרשאת `ads_read` לפחות כדי לקרוא קמפיינים פעילים ונתוני ביצועים. בלי טוקן פעיל לא
-          יוצגו נתונים.
-        </p>
-        {settings?.canManage ? (
-          <button
-            type="button"
-            onClick={() => void saveSettings()}
-            disabled={saving}
+
+        {/* Token status */}
+        {!loading && (
+          <div
             style={{
-              justifySelf: "start",
-              padding: "10px 18px",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 14px",
               borderRadius: 10,
-              border: "none",
-              background: "#1d4ed8",
-              color: "#fff",
-              fontWeight: 800,
-              cursor: "pointer",
+              background: tokenStatus?.connected
+                ? tokenWarning
+                  ? "#fffbeb"
+                  : "#ecfdf5"
+                : "#f9fafb",
+              border: `1px solid ${
+                tokenStatus?.connected ? (tokenWarning ? "#fcd34d" : "#6ee7b7") : "#e5e7eb"
+              }`,
             }}
           >
-            {saving ? "שומר..." : "שמור חיבור"}
-          </button>
-        ) : (
+            <div
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: "50%",
+                background: tokenStatus?.connected
+                  ? tokenWarning
+                    ? "#f59e0b"
+                    : "#10b981"
+                  : "#d1d5db",
+                flexShrink: 0,
+              }}
+            />
+            <div style={{ flex: 1, fontSize: 13 }}>
+              {tokenStatus?.connected ? (
+                <>
+                  <strong>מחובר</strong>
+                  {tokenStatus.expiresAt && (
+                    <span style={{ color: tokenWarning ? "#92400e" : "#6b7280" }}>
+                      {" "}
+                      · פג תוקף{" "}
+                      {daysLeft !== null && daysLeft > 0
+                        ? `בעוד ${daysLeft} ימים (${formatIsraelDateTime(tokenStatus.expiresAt)})`
+                        : daysLeft === 0
+                          ? "היום!"
+                          : "פג תוקף"}
+                    </span>
+                  )}
+                  {tokenStatus.scopes.length > 0 && (
+                    <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }} dir="ltr">
+                      {tokenStatus.scopes.join(" · ")}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <span style={{ color: "#6b7280" }}>
+                  {tokenStatus?.error ? `שגיאה: ${tokenStatus.error}` : "לא מחובר"}
+                </span>
+              )}
+            </div>
+            {settings?.canManage && tokenStatus?.connected && (
+              <button
+                type="button"
+                onClick={() => void disconnect()}
+                disabled={disconnecting}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #fca5a5",
+                  background: "#fff",
+                  color: "#dc2626",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                {disconnecting ? "מנתק..." : "נתק"}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* OAuth connect button */}
+        {settings?.canManage && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <a
+              href="/api/meta-ads/connect"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "11px 20px",
+                borderRadius: 10,
+                background: "#1877f2",
+                color: "#fff",
+                fontWeight: 800,
+                fontSize: 15,
+                textDecoration: "none",
+                alignSelf: "start",
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+              </svg>
+              {tokenStatus?.connected ? "חבר מחדש עם Meta" : "התחבר עם Meta"}
+            </a>
+            <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>
+              הרשאות: ads_read · ads_management · business_management · טוקן תקף 60 יום
+            </p>
+          </div>
+        )}
+        {!settings?.canManage && !loading && (
           <div style={{ fontSize: 12, color: "#92400e" }}>רק מנהל יכול לעדכן את פרטי החיבור.</div>
+        )}
+
+        {/* Ad Account ID */}
+        <div style={{ display: "grid", gap: 8 }}>
+          <label style={{ fontWeight: 700, fontSize: 14 }}>
+            Ad Account ID <span style={{ color: "#dc2626" }}>*</span>
+          </label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              value={adAccountId}
+              onChange={(e) => setAdAccountId(e.target.value)}
+              placeholder="מספר החשבון (עם act_ או בלי)"
+              dir="ltr"
+              disabled={loading || !settings?.canManage}
+              style={{
+                flex: 1,
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #e5e7eb",
+                fontSize: 14,
+              }}
+            />
+            {settings?.canManage && (
+              <button
+                type="button"
+                onClick={() => void saveAdAccountOnly()}
+                disabled={saving || loading || !adAccountId.trim()}
+                style={{
+                  padding: "10px 16px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "#1d4ed8",
+                  color: "#fff",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {saving ? "שומר..." : "שמור"}
+              </button>
+            )}
+          </div>
+          <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>
+            מופיע ב-Meta Business Manager תחת Ad Accounts — בפורמט{" "}
+            <span dir="ltr">act_XXXXXXXXXX</span>
+          </p>
+        </div>
+
+        {/* Advanced: manual token */}
+        {settings?.canManage && (
+          <details open={showAdvanced} onToggle={(e) => setShowAdvanced((e.target as HTMLDetailsElement).open)}>
+            <summary
+              style={{
+                cursor: "pointer",
+                fontSize: 13,
+                color: "#6b7280",
+                fontWeight: 600,
+                userSelect: "none",
+              }}
+            >
+              הגדרות מתקדמות — System User Token ידני
+            </summary>
+            <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+              <p style={{ margin: 0, fontSize: 12, color: "#92400e" }}>
+                לשימוש עם System User Token שאינו פג תוקף (נוצר ב-Business Manager → System Users).
+                ממלא אוטומטית לאחר חיבור OAuth — אפשר לדרוס ידנית אם צריך.
+              </p>
+              <input
+                value={appId}
+                onChange={(e) => setAppId(e.target.value)}
+                placeholder="Meta App ID (אופציונלי)"
+                dir="ltr"
+                style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+              />
+              <input
+                value={businessId}
+                onChange={(e) => setBusinessId(e.target.value)}
+                placeholder="Meta Business ID (אופציונלי)"
+                dir="ltr"
+                style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+              />
+              <input
+                value={accessToken}
+                onChange={(e) => setAccessToken(e.target.value)}
+                placeholder="Access Token ידני (ads_read)"
+                dir="ltr"
+                type="password"
+                style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+              />
+              {settings?.hasToken && (
+                <div style={{ fontSize: 12, color: "#6b7280" }}>
+                  טוקן שמור: {settings.tokenPreview}
+                  {settings.updatedAt
+                    ? ` · עודכן ${formatIsraelDateTime(settings.updatedAt)}`
+                    : ""}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => void saveSettings()}
+                disabled={saving}
+                style={{
+                  justifySelf: "start",
+                  padding: "10px 18px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "#374151",
+                  color: "#fff",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                {saving ? "שומר..." : "שמור הגדרות מתקדמות"}
+              </button>
+            </div>
+          </details>
         )}
       </div>
 
+      {/* ── Campaigns table ── */}
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: 16 }}>
         <div
           style={{
@@ -332,7 +601,9 @@ export default function MetaAdsClient() {
           </div>
         </div>
         <div style={{ marginBottom: 8, fontSize: 12, color: "#6b7280" }}>
-          {fetchedAt ? `עודכן לאחרונה: ${formatIsraelDateTime(fetchedAt)}` : "אין סנכרון נתונים עדיין."}
+          {fetchedAt
+            ? `עודכן לאחרונה: ${formatIsraelDateTime(fetchedAt)}`
+            : "אין סנכרון נתונים עדיין."}
         </div>
 
         {loading ? (
@@ -394,9 +665,13 @@ export default function MetaAdsClient() {
                     <td style={{ padding: "10px 12px" }}>{intFmt(c.impressions)}</td>
                     <td style={{ padding: "10px 12px" }}>{intFmt(c.reach)}</td>
                     <td style={{ padding: "10px 12px" }}>{intFmt(c.clicks)}</td>
-                    <td style={{ padding: "10px 12px" }}>{c.ctr ? `${c.ctr.toFixed(2)}%` : "0%"}</td>
+                    <td style={{ padding: "10px 12px" }}>
+                      {c.ctr ? `${c.ctr.toFixed(2)}%` : "0%"}
+                    </td>
                     <td style={{ padding: "10px 12px" }}>{money(c.cpc)}</td>
-                    <td style={{ padding: "10px 12px" }}>{c.dailyBudget ? money(c.dailyBudget) : "—"}</td>
+                    <td style={{ padding: "10px 12px" }}>
+                      {c.dailyBudget ? money(c.dailyBudget) : "—"}
+                    </td>
                     <td style={{ padding: "10px 12px" }}>
                       {c.lifetimeBudget ? money(c.lifetimeBudget) : "—"}
                     </td>

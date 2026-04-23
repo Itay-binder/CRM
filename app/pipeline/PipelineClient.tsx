@@ -168,6 +168,55 @@ type AdvOp =
   | "dateAfter";
 type AdvFilter = { id: string; field: string; op: AdvOp; value: string };
 
+function normalizeCustomFieldSortKey(fieldId: string): string {
+  return fieldId
+    .trim()
+    .toLowerCase()
+    .replace(/^(contact|opportunity|moving_order)_+/g, "");
+}
+
+function payingCustomersCustomFieldRank(fieldId: string): number {
+  const k = normalizeCustomFieldSortKey(fieldId);
+  const ranks = new Map<string, number>([
+    ["mover_welcome_activity_days_text", 1],
+    ["mover_days", 1],
+    ["mover_welcome_activity_flexible", 2],
+    ["mover_flexible_hours", 2],
+    ["mover_welcome_activity_start", 3],
+    ["mover_hour_start", 3],
+    ["mover_welcome_activity_end", 4],
+    ["mover_hour_end", 4],
+    ["mover_welcome_activity_regions", 5],
+    ["mover_regions", 5],
+    ["mover_nationwide", 6],
+    ["mover_apartment", 7],
+    ["mover_small", 8],
+    ["mover_crane", 9],
+    ["mover_welcome_immediate_availability", 10],
+    ["mover_same_day", 10],
+    ["leads_count", 11],
+    ["package_current_leads_count", 12],
+    ["work_availability_status", 13],
+  ]);
+  return ranks.get(k) ?? Number.MAX_SAFE_INTEGER;
+}
+
+function compareCustomFieldIds(
+  a: string,
+  b: string,
+  labelMap: Record<string, string>,
+  payingPipeline: boolean
+): number {
+  if (payingPipeline) {
+    const ra = payingCustomersCustomFieldRank(a);
+    const rb = payingCustomersCustomFieldRank(b);
+    if (ra !== rb) return ra - rb;
+  }
+  const la = (labelMap[a] ?? a).trim();
+  const lb = (labelMap[b] ?? b).trim();
+  return la.localeCompare(lb, "he");
+}
+
 const ADV_OPS_BY_KIND: Record<AdvFieldKind, AdvOp[]> = {
   text: ["contains", "equals", "startsWith", "endsWith", "notEquals", "isEmpty", "notEmpty"],
   number: ["numEq", "numGt", "numGte", "numLt", "numLte", "isEmpty", "notEmpty"],
@@ -548,7 +597,14 @@ export default function PipelineClient() {
     setOppCustomFieldIds(
       Array.from(new Set([...customFromSettings, ...keysFromOpps, ...leadsColExtra]))
         .filter((k) => !isRedundantPipelineLeadColumn(k, labelMap))
-        .sort()
+        .sort((a, b) =>
+          compareCustomFieldIds(
+            a,
+            b,
+            labelMap,
+            resolvedPipelineId === PAYING_CUSTOMERS_PIPELINE_ID
+          )
+        )
     );
     const migrateKey = (k: string) => (k === "lastLeadAt" ? "contactLastLeadAt" : k);
 

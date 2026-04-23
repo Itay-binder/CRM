@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { createdAtInYmdRange } from "@/lib/datetime/ymdBoundary";
+import { listLeadsFiltered } from "@/lib/leads/repo";
 import { listMovingOrders } from "@/lib/movingOrders/repo";
 import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
+import { getCityRegionRows } from "@/lib/movingOrders/cityRegionSettingsRepo";
 import {
   getPayingCustomersPipelineId,
   getPayingCustomersPipelineMeta,
@@ -10,6 +12,13 @@ import {
 } from "@/lib/opportunities/repo";
 import { MOVER_OPPORTUNITY_FIELD_IDS } from "@/lib/movingOrders/fieldIds";
 import type { OpportunityRecord } from "@/lib/opportunities/repo";
+import {
+  leadIsMoverPoolMember,
+  mergeLeadAndOpportunity,
+  moverIsNationwide,
+  normHe,
+  readMoverRegionsText,
+} from "@/lib/movingOrders/moverFieldReaders";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -36,6 +45,17 @@ type ApiOk = {
     opportunityName: string;
     orderCount: number;
     isActive: boolean;
+  }>;
+  activeMoversByRegion: Array<{
+    region: string;
+    activeMoversCount: number;
+    drivers: Array<{
+      contactId: string;
+      name: string;
+      phone: string;
+      opportunityId: string;
+      opportunityName: string;
+    }>;
   }>;
   movingOrdersWorkspace: boolean;
   warning?: string;
@@ -115,6 +135,80 @@ function buildOrdersPerMover(payingOpportunities: OpportunityRecord[]): Array<{
   return rows;
 }
 
+function normNoSpaces(s: string): string {
+  return normHe(s).replace(/\s+/g, "");
+}
+
+function regionTokenMatch(regionsText: string, regionLabel: string): boolean {
+  const a = normNoSpaces(regionsText);
+  const b = normNoSpaces(regionLabel);
+  if (a.length < 2 || b.length < 2) return false;
+  return a.includes(b);
+}
+
+function buildActiveMoversByRegion(params: {
+  payingOpportunities: OpportunityRecord[];
+  allLeads: Awaited<ReturnType<typeof listLeadsFiltered>>;
+  allRegions: string[];
+}): ApiOk["activeMoversByRegion"] {
+  const { payingOpportunities, allLeads, allRegions } = params;
+  const out = new Map<
+    string,
+    Map<
+      string,
+      {
+        contactId: string;
+        name: string;
+        phone: string;
+        opportunityId: string;
+        opportunityName: string;
+      }
+    >
+  >();
+  for (const region of allRegions) out.set(region, new Map());
+
+  const leadById = new Map(allLeads.map((l) => [l.id, l]));
+
+  for (const opp of payingOpportunities) {
+    if (!isPayingCustomerOpen(opp)) continue;
+    const contactId = (opp.contactId ?? "").trim();
+    if (!contactId) continue;
+    const lead = leadById.get(contactId);
+    if (!lead) continue;
+    if (!leadIsMoverPoolMember(lead)) continue;
+
+    const merged = mergeLeadAndOpportunity(lead, opp);
+    const regionsText = readMoverRegionsText(merged);
+    const nationwide = moverIsNationwide(merged, regionsText);
+
+    const driverRow = {
+      contactId,
+      name: (lead.name ?? opp.contactName ?? opp.name ?? "").trim() || "ללא שם",
+      phone: (lead.phone ?? opp.contactPhone ?? opp.phone ?? "").trim(),
+      opportunityId: opp.id,
+      opportunityName: (opp.name ?? opp.contactName ?? "").trim() || "ללא שם",
+    };
+
+    for (const region of allRegions) {
+      if (!region.trim()) continue;
+      if (!nationwide && !regionTokenMatch(regionsText, region)) continue;
+      const bucket = out.get(region);
+      if (!bucket) continue;
+      bucket.set(contactId, driverRow);
+    }
+  }
+
+  return allRegions.map((region) => {
+    const rows = Array.from(out.get(region)?.values() ?? []);
+    rows.sort((a, b) => a.name.localeCompare(b.name, "he"));
+    return {
+      region,
+      activeMoversCount: rows.length,
+      drivers: rows,
+    };
+  });
+}
+
 export async function GET(req: NextRequest) {
   const auth = await requireApprovedUser(req);
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error } satisfies ApiErr, { status: auth.status });
@@ -123,10 +217,12 @@ export async function GET(req: NextRequest) {
   const dateTo = req.nextUrl.searchParams.get("date_to");
 
   try {
-    const [payingPipelineId, payingMeta, allOpportunities] = await Promise.all([
+    const [payingPipelineId, payingMeta, allOpportunities, allLeads, cityRegionRows] = await Promise.all([
       getPayingCustomersPipelineId(),
       getPayingCustomersPipelineMeta(),
       listOpportunities(),
+      listLeadsFiltered(),
+      getCityRegionRows(),
     ]);
 
     const inRangeAll = opportunitiesInDateRange(allOpportunities, dateFrom, dateTo);
@@ -142,6 +238,14 @@ export async function GET(req: NextRequest) {
     let warning: string | undefined;
 
     const ordersPerMover = buildOrdersPerMover(payingAll);
+    const allRegions = Array.from(
+      new Set(cityRegionRows.map((r) => String(r.region ?? "").trim()).filter(Boolean))
+    ).sort((a, b) => a.localeCompare(b, "he"));
+    const activeMoversByRegion = buildActiveMoversByRegion({
+      payingOpportunities: payingAll,
+      allLeads,
+      allRegions,
+    });
 
     const g = await assertMovingOrdersWorkspace();
     if (g.ok) {
@@ -169,6 +273,7 @@ export async function GET(req: NextRequest) {
       payingCustomersByUtmSource,
       payingCustomersOpenCount: payingOpen.length,
       ordersPerMover,
+      activeMoversByRegion,
       movingOrdersWorkspace,
       ...(warning ? { warning } : {}),
     };

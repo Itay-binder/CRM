@@ -70,6 +70,7 @@ export default function CrmShell({
           ) : null}
           <CrmNavLink href="/billing" label="סליקה" />
           <CrmNavLink href="/whatsapp-automations" label="אוטומציות ווצאפ" />
+          <CrmNavLink href="/meta-ads" label="חיבור למטא" />
           <CrmNavLink href="/seo" label="סוכן SEO" />
           <CrmNavLink href="/settings" label="הגדרות" />
         </nav>

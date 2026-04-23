@@ -3,6 +3,11 @@ import { requireApprovedUser } from "@/lib/auth/guard";
 import { isAdminEmail } from "@/lib/auth/profile";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { getMetaAdsConfig, saveMetaAdsConfig } from "@/lib/metaAds/repo";
+import {
+  DEFAULT_STATUS_TOGGLE_PASSWORD,
+  hashStatusTogglePassword,
+  resolveStatusTogglePasswordHash,
+} from "@/lib/metaAds/statusTogglePassword";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +35,8 @@ export async function GET(req: NextRequest) {
             tokenPreview: config.accessToken
               ? `${config.accessToken.slice(0, 6)}...${config.accessToken.slice(-4)}`
               : "",
+            hasStatusTogglePassword: Boolean(resolveStatusTogglePasswordHash(config)),
+            statusTogglePasswordMasked: "••••••",
             updatedAt: config.updatedAt,
             canManage: canManage(auth.user),
           }
@@ -39,6 +46,8 @@ export async function GET(req: NextRequest) {
             adAccountId: "",
             hasToken: false,
             tokenPreview: "",
+            hasStatusTogglePassword: true,
+            statusTogglePasswordMasked: "••••••",
             updatedAt: "",
             canManage: canManage(auth.user),
           },
@@ -65,6 +74,8 @@ export async function PUT(req: NextRequest) {
     businessId?: string;
     adAccountId?: string;
     accessToken?: string;
+    statusTogglePassword?: string;
+    resetStatusTogglePassword?: boolean;
   };
   try {
     body = (await req.json()) as typeof body;
@@ -72,18 +83,25 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
 
-  const adAccountId = body.adAccountId?.trim() ?? "";
-  if (!adAccountId) {
-    return NextResponse.json({ ok: false, error: "adAccountId is required" }, { status: 400 });
-  }
-
   try {
     const db = await getAdminDb();
+    const current = await getMetaAdsConfig(db);
+    const adAccountId = body.adAccountId?.trim() ?? current?.adAccountId ?? "";
+    if (!adAccountId) {
+      return NextResponse.json({ ok: false, error: "adAccountId is required" }, { status: 400 });
+    }
+    const nextStatusTogglePasswordHash = body.resetStatusTogglePassword
+      ? hashStatusTogglePassword(DEFAULT_STATUS_TOGGLE_PASSWORD)
+      : body.statusTogglePassword !== undefined
+      ? hashStatusTogglePassword(body.statusTogglePassword)
+      : undefined;
+
     const saved = await saveMetaAdsConfig(db, {
       appId: body.appId,
       businessId: body.businessId,
       adAccountId,
       accessToken: body.accessToken,
+      statusTogglePasswordHash: nextStatusTogglePasswordHash,
     });
     return NextResponse.json({
       ok: true,
@@ -95,6 +113,8 @@ export async function PUT(req: NextRequest) {
         tokenPreview: saved.accessToken
           ? `${saved.accessToken.slice(0, 6)}...${saved.accessToken.slice(-4)}`
           : "",
+        hasStatusTogglePassword: true,
+        statusTogglePasswordMasked: "••••••",
         updatedAt: saved.updatedAt,
         canManage: true,
       },

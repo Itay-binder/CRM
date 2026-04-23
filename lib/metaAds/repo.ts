@@ -8,6 +8,7 @@ export type MetaAdsConfig = {
   businessId: string;
   adAccountId: string;
   accessToken: string;
+  statusTogglePasswordHash: string;
   tokenExpiresAt: string; // ISO date, or "" for non-expiring tokens
   updatedAt: string;
 };
@@ -31,6 +32,7 @@ export async function getMetaAdsConfig(db: Firestore): Promise<MetaAdsConfig | n
     businessId: asString(d.businessId).trim(),
     adAccountId: normalizeAdAccountId(asString(d.adAccountId)),
     accessToken: asString(d.accessToken).trim(),
+    statusTogglePasswordHash: asString(d.statusTogglePasswordHash).trim(),
     tokenExpiresAt: asString(d.tokenExpiresAt).trim(),
     updatedAt: asString(d.updatedAt).trim(),
   };
@@ -43,6 +45,7 @@ export async function saveMetaAdsConfig(
     businessId?: string;
     adAccountId?: string;
     accessToken?: string;
+    statusTogglePasswordHash?: string;
     tokenExpiresAt?: string;
   }
 ): Promise<MetaAdsConfig> {
@@ -57,6 +60,10 @@ export async function saveMetaAdsConfig(
         : (prev?.adAccountId ?? ""),
     accessToken:
       input.accessToken !== undefined ? input.accessToken.trim() : (prev?.accessToken ?? ""),
+    statusTogglePasswordHash:
+      input.statusTogglePasswordHash !== undefined
+        ? input.statusTogglePasswordHash.trim()
+        : (prev?.statusTogglePasswordHash ?? ""),
     tokenExpiresAt:
       input.tokenExpiresAt !== undefined
         ? input.tokenExpiresAt.trim()

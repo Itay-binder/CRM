@@ -10,6 +10,8 @@ type SettingsVm = {
   adAccountId: string;
   hasToken: boolean;
   tokenPreview: string;
+  hasStatusTogglePassword: boolean;
+  statusTogglePasswordMasked: string;
   updatedAt: string;
   canManage: boolean;
 };
@@ -23,6 +25,12 @@ type TokenStatus = {
 
 type Tab = "campaigns" | "adsets" | "ads";
 type MetaObjectType = "campaign" | "adset" | "ad";
+type PendingToggle = {
+  objectType: MetaObjectType;
+  objectId: string;
+  currentStatus: string;
+  effectiveStatus: string;
+};
 
 function money(v: number): string {
   return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" }).format(v || 0);
@@ -127,6 +135,10 @@ export default function MetaAdsClient() {
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [selectedAdSetId, setSelectedAdSetId] = useState<string | null>(null);
   const [togglingIds, setTogglingIds] = useState<string[]>([]);
+  const [pendingToggle, setPendingToggle] = useState<PendingToggle | null>(null);
+  const [togglePassword, setTogglePassword] = useState("");
+  const [statusTogglePasswordInput, setStatusTogglePasswordInput] = useState("");
+  const [resettingStatusPassword, setResettingStatusPassword] = useState(false);
 
   // Advanced / manual token section
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -337,7 +349,8 @@ export default function MetaAdsClient() {
     objectType: MetaObjectType,
     objectId: string,
     currentStatus: string,
-    effectiveStatus: string
+    effectiveStatus: string,
+    password: string
   ) {
     if (!settings?.canManage) return;
     const targetStatus = nextStatusFromCurrent(currentStatus, effectiveStatus);
@@ -349,7 +362,7 @@ export default function MetaAdsClient() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ objectType, objectId, status: targetStatus }),
+        body: JSON.stringify({ objectType, objectId, status: targetStatus, password }),
       });
       const j = await parseJson<{ ok?: boolean; error?: string }>(res);
       if (!res.ok || !j.ok) throw new Error(j.error || "שינוי סטטוס נכשל");
@@ -378,6 +391,75 @@ export default function MetaAdsClient() {
       setErr(e instanceof Error ? e.message : "שינוי סטטוס נכשל");
     } finally {
       setTogglingIds((prev) => prev.filter((id) => id !== objectId));
+    }
+  }
+
+  function askTogglePassword(
+    objectType: MetaObjectType,
+    objectId: string,
+    currentStatus: string,
+    effectiveStatus: string
+  ) {
+    if (!settings?.canManage) return;
+    setErr(null);
+    setOkMsg(null);
+    setPendingToggle({ objectType, objectId, currentStatus, effectiveStatus });
+    setTogglePassword("");
+  }
+
+  async function confirmToggleStatus() {
+    if (!pendingToggle) return;
+    if (!togglePassword.trim()) {
+      setErr("יש להזין סיסמת אימות.");
+      return;
+    }
+    const action = pendingToggle;
+    setPendingToggle(null);
+    await toggleStatus(
+      action.objectType,
+      action.objectId,
+      action.currentStatus,
+      action.effectiveStatus,
+      togglePassword
+    );
+    setTogglePassword("");
+  }
+
+  async function saveStatusTogglePassword(resetToDefault: boolean) {
+    if (!settings?.canManage) return;
+    if (!resetToDefault && !statusTogglePasswordInput.trim()) {
+      setErr("יש להזין סיסמה חדשה.");
+      return;
+    }
+    setSaving(true);
+    setResettingStatusPassword(resetToDefault);
+    setErr(null);
+    setOkMsg(null);
+    try {
+      const res = await fetch("/api/meta-ads/settings", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          adAccountId,
+          statusTogglePassword: resetToDefault ? undefined : statusTogglePasswordInput.trim(),
+          resetStatusTogglePassword: resetToDefault || undefined,
+        }),
+      });
+      const j = await parseJson<{ ok?: boolean; config?: SettingsVm; error?: string }>(res);
+      if (!res.ok || !j.ok || !j.config) throw new Error(j.error || "שמירת סיסמה נכשלה");
+      setSettings(j.config);
+      setStatusTogglePasswordInput("");
+      setOkMsg(
+        resetToDefault
+          ? "סיסמת האימות אופסה לברירת מחדל (250599)."
+          : "סיסמת האימות לפעולות סטטוס נשמרה."
+      );
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "שמירת סיסמה נכשלה");
+    } finally {
+      setSaving(false);
+      setResettingStatusPassword(false);
     }
   }
 
@@ -639,6 +721,68 @@ export default function MetaAdsClient() {
                   {settings.updatedAt ? ` · עודכן ${formatIsraelDateTime(settings.updatedAt)}` : ""}
                 </div>
               )}
+              <div
+                style={{
+                  marginTop: 4,
+                  paddingTop: 10,
+                  borderTop: "1px dashed #e5e7eb",
+                  display: "grid",
+                  gap: 8,
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 800 }}>אימות הפעלה/כיבוי קמפיינים</div>
+                <div style={{ fontSize: 12, color: "#6b7280" }}>
+                  סיסמה נוכחית: {settings?.statusTogglePasswordMasked || "••••••"} (מוסתרת)
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <input
+                    value={statusTogglePasswordInput}
+                    onChange={(e) => setStatusTogglePasswordInput(e.target.value)}
+                    placeholder="סיסמה חדשה לאימות פעולה"
+                    dir="ltr"
+                    type="password"
+                    style={{
+                      flex: 1,
+                      minWidth: 220,
+                      padding: "10px 12px",
+                      borderRadius: 10,
+                      border: "1px solid #e5e7eb",
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void saveStatusTogglePassword(false)}
+                    disabled={saving || !statusTogglePasswordInput.trim()}
+                    style={{
+                      padding: "10px 14px",
+                      borderRadius: 10,
+                      border: "none",
+                      background: "#1d4ed8",
+                      color: "#fff",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {saving && !resettingStatusPassword ? "שומר..." : "שמור סיסמה"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void saveStatusTogglePassword(true)}
+                    disabled={saving}
+                    style={{
+                      padding: "10px 14px",
+                      borderRadius: 10,
+                      border: "1px solid #d1d5db",
+                      background: "#fff",
+                      color: "#374151",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {saving && resettingStatusPassword ? "מאפס..." : "איפוס לברירת מחדל"}
+                  </button>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => void saveAdvanced()}
@@ -800,7 +944,7 @@ export default function MetaAdsClient() {
               canManage={Boolean(settings?.canManage)}
               togglingIds={togglingIds}
               onToggleStatus={(id, status, effectiveStatus) =>
-                void toggleStatus("campaign", id, status, effectiveStatus)
+                askTogglePassword("campaign", id, status, effectiveStatus)
               }
               onRowClick={(id) => { setSelectedCampaignId(id); setSelectedAdSetId(null); setActiveTab("adsets"); }}
             />
@@ -811,7 +955,7 @@ export default function MetaAdsClient() {
               canManage={Boolean(settings?.canManage)}
               togglingIds={togglingIds}
               onToggleStatus={(id, status, effectiveStatus) =>
-                void toggleStatus("adset", id, status, effectiveStatus)
+                askTogglePassword("adset", id, status, effectiveStatus)
               }
               onRowClick={(id) => { setSelectedAdSetId(id); setActiveTab("ads"); }}
             />
@@ -820,11 +964,87 @@ export default function MetaAdsClient() {
               rows={filteredAds}
               canManage={Boolean(settings?.canManage)}
               togglingIds={togglingIds}
-              onToggleStatus={(id, status, effectiveStatus) => void toggleStatus("ad", id, status, effectiveStatus)}
+              onToggleStatus={(id, status, effectiveStatus) =>
+                askTogglePassword("ad", id, status, effectiveStatus)
+              }
             />
           )}
         </div>
       </div>
+      {pendingToggle && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.35)",
+            display: "grid",
+            placeItems: "center",
+            zIndex: 1000,
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 420,
+              background: "#fff",
+              borderRadius: 14,
+              border: "1px solid #e5e7eb",
+              padding: 16,
+              display: "grid",
+              gap: 10,
+            }}
+          >
+            <div style={{ fontSize: 16, fontWeight: 900 }}>אימות פעולה</div>
+            <div style={{ fontSize: 13, color: "#6b7280" }}>
+              להזנת הפעלה/כיבוי יש להזין את סיסמת האימות.
+            </div>
+            <input
+              value={togglePassword}
+              onChange={(e) => setTogglePassword(e.target.value)}
+              placeholder="סיסמת אימות"
+              type="password"
+              dir="ltr"
+              autoFocus
+              style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingToggle(null);
+                  setTogglePassword("");
+                }}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  background: "#fff",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                }}
+              >
+                ביטול
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmToggleStatus()}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: "#1d4ed8",
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                }}
+              >
+                אישור פעולה
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

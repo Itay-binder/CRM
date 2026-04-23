@@ -4,6 +4,7 @@ import { isAdminEmail } from "@/lib/auth/profile";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { getMetaAdsConfig } from "@/lib/metaAds/repo";
 import { setMetaObjectStatus } from "@/lib/metaAds/graph";
+import { verifyStatusTogglePassword } from "@/lib/metaAds/statusTogglePassword";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,7 @@ type ToggleBody = {
   objectType?: "campaign" | "adset" | "ad";
   objectId?: string;
   status?: "ACTIVE" | "PAUSED";
+  password?: string;
 };
 
 function canManage(user: { profile: { role: string }; email?: string }): boolean {
@@ -36,6 +38,7 @@ export async function POST(req: NextRequest) {
   const objectType = body.objectType;
   const objectId = body.objectId?.trim() ?? "";
   const status = body.status;
+  const password = body.password?.trim() ?? "";
 
   if (!objectType || !["campaign", "adset", "ad"].includes(objectType)) {
     return NextResponse.json({ ok: false, error: "Invalid objectType" }, { status: 400 });
@@ -46,6 +49,9 @@ export async function POST(req: NextRequest) {
   if (!status || !["ACTIVE", "PAUSED"].includes(status)) {
     return NextResponse.json({ ok: false, error: "Invalid status" }, { status: 400 });
   }
+  if (!password) {
+    return NextResponse.json({ ok: false, error: "חובה להזין סיסמת אימות לפעולה." }, { status: 400 });
+  }
 
   try {
     const db = await getAdminDb();
@@ -55,6 +61,9 @@ export async function POST(req: NextRequest) {
         { ok: false, error: "חסרה הגדרת Meta Ads (Ad Account / Access Token)." },
         { status: 400 }
       );
+    }
+    if (!verifyStatusTogglePassword(config, password)) {
+      return NextResponse.json({ ok: false, error: "סיסמת האימות שגויה." }, { status: 403 });
     }
 
     await setMetaObjectStatus(config, objectId, status);

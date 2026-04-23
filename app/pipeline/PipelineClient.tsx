@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import WhatsAppChatPanel from "@/app/components/chat/WhatsAppChatPanel";
+import GreenApiChatPanel from "@/app/components/chat/GreenApiChatPanel";
 import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
@@ -445,7 +447,7 @@ export default function PipelineClient() {
   const [manageOppColsOpen, setManageOppColsOpen] = useState(false);
   const [oppDragIndex, setOppDragIndex] = useState<number | null>(null);
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
-  const [oppDetailTab, setOppDetailTab] = useState<"details" | "notes" | "tasks">(
+  const [oppDetailTab, setOppDetailTab] = useState<"details" | "notes" | "tasks" | "whatsapp" | "greenapi">(
     "details"
   );
   const [oppNotes, setOppNotes] = useState<NoteItem[]>([]);
@@ -2401,9 +2403,9 @@ export default function PipelineClient() {
               </button>
             </div>
             <div style={{ display: "inline-flex", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden", marginBottom: 10 }}>
-              {(["details", "notes", "tasks"] as const).map((t) => (
+              {(["details", "notes", "tasks", "whatsapp", "greenapi"] as const).map((t) => (
                 <button key={t} type="button" onClick={() => setOppDetailTab(t)} style={{ border: "none", background: oppDetailTab === t ? "#ede9fe" : "#fff", padding: "8px 10px", cursor: "pointer", fontWeight: 800 }}>
-                  {t === "details" ? "פרטים" : t === "notes" ? "פתקים" : "משימות"}
+                  {t === "details" ? "פרטים" : t === "notes" ? "פתקים" : t === "tasks" ? "משימות" : t === "whatsapp" ? "WhatsApp" : "GreenAPI"}
                 </button>
               ))}
             </div>
@@ -2885,6 +2887,16 @@ export default function PipelineClient() {
                 >
                   + הוסף משימה
                 </button>
+              </div>
+            )}
+            {oppDetailTab === "whatsapp" && (
+              <div style={{ marginTop: 12 }}>
+                <WhatsAppChatPanel phone={selectedOpp.contactPhone ?? ""} />
+              </div>
+            )}
+            {oppDetailTab === "greenapi" && (
+              <div style={{ marginTop: 12 }}>
+                <GreenApiChatPanel phone={selectedOpp.contactPhone ?? ""} />
               </div>
             )}
           </div></div>

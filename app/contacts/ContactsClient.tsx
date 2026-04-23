@@ -14,6 +14,8 @@ import {
   WhatsAppIconLink,
 } from "@/app/components/InlineFieldShell";
 import { TableCellClamp } from "@/app/components/TableCellClamp";
+import WhatsAppChatPanel from "@/app/components/chat/WhatsAppChatPanel";
+import GreenApiChatPanel from "@/app/components/chat/GreenApiChatPanel";
 
 type LeadsOk = {
   ok: true;
@@ -183,7 +185,7 @@ export default function ContactsClient() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [detailOpen, setDetailOpen] = useState(false);
-  const [detailTab, setDetailTab] = useState<"details" | "notes" | "tasks">("details");
+  const [detailTab, setDetailTab] = useState<"details" | "notes" | "tasks" | "whatsapp" | "greenapi">("details");
   const [detail, setDetail] = useState<ContactDetail | null>(null);
   const [savingDetail, setSavingDetail] = useState(false);
   const openedFromQueryRef = useRef(false);
@@ -1478,7 +1480,7 @@ export default function ContactsClient() {
             </div>
 
             <div style={{ marginTop: 10, display: "inline-flex", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
-              {(["details", "notes", "tasks"] as const).map((t) => (
+              {(["details", "notes", "tasks", "whatsapp", "greenapi"] as const).map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -1491,7 +1493,7 @@ export default function ContactsClient() {
                     fontWeight: 800,
                   }}
                 >
-                  {t === "details" ? "פרטים" : t === "notes" ? "פתקים" : "משימות"}
+                  {t === "details" ? "פרטים" : t === "notes" ? "פתקים" : t === "tasks" ? "משימות" : t === "whatsapp" ? "WhatsApp" : "GreenAPI"}
                 </button>
               ))}
             </div>
@@ -1806,6 +1808,16 @@ export default function ContactsClient() {
                 >
                   + הוסף משימה
                 </button>
+              </div>
+            )}
+            {detailTab === "whatsapp" && (
+              <div style={{ marginTop: 12 }}>
+                <WhatsAppChatPanel phone={detail.phone ?? ""} />
+              </div>
+            )}
+            {detailTab === "greenapi" && (
+              <div style={{ marginTop: 12 }}>
+                <GreenApiChatPanel phone={detail.phone ?? ""} />
               </div>
             )}
           </div>

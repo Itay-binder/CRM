@@ -118,6 +118,8 @@ export default function MetaAdsClient() {
   const [activeTab, setActiveTab] = useState<Tab>("campaigns");
   const [datePreset, setDatePreset] = useState("last_7d");
   const [search, setSearch] = useState("");
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
+  const [selectedAdSetId, setSelectedAdSetId] = useState<string | null>(null);
 
   // Advanced / manual token section
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -325,39 +327,57 @@ export default function MetaAdsClient() {
   }
 
   const q = search.trim().toLowerCase();
+
+  function activeFirst<T extends { effectiveStatus: string }>(arr: T[]): T[] {
+    return [...arr].sort((a, b) => {
+      const aActive = a.effectiveStatus === "ACTIVE" ? 0 : 1;
+      const bActive = b.effectiveStatus === "ACTIVE" ? 0 : 1;
+      return aActive - bActive;
+    });
+  }
+
   const filteredCampaigns = useMemo(
     () =>
-      q
-        ? campaigns.filter(
-            (c) => c.name.toLowerCase().includes(q) || c.id.includes(q) || c.objective.toLowerCase().includes(q)
-          )
-        : campaigns,
+      activeFirst(
+        q
+          ? campaigns.filter(
+              (c) => c.name.toLowerCase().includes(q) || c.id.includes(q) || c.objective.toLowerCase().includes(q)
+            )
+          : campaigns
+      ),
     [campaigns, q]
   );
   const filteredAdSets = useMemo(
     () =>
-      q
-        ? adSets.filter(
-            (s) =>
-              s.name.toLowerCase().includes(q) ||
-              s.id.includes(q) ||
-              s.campaignName.toLowerCase().includes(q)
-          )
-        : adSets,
-    [adSets, q]
+      activeFirst(
+        (selectedCampaignId ? adSets.filter((s) => s.campaignId === selectedCampaignId) : adSets).filter(
+          (s) =>
+            !q ||
+            s.name.toLowerCase().includes(q) ||
+            s.id.includes(q) ||
+            s.campaignName.toLowerCase().includes(q)
+        )
+      ),
+    [adSets, q, selectedCampaignId]
   );
   const filteredAds = useMemo(
     () =>
-      q
-        ? ads.filter(
-            (a) =>
-              a.name.toLowerCase().includes(q) ||
-              a.id.includes(q) ||
-              a.adSetName.toLowerCase().includes(q) ||
-              a.campaignName.toLowerCase().includes(q)
-          )
-        : ads,
-    [ads, q]
+      activeFirst(
+        (selectedAdSetId
+          ? ads.filter((a) => a.adSetId === selectedAdSetId)
+          : selectedCampaignId
+          ? ads.filter((a) => a.campaignId === selectedCampaignId)
+          : ads
+        ).filter(
+          (a) =>
+            !q ||
+            a.name.toLowerCase().includes(q) ||
+            a.id.includes(q) ||
+            a.adSetName.toLowerCase().includes(q) ||
+            a.campaignName.toLowerCase().includes(q)
+        )
+      ),
+    [ads, q, selectedCampaignId, selectedAdSetId]
   );
 
   const daysLeft = tokenStatus?.expiresAt ? daysUntil(tokenStatus.expiresAt) : null;
@@ -594,7 +614,7 @@ export default function MetaAdsClient() {
             <button
               key={tab.id}
               type="button"
-              onClick={() => { setActiveTab(tab.id); setSearch(""); }}
+              onClick={() => { setActiveTab(tab.id); setSearch(""); setSelectedCampaignId(null); setSelectedAdSetId(null); }}
               style={{
                 padding: "14px 18px",
                 border: "none",
@@ -681,14 +701,55 @@ export default function MetaAdsClient() {
           </div>
         </div>
 
+        {/* Breadcrumb */}
+        {(selectedCampaignId || selectedAdSetId) && (
+          <div style={{ padding: "6px 16px", borderBottom: "1px solid #f3f4f6", display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+            <button
+              type="button"
+              onClick={() => { setSelectedCampaignId(null); setSelectedAdSetId(null); setActiveTab("campaigns"); }}
+              style={{ background: "none", border: "none", color: "#1d4ed8", cursor: "pointer", padding: 0, fontWeight: 700 }}
+            >
+              כל הקמפיינים
+            </button>
+            {selectedCampaignId && (
+              <>
+                <span style={{ color: "#9ca3af" }}>›</span>
+                <button
+                  type="button"
+                  onClick={() => { setSelectedAdSetId(null); setActiveTab("adsets"); }}
+                  style={{ background: "none", border: "none", color: selectedAdSetId ? "#1d4ed8" : "#374151", cursor: "pointer", padding: 0, fontWeight: 700 }}
+                >
+                  {campaigns.find((c) => c.id === selectedCampaignId)?.name ?? selectedCampaignId}
+                </button>
+              </>
+            )}
+            {selectedAdSetId && (
+              <>
+                <span style={{ color: "#9ca3af" }}>›</span>
+                <span style={{ color: "#374151", fontWeight: 700 }}>
+                  {adSets.find((s) => s.id === selectedAdSetId)?.name ?? selectedAdSetId}
+                </span>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Tables */}
         <div style={{ padding: 16 }}>
           {loading ? (
             <div style={{ color: "#6b7280", padding: "20px 0" }}>טוען...</div>
           ) : activeTab === "campaigns" ? (
-            <CampaignsTable rows={filteredCampaigns} />
+            <CampaignsTable
+              rows={filteredCampaigns}
+              selectedId={selectedCampaignId}
+              onRowClick={(id) => { setSelectedCampaignId(id); setSelectedAdSetId(null); setActiveTab("adsets"); }}
+            />
           ) : activeTab === "adsets" ? (
-            <AdSetsTable rows={filteredAdSets} />
+            <AdSetsTable
+              rows={filteredAdSets}
+              selectedId={selectedAdSetId}
+              onRowClick={(id) => { setSelectedAdSetId(id); setActiveTab("ads"); }}
+            />
           ) : (
             <AdsTable rows={filteredAds} />
           )}
@@ -700,7 +761,7 @@ export default function MetaAdsClient() {
 
 // ── Campaigns Table ────────────────────────────────────────────────────────────
 
-function CampaignsTable({ rows }: { rows: MetaAdsCampaignVm[] }) {
+function CampaignsTable({ rows, selectedId, onRowClick }: { rows: MetaAdsCampaignVm[]; selectedId?: string | null; onRowClick?: (id: string) => void }) {
   if (rows.length === 0)
     return <div style={{ color: "#6b7280" }}>אין קמפיינים להצגה. בדוק חיבור/הרשאות או שנה טווח זמן.</div>;
   return (
@@ -715,9 +776,17 @@ function CampaignsTable({ rows }: { rows: MetaAdsCampaignVm[] }) {
         </thead>
         <tbody>
           {rows.map((c) => (
-            <tr key={c.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
+            <tr
+              key={c.id}
+              onClick={() => onRowClick?.(c.id)}
+              style={{
+                borderBottom: "1px solid #f3f4f6",
+                background: selectedId === c.id ? "#eff6ff" : undefined,
+                cursor: onRowClick ? "pointer" : undefined,
+              }}
+            >
               <td style={TD_STYLE}>
-                <div style={{ fontWeight: 700 }}>{c.name}</div>
+                <div style={{ fontWeight: 700, color: onRowClick ? "#1d4ed8" : undefined }}>{c.name}</div>
                 <div style={{ fontSize: 11, color: "#9ca3af" }} dir="ltr">{c.id}</div>
               </td>
               <td style={TD_STYLE}><StatusBadge status={c.effectiveStatus} /></td>
@@ -742,7 +811,7 @@ function CampaignsTable({ rows }: { rows: MetaAdsCampaignVm[] }) {
 
 // ── Ad Sets Table ─────────────────────────────────────────────────────────────
 
-function AdSetsTable({ rows }: { rows: MetaAdSetVm[] }) {
+function AdSetsTable({ rows, selectedId, onRowClick }: { rows: MetaAdSetVm[]; selectedId?: string | null; onRowClick?: (id: string) => void }) {
   if (rows.length === 0)
     return <div style={{ color: "#6b7280" }}>אין סדרות מודעות להצגה.</div>;
   return (
@@ -757,9 +826,17 @@ function AdSetsTable({ rows }: { rows: MetaAdSetVm[] }) {
         </thead>
         <tbody>
           {rows.map((s) => (
-            <tr key={s.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
+            <tr
+              key={s.id}
+              onClick={() => onRowClick?.(s.id)}
+              style={{
+                borderBottom: "1px solid #f3f4f6",
+                background: selectedId === s.id ? "#eff6ff" : undefined,
+                cursor: onRowClick ? "pointer" : undefined,
+              }}
+            >
               <td style={TD_STYLE}>
-                <div style={{ fontWeight: 700 }}>{s.name}</div>
+                <div style={{ fontWeight: 700, color: onRowClick ? "#1d4ed8" : undefined }}>{s.name}</div>
                 <div style={{ fontSize: 11, color: "#9ca3af" }} dir="ltr">{s.id}</div>
               </td>
               <td style={{ ...TD_STYLE, fontSize: 12, color: "#6b7280", maxWidth: 160 }}>{s.campaignName || "—"}</td>

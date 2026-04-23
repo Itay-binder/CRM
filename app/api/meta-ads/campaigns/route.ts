@@ -9,10 +9,14 @@ export const dynamic = "force-dynamic";
 const ALLOWED_DATE_PRESETS = new Set([
   "today",
   "yesterday",
+  "last_3d",
   "last_7d",
+  "last_14d",
+  "last_28d",
   "last_30d",
   "this_month",
   "last_month",
+  "this_quarter",
   "maximum",
 ]);
 

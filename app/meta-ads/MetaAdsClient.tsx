@@ -22,6 +22,7 @@ type TokenStatus = {
 };
 
 type Tab = "campaigns" | "adsets" | "ads";
+type MetaObjectType = "campaign" | "adset" | "ad";
 
 function money(v: number): string {
   return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" }).format(v || 0);
@@ -38,6 +39,11 @@ function cpr(spend: number, results: number): string {
 
 async function parseJson<T>(res: Response): Promise<T> {
   return (await res.json().catch(() => ({}))) as T;
+}
+
+function nextStatusFromCurrent(currentStatus: string, effectiveStatus: string): "ACTIVE" | "PAUSED" {
+  const source = (effectiveStatus || currentStatus || "").toUpperCase();
+  return source === "ACTIVE" ? "PAUSED" : "ACTIVE";
 }
 
 function daysUntil(isoDate: string): number | null {
@@ -120,6 +126,7 @@ export default function MetaAdsClient() {
   const [search, setSearch] = useState("");
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [selectedAdSetId, setSelectedAdSetId] = useState<string | null>(null);
+  const [togglingIds, setTogglingIds] = useState<string[]>([]);
 
   // Advanced / manual token section
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -197,9 +204,9 @@ export default function MetaAdsClient() {
       parseJson<{ ok?: boolean; ads?: MetaAdVm[]; error?: string }>(aRes),
     ]);
 
-    if (cRes.status !== 400 && (!cRes.ok || !cj.ok)) throw new Error(cj.error || "טעינת קמפיינים נכשלה");
-    if (sRes.status !== 400 && (!sRes.ok || !sj.ok)) throw new Error(sj.error || "טעינת סדרות מודעות נכשלה");
-    if (aRes.status !== 400 && (!aRes.ok || !aj.ok)) throw new Error(aj.error || "טעינת מודעות נכשלה");
+    if (!cRes.ok || !cj.ok) throw new Error(cj.error || "טעינת קמפיינים נכשלה");
+    if (!sRes.ok || !sj.ok) throw new Error(sj.error || "טעינת סדרות מודעות נכשלה");
+    if (!aRes.ok || !aj.ok) throw new Error(aj.error || "טעינת מודעות נכשלה");
 
     setCampaigns(cj.campaigns ?? []);
     setAdSets(sj.adSets ?? []);
@@ -323,6 +330,54 @@ export default function MetaAdsClient() {
       setErr(e instanceof Error ? e.message : "ניתוק נכשל");
     } finally {
       setDisconnecting(false);
+    }
+  }
+
+  async function toggleStatus(
+    objectType: MetaObjectType,
+    objectId: string,
+    currentStatus: string,
+    effectiveStatus: string
+  ) {
+    if (!settings?.canManage) return;
+    const targetStatus = nextStatusFromCurrent(currentStatus, effectiveStatus);
+    setErr(null);
+    setOkMsg(null);
+    setTogglingIds((prev) => (prev.includes(objectId) ? prev : [...prev, objectId]));
+    try {
+      const res = await fetch("/api/meta-ads/toggle-status", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ objectType, objectId, status: targetStatus }),
+      });
+      const j = await parseJson<{ ok?: boolean; error?: string }>(res);
+      if (!res.ok || !j.ok) throw new Error(j.error || "שינוי סטטוס נכשל");
+
+      if (objectType === "campaign") {
+        setCampaigns((prev) =>
+          prev.map((row) =>
+            row.id === objectId ? { ...row, status: targetStatus, effectiveStatus: targetStatus } : row
+          )
+        );
+      } else if (objectType === "adset") {
+        setAdSets((prev) =>
+          prev.map((row) =>
+            row.id === objectId ? { ...row, status: targetStatus, effectiveStatus: targetStatus } : row
+          )
+        );
+      } else {
+        setAds((prev) =>
+          prev.map((row) =>
+            row.id === objectId ? { ...row, status: targetStatus, effectiveStatus: targetStatus } : row
+          )
+        );
+      }
+      setOkMsg(targetStatus === "ACTIVE" ? "הפריט הופעל בהצלחה." : "הפריט הושהה בהצלחה.");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "שינוי סטטוס נכשל");
+    } finally {
+      setTogglingIds((prev) => prev.filter((id) => id !== objectId));
     }
   }
 
@@ -742,16 +797,31 @@ export default function MetaAdsClient() {
             <CampaignsTable
               rows={filteredCampaigns}
               selectedId={selectedCampaignId}
+              canManage={Boolean(settings?.canManage)}
+              togglingIds={togglingIds}
+              onToggleStatus={(id, status, effectiveStatus) =>
+                void toggleStatus("campaign", id, status, effectiveStatus)
+              }
               onRowClick={(id) => { setSelectedCampaignId(id); setSelectedAdSetId(null); setActiveTab("adsets"); }}
             />
           ) : activeTab === "adsets" ? (
             <AdSetsTable
               rows={filteredAdSets}
               selectedId={selectedAdSetId}
+              canManage={Boolean(settings?.canManage)}
+              togglingIds={togglingIds}
+              onToggleStatus={(id, status, effectiveStatus) =>
+                void toggleStatus("adset", id, status, effectiveStatus)
+              }
               onRowClick={(id) => { setSelectedAdSetId(id); setActiveTab("ads"); }}
             />
           ) : (
-            <AdsTable rows={filteredAds} />
+            <AdsTable
+              rows={filteredAds}
+              canManage={Boolean(settings?.canManage)}
+              togglingIds={togglingIds}
+              onToggleStatus={(id, status, effectiveStatus) => void toggleStatus("ad", id, status, effectiveStatus)}
+            />
           )}
         </div>
       </div>
@@ -759,9 +829,60 @@ export default function MetaAdsClient() {
   );
 }
 
+function ToggleStatusButton({
+  status,
+  effectiveStatus,
+  disabled,
+  onClick,
+}: {
+  status: string;
+  effectiveStatus: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const target = nextStatusFromCurrent(status, effectiveStatus);
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      disabled={disabled}
+      style={{
+        padding: "6px 10px",
+        borderRadius: 8,
+        border: "1px solid #d1d5db",
+        background: "#fff",
+        color: target === "PAUSED" ? "#92400e" : "#166534",
+        fontWeight: 700,
+        fontSize: 12,
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.7 : 1,
+      }}
+    >
+      {disabled ? "מעדכן..." : target === "PAUSED" ? "כבה" : "הפעל"}
+    </button>
+  );
+}
+
 // ── Campaigns Table ────────────────────────────────────────────────────────────
 
-function CampaignsTable({ rows, selectedId, onRowClick }: { rows: MetaAdsCampaignVm[]; selectedId?: string | null; onRowClick?: (id: string) => void }) {
+function CampaignsTable({
+  rows,
+  selectedId,
+  canManage,
+  togglingIds,
+  onRowClick,
+  onToggleStatus,
+}: {
+  rows: MetaAdsCampaignVm[];
+  selectedId?: string | null;
+  canManage: boolean;
+  togglingIds: string[];
+  onRowClick?: (id: string) => void;
+  onToggleStatus?: (id: string, status: string, effectiveStatus: string) => void;
+}) {
   if (rows.length === 0)
     return <div style={{ color: "#6b7280" }}>אין קמפיינים להצגה. בדוק חיבור/הרשאות או שנה טווח זמן.</div>;
   return (
@@ -769,7 +890,7 @@ function CampaignsTable({ rows, selectedId, onRowClick }: { rows: MetaAdsCampaig
       <table style={{ width: "100%", minWidth: 1100, borderCollapse: "collapse" }}>
         <thead>
           <tr>
-            {["קמפיין", "סטטוס", "מטרה", "תוצאות", "עלות/תוצאה", "הוצאה", "חשיפות", "Reach", "קליקי קישור", "CTR (קישור)", "CPC (קישור)", "תקציב יומי", "תקציב כולל"].map((h) => (
+            {["קמפיין", "סטטוס", "פעולה", "מטרה", "תוצאות", "עלות/תוצאה", "הוצאה", "חשיפות", "Reach", "קליקי קישור", "CTR (קישור)", "CPC (קישור)", "תקציב יומי", "תקציב כולל"].map((h) => (
               <th key={h} style={TH_STYLE}>{h}</th>
             ))}
           </tr>
@@ -790,6 +911,18 @@ function CampaignsTable({ rows, selectedId, onRowClick }: { rows: MetaAdsCampaig
                 <div style={{ fontSize: 11, color: "#9ca3af" }} dir="ltr">{c.id}</div>
               </td>
               <td style={TD_STYLE}><StatusBadge status={c.effectiveStatus} /></td>
+              <td style={TD_STYLE}>
+                {canManage ? (
+                  <ToggleStatusButton
+                    status={c.status}
+                    effectiveStatus={c.effectiveStatus}
+                    disabled={togglingIds.includes(c.id)}
+                    onClick={() => onToggleStatus?.(c.id, c.status, c.effectiveStatus)}
+                  />
+                ) : (
+                  "—"
+                )}
+              </td>
               <td style={TD_STYLE}><span style={{ fontSize: 12, color: "#6b7280" }}>{c.objective || "—"}</span></td>
               <td style={{ ...TD_STYLE, fontWeight: 700, color: c.results > 0 ? "#1d4ed8" : undefined }}>{c.results > 0 ? intFmt(c.results) : "—"}</td>
               <td style={TD_STYLE}>{cpr(c.spend, c.results)}</td>
@@ -811,7 +944,21 @@ function CampaignsTable({ rows, selectedId, onRowClick }: { rows: MetaAdsCampaig
 
 // ── Ad Sets Table ─────────────────────────────────────────────────────────────
 
-function AdSetsTable({ rows, selectedId, onRowClick }: { rows: MetaAdSetVm[]; selectedId?: string | null; onRowClick?: (id: string) => void }) {
+function AdSetsTable({
+  rows,
+  selectedId,
+  canManage,
+  togglingIds,
+  onRowClick,
+  onToggleStatus,
+}: {
+  rows: MetaAdSetVm[];
+  selectedId?: string | null;
+  canManage: boolean;
+  togglingIds: string[];
+  onRowClick?: (id: string) => void;
+  onToggleStatus?: (id: string, status: string, effectiveStatus: string) => void;
+}) {
   if (rows.length === 0)
     return <div style={{ color: "#6b7280" }}>אין סדרות מודעות להצגה.</div>;
   return (
@@ -819,7 +966,7 @@ function AdSetsTable({ rows, selectedId, onRowClick }: { rows: MetaAdSetVm[]; se
       <table style={{ width: "100%", minWidth: 1200, borderCollapse: "collapse" }}>
         <thead>
           <tr>
-            {["סדרת מודעות", "קמפיין", "סטטוס", "אופטימיזציה", "תוצאות", "עלות/תוצאה", "הוצאה", "חשיפות", "Reach", "קליקי קישור", "CTR (קישור)", "CPC (קישור)", "CPM", "תקציב"].map((h) => (
+            {["סדרת מודעות", "קמפיין", "סטטוס", "פעולה", "אופטימיזציה", "תוצאות", "עלות/תוצאה", "הוצאה", "חשיפות", "Reach", "קליקי קישור", "CTR (קישור)", "CPC (קישור)", "CPM", "תקציב"].map((h) => (
               <th key={h} style={TH_STYLE}>{h}</th>
             ))}
           </tr>
@@ -841,6 +988,18 @@ function AdSetsTable({ rows, selectedId, onRowClick }: { rows: MetaAdSetVm[]; se
               </td>
               <td style={{ ...TD_STYLE, fontSize: 12, color: "#6b7280", maxWidth: 160 }}>{s.campaignName || "—"}</td>
               <td style={TD_STYLE}><StatusBadge status={s.effectiveStatus} /></td>
+              <td style={TD_STYLE}>
+                {canManage ? (
+                  <ToggleStatusButton
+                    status={s.status}
+                    effectiveStatus={s.effectiveStatus}
+                    disabled={togglingIds.includes(s.id)}
+                    onClick={() => onToggleStatus?.(s.id, s.status, s.effectiveStatus)}
+                  />
+                ) : (
+                  "—"
+                )}
+              </td>
               <td style={{ ...TD_STYLE, fontSize: 12, color: "#6b7280" }}>{s.optimizationGoal || "—"}</td>
               <td style={{ ...TD_STYLE, fontWeight: 700, color: s.results > 0 ? "#1d4ed8" : undefined }}>{s.results > 0 ? intFmt(s.results) : "—"}</td>
               <td style={TD_STYLE}>{cpr(s.spend, s.results)}</td>
@@ -864,7 +1023,17 @@ function AdSetsTable({ rows, selectedId, onRowClick }: { rows: MetaAdSetVm[]; se
 
 // ── Ads Table ─────────────────────────────────────────────────────────────────
 
-function AdsTable({ rows }: { rows: MetaAdVm[] }) {
+function AdsTable({
+  rows,
+  canManage,
+  togglingIds,
+  onToggleStatus,
+}: {
+  rows: MetaAdVm[];
+  canManage: boolean;
+  togglingIds: string[];
+  onToggleStatus?: (id: string, status: string, effectiveStatus: string) => void;
+}) {
   if (rows.length === 0)
     return <div style={{ color: "#6b7280" }}>אין מודעות להצגה.</div>;
   return (
@@ -872,7 +1041,7 @@ function AdsTable({ rows }: { rows: MetaAdVm[] }) {
       <table style={{ width: "100%", minWidth: 1100, borderCollapse: "collapse" }}>
         <thead>
           <tr>
-            {["מודעה", "סדרת מודעות", "קמפיין", "סטטוס", "תוצאות", "עלות/תוצאה", "הוצאה", "חשיפות", "Reach", "קליקי קישור", "CTR (קישור)", "CPC (קישור)"].map((h) => (
+            {["מודעה", "סדרת מודעות", "קמפיין", "סטטוס", "פעולה", "תוצאות", "עלות/תוצאה", "הוצאה", "חשיפות", "Reach", "קליקי קישור", "CTR (קישור)", "CPC (קישור)"].map((h) => (
               <th key={h} style={TH_STYLE}>{h}</th>
             ))}
           </tr>
@@ -887,6 +1056,18 @@ function AdsTable({ rows }: { rows: MetaAdVm[] }) {
               <td style={{ ...TD_STYLE, fontSize: 12, color: "#6b7280", maxWidth: 140 }}>{a.adSetName || "—"}</td>
               <td style={{ ...TD_STYLE, fontSize: 12, color: "#6b7280", maxWidth: 140 }}>{a.campaignName || "—"}</td>
               <td style={TD_STYLE}><StatusBadge status={a.effectiveStatus} /></td>
+              <td style={TD_STYLE}>
+                {canManage ? (
+                  <ToggleStatusButton
+                    status={a.status}
+                    effectiveStatus={a.effectiveStatus}
+                    disabled={togglingIds.includes(a.id)}
+                    onClick={() => onToggleStatus?.(a.id, a.status, a.effectiveStatus)}
+                  />
+                ) : (
+                  "—"
+                )}
+              </td>
               <td style={{ ...TD_STYLE, fontWeight: 700, color: a.results > 0 ? "#1d4ed8" : undefined }}>{a.results > 0 ? intFmt(a.results) : "—"}</td>
               <td style={TD_STYLE}>{cpr(a.spend, a.results)}</td>
               <td style={{ ...TD_STYLE, fontWeight: 700 }}>{money(a.spend)}</td>

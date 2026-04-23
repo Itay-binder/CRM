@@ -217,6 +217,31 @@ async function callMetaGraph<T>(
   return json;
 }
 
+// ── Status toggle ─────────────────────────────────────────────────────────────
+
+export async function setMetaObjectStatus(
+  config: MetaAdsConfig,
+  objectId: string,
+  status: "ACTIVE" | "PAUSED"
+): Promise<void> {
+  const base = graphBaseUrl().replace(/\/$/, "");
+  const body = new URLSearchParams({ status, access_token: config.accessToken });
+  const res = await fetch(`${base}/${objectId}`, {
+    method: "POST",
+    body,
+    cache: "no-store",
+  });
+  const json = (await res.json().catch(() => ({}))) as { success?: boolean; error?: MetaGraphError };
+  if (!res.ok || json.success === false) {
+    const msg =
+      json.error?.error_user_msg?.trim() ||
+      json.error?.error_user_title?.trim() ||
+      json.error?.message?.trim() ||
+      `Meta API error (${res.status})`;
+    throw new Error(msg);
+  }
+}
+
 // ── Token validation ──────────────────────────────────────────────────────────
 
 export async function validateMetaToken(config: MetaAdsConfig): Promise<MetaTokenStatus> {
@@ -324,7 +349,7 @@ export async function listAdSets(
     "id,name,status,effective_status,campaign_id,campaign{name},daily_budget,lifetime_budget,optimization_goal," +
     "insights.date_preset(" +
     datePreset +
-    "){spend,impressions,reach,inline_link_clicks,inline_link_click_ctr,cost_per_inline_link_click,cpm,result_indicator,cost_per_result,actions}";
+    "){spend,impressions,reach,inline_link_clicks,inline_link_click_ctr,cost_per_inline_link_click,cpm,actions}";
   const query = new URLSearchParams({
     fields,
     limit: "200",

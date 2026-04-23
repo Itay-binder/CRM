@@ -10,6 +10,7 @@ const items = [
   { href: "/whatsapp-automations/marketing-status", label: "סטטוס דיוור", match: (p: string) => p.startsWith("/whatsapp-automations/marketing-status") },
   { href: "/whatsapp-automations/templates", label: "תבניות הודעה", match: (p: string) => p.startsWith("/whatsapp-automations/templates") },
   { href: "/whatsapp-automations/account", label: "חשבון WhatsApp", match: (p: string) => p.startsWith("/whatsapp-automations/account") },
+  { href: "/whatsapp-automations/greenapi", label: "GREENAPI", match: (p: string) => p.startsWith("/whatsapp-automations/greenapi") },
 ];
 
 export default function WhatsAppSubNav() {

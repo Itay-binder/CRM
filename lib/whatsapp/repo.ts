@@ -44,6 +44,13 @@ export type WhatsAppMetaConfig = {
   updatedAt: string;
 };
 
+export type GreenApiConfig = {
+  instanceId: string;
+  apiTokenInstance: string;
+  apiBaseUrl: string;
+  updatedAt: string;
+};
+
 export type WhatsAppTemplateStatus = "draft" | "submitted" | "approved" | "rejected";
 export type WhatsAppTemplateCategory = "MARKETING" | "UTILITY" | "AUTHENTICATION";
 
@@ -271,6 +278,46 @@ export async function getWhatsAppMetaConfig(db: Firestore): Promise<WhatsAppMeta
     systemUserToken: asString(d.systemUserToken),
     updatedAt: asString(d.updatedAt),
   };
+}
+
+export async function getGreenApiConfig(db: Firestore): Promise<GreenApiConfig | null> {
+  const snap = await db.collection(COLLECTION).doc("greenApiConfig").get();
+  if (!snap.exists) return null;
+  const d = (snap.data() ?? {}) as Record<string, unknown>;
+  return {
+    instanceId: asString(d.instanceId).trim(),
+    apiTokenInstance: asString(d.apiTokenInstance).trim(),
+    apiBaseUrl:
+      asString(d.apiBaseUrl).trim() || process.env.GREENAPI_API_BASE?.trim() || "https://api.green-api.com",
+    updatedAt: asString(d.updatedAt).trim(),
+  };
+}
+
+export async function saveGreenApiConfig(
+  db: Firestore,
+  input: {
+    instanceId: string;
+    apiTokenInstance?: string;
+    apiBaseUrl?: string;
+  }
+): Promise<GreenApiConfig> {
+  const prev = await getGreenApiConfig(db);
+  const now = new Date().toISOString();
+  const next: GreenApiConfig = {
+    instanceId: input.instanceId.trim(),
+    apiTokenInstance:
+      input.apiTokenInstance !== undefined
+        ? input.apiTokenInstance.trim()
+        : (prev?.apiTokenInstance ?? ""),
+    apiBaseUrl:
+      input.apiBaseUrl?.trim() ||
+      prev?.apiBaseUrl ||
+      process.env.GREENAPI_API_BASE?.trim() ||
+      "https://api.green-api.com",
+    updatedAt: now,
+  };
+  await db.collection(COLLECTION).doc("greenApiConfig").set(next, { merge: true });
+  return next;
 }
 
 export async function saveWhatsAppMetaConfig(

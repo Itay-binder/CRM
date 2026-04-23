@@ -25,8 +25,6 @@ type MetaCampaignInsight = {
   inline_link_clicks?: string;
   inline_link_click_ctr?: string;
   cost_per_inline_link_click?: string;
-  result_indicator?: string;
-  cost_per_result?: string;
   actions?: MetaActionStat[];
 };
 
@@ -74,8 +72,6 @@ type MetaAdSetInsight = {
   inline_link_click_ctr?: string;
   cost_per_inline_link_click?: string;
   cpm?: string;
-  result_indicator?: string;
-  cost_per_result?: string;
   actions?: MetaActionStat[];
 };
 
@@ -121,8 +117,6 @@ type MetaAdInsight = {
   inline_link_clicks?: string;
   inline_link_click_ctr?: string;
   cost_per_inline_link_click?: string;
-  result_indicator?: string;
-  cost_per_result?: string;
   actions?: MetaActionStat[];
 };
 
@@ -177,25 +171,25 @@ function budgetToCurrency(raw?: string): number {
   return cents > 0 ? cents / 100 : 0;
 }
 
-// result_indicator format from Meta API: "actions:lead", "actions:link_click", etc.
-// We parse the action type after the colon and match it exactly in the actions array.
-// Fallback: if no indicator or no match, use cost_per_result to compute results from spend.
-function extractResults(
-  actions: MetaActionStat[] | undefined,
-  resultIndicator: string | undefined,
-  spend: number,
-  costPerResult: string | undefined
-): number {
-  if (resultIndicator) {
-    const actionType = resultIndicator.includes(":")
-      ? resultIndicator.split(":").slice(1).join(":")
-      : resultIndicator;
-    const found = actions?.find((a) => a.action_type === actionType);
-    if (found) return toInt(found.value);
+// Meta Ads Manager picks ONE action type as "result" based on the campaign's optimization goal.
+// We replicate this by trying action types in priority order and returning the first non-zero match.
+// onsite_conversion.lead_grouped is preferred over plain "lead" to avoid double-counting.
+const RESULT_PRIORITY: string[] = [
+  "onsite_conversion.lead_grouped",
+  "lead",
+  "offsite_conversion.fb_pixel_lead",
+  "complete_registration",
+  "offsite_conversion.fb_pixel_complete_registration",
+  "offsite_conversion.fb_pixel_purchase",
+  "purchase",
+];
+
+function extractResults(actions?: MetaActionStat[]): number {
+  if (!actions?.length) return 0;
+  for (const type of RESULT_PRIORITY) {
+    const found = actions.find((a) => a.action_type === type);
+    if (found && toInt(found.value) > 0) return toInt(found.value);
   }
-  // Fallback: derive from spend / cost_per_result
-  const cpr = toNum(costPerResult);
-  if (cpr > 0 && spend > 0) return Math.round(spend / cpr);
   return 0;
 }
 
@@ -277,7 +271,7 @@ export async function listActiveMetaAdsCampaigns(
     "id,name,status,effective_status,objective,daily_budget,lifetime_budget,start_time,stop_time,updated_time," +
     "insights.date_preset(" +
     datePreset +
-    "){spend,impressions,reach,inline_link_clicks,inline_link_click_ctr,cost_per_inline_link_click,result_indicator,cost_per_result,actions}";
+    "){spend,impressions,reach,inline_link_clicks,inline_link_click_ctr,cost_per_inline_link_click,actions}";
   const query = new URLSearchParams({
     fields,
     limit: "200",
@@ -308,7 +302,7 @@ export async function listActiveMetaAdsCampaigns(
         ctr: toNum(insight?.inline_link_click_ctr),
         dailyBudget: budgetToCurrency(r.daily_budget),
         lifetimeBudget: budgetToCurrency(r.lifetime_budget),
-        results: extractResults(insight?.actions, insight?.result_indicator, toNum(insight?.spend), insight?.cost_per_result),
+        results: extractResults(insight?.actions),
         startTime: r.start_time?.trim() || undefined,
         stopTime: r.stop_time?.trim() || undefined,
         updatedTime: r.updated_time?.trim() || undefined,
@@ -364,7 +358,7 @@ export async function listAdSets(
         cpm: toNum(insight?.cpm),
         dailyBudget: budgetToCurrency(r.daily_budget),
         lifetimeBudget: budgetToCurrency(r.lifetime_budget),
-        results: extractResults(insight?.actions, insight?.result_indicator, toNum(insight?.spend), insight?.cost_per_result),
+        results: extractResults(insight?.actions),
       };
     })
     .sort((a, b) => b.spend - a.spend);
@@ -383,7 +377,7 @@ export async function listAds(
     "id,name,status,effective_status,adset_id,adset{name},campaign_id,campaign{name}," +
     "insights.date_preset(" +
     datePreset +
-    "){spend,impressions,reach,inline_link_clicks,inline_link_click_ctr,cost_per_inline_link_click,result_indicator,cost_per_result,actions}";
+    "){spend,impressions,reach,inline_link_clicks,inline_link_click_ctr,cost_per_inline_link_click,actions}";
   const query = new URLSearchParams({
     fields,
     limit: "200",
@@ -415,7 +409,7 @@ export async function listAds(
         clicks: toInt(insight?.inline_link_clicks),
         cpc: toNum(insight?.cost_per_inline_link_click),
         ctr: toNum(insight?.inline_link_click_ctr),
-        results: extractResults(insight?.actions, insight?.result_indicator, toNum(insight?.spend), insight?.cost_per_result),
+        results: extractResults(insight?.actions),
       };
     })
     .sort((a, b) => b.spend - a.spend);

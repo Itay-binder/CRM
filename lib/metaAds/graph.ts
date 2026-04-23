@@ -22,9 +22,11 @@ type MetaCampaignInsight = {
   spend?: string;
   impressions?: string;
   reach?: string;
-  clicks?: string;
-  cpc?: string;
-  ctr?: string;
+  inline_link_clicks?: string;
+  inline_link_click_ctr?: string;
+  cost_per_inline_link_click?: string;
+  result_indicator?: string;
+  cost_per_result?: string;
   actions?: MetaActionStat[];
 };
 
@@ -68,10 +70,12 @@ type MetaAdSetInsight = {
   spend?: string;
   impressions?: string;
   reach?: string;
-  clicks?: string;
-  cpc?: string;
-  ctr?: string;
+  inline_link_clicks?: string;
+  inline_link_click_ctr?: string;
+  cost_per_inline_link_click?: string;
   cpm?: string;
+  result_indicator?: string;
+  cost_per_result?: string;
   actions?: MetaActionStat[];
 };
 
@@ -114,9 +118,11 @@ type MetaAdInsight = {
   spend?: string;
   impressions?: string;
   reach?: string;
-  clicks?: string;
-  cpc?: string;
-  ctr?: string;
+  inline_link_clicks?: string;
+  inline_link_click_ctr?: string;
+  cost_per_inline_link_click?: string;
+  result_indicator?: string;
+  cost_per_result?: string;
   actions?: MetaActionStat[];
 };
 
@@ -171,21 +177,26 @@ function budgetToCurrency(raw?: string): number {
   return cents > 0 ? cents / 100 : 0;
 }
 
-const RESULT_ACTION_TYPES = new Set([
-  "lead",
-  "offsite_conversion.fb_pixel_lead",
-  "onsite_conversion.lead_grouped",
-  "purchase",
-  "offsite_conversion.fb_pixel_purchase",
-  "complete_registration",
-  "offsite_conversion.fb_pixel_complete_registration",
-]);
-
-function extractResults(actions?: MetaActionStat[]): number {
-  if (!actions?.length) return 0;
-  return actions
-    .filter((a) => RESULT_ACTION_TYPES.has(a.action_type ?? ""))
-    .reduce((sum, a) => sum + toInt(a.value), 0);
+// result_indicator format from Meta API: "actions:lead", "actions:link_click", etc.
+// We parse the action type after the colon and match it exactly in the actions array.
+// Fallback: if no indicator or no match, use cost_per_result to compute results from spend.
+function extractResults(
+  actions: MetaActionStat[] | undefined,
+  resultIndicator: string | undefined,
+  spend: number,
+  costPerResult: string | undefined
+): number {
+  if (resultIndicator) {
+    const actionType = resultIndicator.includes(":")
+      ? resultIndicator.split(":").slice(1).join(":")
+      : resultIndicator;
+    const found = actions?.find((a) => a.action_type === actionType);
+    if (found) return toInt(found.value);
+  }
+  // Fallback: derive from spend / cost_per_result
+  const cpr = toNum(costPerResult);
+  if (cpr > 0 && spend > 0) return Math.round(spend / cpr);
+  return 0;
 }
 
 async function callMetaGraph<T>(
@@ -266,7 +277,7 @@ export async function listActiveMetaAdsCampaigns(
     "id,name,status,effective_status,objective,daily_budget,lifetime_budget,start_time,stop_time,updated_time," +
     "insights.date_preset(" +
     datePreset +
-    "){spend,impressions,reach,clicks,cpc,ctr,actions}";
+    "){spend,impressions,reach,inline_link_clicks,inline_link_click_ctr,cost_per_inline_link_click,result_indicator,cost_per_result,actions}";
   const query = new URLSearchParams({
     fields,
     limit: "200",
@@ -292,12 +303,12 @@ export async function listActiveMetaAdsCampaigns(
         spend: toNum(insight?.spend),
         impressions: toInt(insight?.impressions),
         reach: toInt(insight?.reach),
-        clicks: toInt(insight?.clicks),
-        cpc: toNum(insight?.cpc),
-        ctr: toNum(insight?.ctr),
+        clicks: toInt(insight?.inline_link_clicks),
+        cpc: toNum(insight?.cost_per_inline_link_click),
+        ctr: toNum(insight?.inline_link_click_ctr),
         dailyBudget: budgetToCurrency(r.daily_budget),
         lifetimeBudget: budgetToCurrency(r.lifetime_budget),
-        results: extractResults(insight?.actions),
+        results: extractResults(insight?.actions, insight?.result_indicator, toNum(insight?.spend), insight?.cost_per_result),
         startTime: r.start_time?.trim() || undefined,
         stopTime: r.stop_time?.trim() || undefined,
         updatedTime: r.updated_time?.trim() || undefined,
@@ -319,7 +330,7 @@ export async function listAdSets(
     "id,name,status,effective_status,campaign_id,campaign{name},daily_budget,lifetime_budget,optimization_goal," +
     "insights.date_preset(" +
     datePreset +
-    "){spend,impressions,reach,clicks,cpc,ctr,cpm,actions}";
+    "){spend,impressions,reach,inline_link_clicks,inline_link_click_ctr,cost_per_inline_link_click,cpm,result_indicator,cost_per_result,actions}";
   const query = new URLSearchParams({
     fields,
     limit: "200",
@@ -347,13 +358,13 @@ export async function listAdSets(
         spend: toNum(insight?.spend),
         impressions: toInt(insight?.impressions),
         reach: toInt(insight?.reach),
-        clicks: toInt(insight?.clicks),
-        cpc: toNum(insight?.cpc),
-        ctr: toNum(insight?.ctr),
+        clicks: toInt(insight?.inline_link_clicks),
+        cpc: toNum(insight?.cost_per_inline_link_click),
+        ctr: toNum(insight?.inline_link_click_ctr),
         cpm: toNum(insight?.cpm),
         dailyBudget: budgetToCurrency(r.daily_budget),
         lifetimeBudget: budgetToCurrency(r.lifetime_budget),
-        results: extractResults(insight?.actions),
+        results: extractResults(insight?.actions, insight?.result_indicator, toNum(insight?.spend), insight?.cost_per_result),
       };
     })
     .sort((a, b) => b.spend - a.spend);
@@ -372,7 +383,7 @@ export async function listAds(
     "id,name,status,effective_status,adset_id,adset{name},campaign_id,campaign{name}," +
     "insights.date_preset(" +
     datePreset +
-    "){spend,impressions,reach,clicks,cpc,ctr,actions}";
+    "){spend,impressions,reach,inline_link_clicks,inline_link_click_ctr,cost_per_inline_link_click,result_indicator,cost_per_result,actions}";
   const query = new URLSearchParams({
     fields,
     limit: "200",
@@ -401,10 +412,10 @@ export async function listAds(
         spend: toNum(insight?.spend),
         impressions: toInt(insight?.impressions),
         reach: toInt(insight?.reach),
-        clicks: toInt(insight?.clicks),
-        cpc: toNum(insight?.cpc),
-        ctr: toNum(insight?.ctr),
-        results: extractResults(insight?.actions),
+        clicks: toInt(insight?.inline_link_clicks),
+        cpc: toNum(insight?.cost_per_inline_link_click),
+        ctr: toNum(insight?.inline_link_click_ctr),
+        results: extractResults(insight?.actions, insight?.result_indicator, toNum(insight?.spend), insight?.cost_per_result),
       };
     })
     .sort((a, b) => b.spend - a.spend);

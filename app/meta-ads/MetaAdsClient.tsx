@@ -769,7 +769,7 @@ function CampaignsTable({ rows, selectedId, onRowClick }: { rows: MetaAdsCampaig
       <table style={{ width: "100%", minWidth: 1100, borderCollapse: "collapse" }}>
         <thead>
           <tr>
-            {["קמפיין", "סטטוס", "מטרה", "תוצאות", "עלות/תוצאה", "הוצאה", "חשיפות", "Reach", "קליקים", "CTR", "CPC", "תקציב יומי", "תקציב כולל"].map((h) => (
+            {["קמפיין", "סטטוס", "מטרה", "תוצאות", "עלות/תוצאה", "הוצאה", "חשיפות", "Reach", "קליקי קישור", "CTR (קישור)", "CPC (קישור)", "תקציב יומי", "תקציב כולל"].map((h) => (
               <th key={h} style={TH_STYLE}>{h}</th>
             ))}
           </tr>
@@ -819,7 +819,7 @@ function AdSetsTable({ rows, selectedId, onRowClick }: { rows: MetaAdSetVm[]; se
       <table style={{ width: "100%", minWidth: 1200, borderCollapse: "collapse" }}>
         <thead>
           <tr>
-            {["סדרת מודעות", "קמפיין", "סטטוס", "אופטימיזציה", "תוצאות", "עלות/תוצאה", "הוצאה", "חשיפות", "Reach", "קליקים", "CTR", "CPC", "CPM", "תקציב"].map((h) => (
+            {["סדרת מודעות", "קמפיין", "סטטוס", "אופטימיזציה", "תוצאות", "עלות/תוצאה", "הוצאה", "חשיפות", "Reach", "קליקי קישור", "CTR (קישור)", "CPC (קישור)", "CPM", "תקציב"].map((h) => (
               <th key={h} style={TH_STYLE}>{h}</th>
             ))}
           </tr>
@@ -872,7 +872,7 @@ function AdsTable({ rows }: { rows: MetaAdVm[] }) {
       <table style={{ width: "100%", minWidth: 1100, borderCollapse: "collapse" }}>
         <thead>
           <tr>
-            {["מודעה", "סדרת מודעות", "קמפיין", "סטטוס", "תוצאות", "עלות/תוצאה", "הוצאה", "חשיפות", "Reach", "קליקים", "CTR", "CPC"].map((h) => (
+            {["מודעה", "סדרת מודעות", "קמפיין", "סטטוס", "תוצאות", "עלות/תוצאה", "הוצאה", "חשיפות", "Reach", "קליקי קישור", "CTR (קישור)", "CPC (קישור)"].map((h) => (
               <th key={h} style={TH_STYLE}>{h}</th>
             ))}
           </tr>

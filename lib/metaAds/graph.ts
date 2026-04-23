@@ -25,6 +25,7 @@ type MetaCampaignInsight = {
   inline_link_clicks?: string;
   inline_link_click_ctr?: string;
   cost_per_inline_link_click?: string;
+  account_currency?: string;
   actions?: MetaActionStat[];
 };
 
@@ -263,6 +264,17 @@ export async function listActiveMetaAdsCampaigns(
   config: MetaAdsConfig,
   datePreset = "last_7d"
 ): Promise<MetaAdsCampaignVm[]> {
+  const { rows } = await listActiveMetaAdsCampaignsWithCurrency(config, datePreset);
+  return rows;
+}
+
+/**
+ * אותו מקור כמו listActiveMetaAdsCampaigns, עם מטבע מ־insights (לדוחות/סיכומים).
+ */
+export async function listActiveMetaAdsCampaignsWithCurrency(
+  config: MetaAdsConfig,
+  datePreset: string
+): Promise<{ rows: MetaAdsCampaignVm[]; currency: string }> {
   const adAccountId = normalizeAdAccountId(config.adAccountId);
   if (!adAccountId.trim()) throw new Error("חסר Ad Account ID.");
   if (!config.accessToken.trim()) throw new Error("חסר Access Token.");
@@ -271,7 +283,7 @@ export async function listActiveMetaAdsCampaigns(
     "id,name,status,effective_status,objective,daily_budget,lifetime_budget,start_time,stop_time,updated_time," +
     "insights.date_preset(" +
     datePreset +
-    "){spend,impressions,reach,inline_link_clicks,inline_link_click_ctr,cost_per_inline_link_click,actions}";
+    "){spend,impressions,reach,inline_link_clicks,inline_link_click_ctr,cost_per_inline_link_click,actions,account_currency}";
   const query = new URLSearchParams({
     fields,
     limit: "200",
@@ -283,8 +295,16 @@ export async function listActiveMetaAdsCampaigns(
     `/act_${adAccountId}/campaigns`,
     query
   );
-  const rows = Array.isArray(json.data) ? json.data : [];
-  return rows
+  const rawRows = Array.isArray(json.data) ? json.data : [];
+  let currency = "ILS";
+  for (const r of rawRows) {
+    const ac = r.insights?.data?.[0]?.account_currency?.trim();
+    if (ac) {
+      currency = ac;
+      break;
+    }
+  }
+  const rows = rawRows
     .filter((r) => r.id)
     .map((r) => {
       const insight = r.insights?.data?.[0];
@@ -309,6 +329,7 @@ export async function listActiveMetaAdsCampaigns(
       };
     })
     .sort((a, b) => b.spend - a.spend || b.impressions - a.impressions);
+  return { rows, currency };
 }
 
 // ── Ad Sets ───────────────────────────────────────────────────────────────────

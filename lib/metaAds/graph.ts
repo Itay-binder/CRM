@@ -152,7 +152,7 @@ export type MetaAdVm = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function graphBaseUrl(): string {
+export function graphBaseUrl(): string {
   return process.env.META_GRAPH_API_BASE?.trim() || "https://graph.facebook.com/v22.0";
 }
 
@@ -212,6 +212,33 @@ async function callMetaGraph<T>(
       json.error?.error_user_title?.trim() ||
       json.error?.message?.trim() ||
       `Meta Graph request failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return json;
+}
+
+/** POST ל-Graph (יצירה/העלאה) — error parsing זהה ל-GET */
+export async function callMetaGraphPost<T>(
+  config: MetaAdsConfig,
+  path: string,
+  body: Record<string, unknown>
+): Promise<T> {
+  const base = graphBaseUrl().replace(/\/$/, "");
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const url = new URL(`${base}${normalizedPath}`);
+  url.searchParams.set("access_token", config.accessToken);
+  const res = await fetch(url.toString(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  const json = (await res.json().catch(() => ({}))) as T & { error?: MetaGraphError };
+  if (!res.ok) {
+    const msg =
+      (json as { error?: MetaGraphError }).error?.message?.trim() ||
+      (json as { error?: { error_user_msg?: string } }).error?.error_user_msg?.trim() ||
+      `Meta Graph POST failed (${res.status})`;
     throw new Error(msg);
   }
   return json;

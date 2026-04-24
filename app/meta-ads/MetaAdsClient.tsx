@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 import type { MetaAdsCampaignVm, MetaAdSetVm, MetaAdVm } from "@/lib/metaAds/graph";
+import MetaAdsCreateWizard from "@/app/meta-ads/MetaAdsCreateWizard";
 
 type SettingsVm = {
   appId: string;
@@ -605,6 +606,12 @@ export default function MetaAdsClient() {
           </details>
         )}
       </div>
+
+      <MetaAdsCreateWizard
+        canManage={Boolean(settings?.canManage)}
+        tokenConnected={Boolean(tokenStatus?.connected)}
+        hasAdAccount={Boolean((settings?.adAccountId ?? "").trim())}
+      />
 
       {/* ── Data section ── */}
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, overflow: "hidden" }}>

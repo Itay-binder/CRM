@@ -8,7 +8,7 @@ export const revalidate = 0;
 type AnalysisPayload = {
   call_id: string;
   agent_id: string;
-  customer_id?: string;
+  customer_id?: string | null;
   summary_short: string;
   tab1_general_summary: string;
   tab2_personal_analysis: string;
@@ -41,6 +41,9 @@ function isAnalysis(v: unknown): v is AnalysisPayload {
   return (
     typeof a.call_id === "string" &&
     typeof a.agent_id === "string" &&
+    (typeof a.customer_id === "undefined" ||
+      a.customer_id === null ||
+      typeof a.customer_id === "string") &&
     typeof a.summary_short === "string" &&
     typeof a.tab1_general_summary === "string" &&
     typeof a.tab2_personal_analysis === "string" &&

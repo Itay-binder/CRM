@@ -110,10 +110,11 @@ export type CreateCampaignInput = {
   advantageAudience: boolean;
   advantageCreative: boolean;
 
-  // Ad Creative
+  // Ad Creative — must supply imageHash OR videoId
   adName: string;
   pageId: string;
-  imageHash: string;
+  imageHash?: string;
+  videoId?: string;
   primaryText: string;
   headline: string;
   description?: string;
@@ -160,6 +161,7 @@ export async function createMetaCampaign(
   const adAccountId = normalizeAdAccountId(config.adAccountId);
   if (!adAccountId) throw new Error("חסר Ad Account ID בהגדרות");
   if (!config.accessToken) throw new Error("חסר Access Token בהגדרות");
+  if (!input.imageHash && !input.videoId) throw new Error("חובה לספק תמונה או סרטון");
 
   // Step 1: Campaign
   const campRes = await metaPost<{ id?: string }>(config, `/act_${adAccountId}/campaigns`, {
@@ -214,18 +216,32 @@ export async function createMetaCampaign(
 
   // Step 4: Ad Creative
   const finalUrl = buildFinalUrl(input);
-  const linkData: Record<string, unknown> = {
-    image_hash: input.imageHash,
-    link: finalUrl,
-    message: input.primaryText,
-    name: input.headline,
-    call_to_action: { type: input.callToAction, value: { link: finalUrl } },
-  };
-  if (input.description?.trim()) linkData.description = input.description.trim();
+
+  let storySpec: Record<string, unknown>;
+  if (input.videoId) {
+    const videoData: Record<string, unknown> = {
+      video_id: input.videoId,
+      message: input.primaryText,
+      title: input.headline,
+      call_to_action: { type: input.callToAction, value: { link: finalUrl } },
+    };
+    if (input.description?.trim()) videoData.description = input.description.trim();
+    storySpec = { page_id: input.pageId, video_data: videoData };
+  } else {
+    const linkData: Record<string, unknown> = {
+      image_hash: input.imageHash,
+      link: finalUrl,
+      message: input.primaryText,
+      name: input.headline,
+      call_to_action: { type: input.callToAction, value: { link: finalUrl } },
+    };
+    if (input.description?.trim()) linkData.description = input.description.trim();
+    storySpec = { page_id: input.pageId, link_data: linkData };
+  }
 
   const creativeBody: Record<string, unknown> = {
     name: `${input.adName} - Creative`,
-    object_story_spec: { page_id: input.pageId, link_data: linkData },
+    object_story_spec: storySpec,
   };
   if (input.advantageCreative) {
     creativeBody.degrees_of_freedom_spec = {

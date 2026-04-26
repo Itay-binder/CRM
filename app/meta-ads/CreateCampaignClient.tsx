@@ -116,6 +116,15 @@ export default function CreateCampaignClient() {
   const [utmContent, setUtmContent] = useState("");
   const [utmTerm, setUtmTerm] = useState("");
 
+  // Local file upload
+  const [uploadSource, setUploadSource] = useState<"canva" | "local">("canva");
+  const [localUploading, setLocalUploading] = useState(false);
+  const [localMediaType, setLocalMediaType] = useState<"image" | "video" | null>(null);
+  const [localImageHash, setLocalImageHash] = useState("");
+  const [localVideoId, setLocalVideoId] = useState("");
+  const [localPreviewUrl, setLocalPreviewUrl] = useState("");
+  const [localFileName, setLocalFileName] = useState("");
+
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [successResult, setSuccessResult] = useState<{
@@ -218,8 +227,52 @@ export default function CreateCampaignClient() {
     }
   }
 
+  async function handleLocalFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLocalUploading(true);
+    setLocalImageHash("");
+    setLocalVideoId("");
+    setLocalMediaType(null);
+    setErr(null);
+    const prev = localPreviewUrl;
+    if (prev) URL.revokeObjectURL(prev);
+    const preview = URL.createObjectURL(file);
+    setLocalPreviewUrl(preview);
+    setLocalFileName(file.name);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/meta-ads/creative/upload", {
+        method: "POST",
+        credentials: "include",
+        body: fd,
+      });
+      const j = await parseJson<{ ok?: boolean; type?: string; imageHash?: string; videoId?: string; error?: string }>(res);
+      if (!res.ok || !j.ok) throw new Error(j.error || "העלאה נכשלה");
+      setLocalMediaType(j.type === "video" ? "video" : "image");
+      if (j.imageHash) setLocalImageHash(j.imageHash);
+      if (j.videoId) setLocalVideoId(j.videoId);
+      const baseName = file.name.replace(/\.[^.]+$/, "");
+      if (!adName) setAdName(baseName);
+      if (!campaignName) setCampaignName(baseName);
+    } catch (err2) {
+      setErr(err2 instanceof Error ? err2.message : "העלאה נכשלה");
+      URL.revokeObjectURL(preview);
+      setLocalPreviewUrl("");
+    } finally {
+      setLocalUploading(false);
+      // reset input so same file can be re-selected
+      e.target.value = "";
+    }
+  }
+
   async function submitCampaign() {
-    if (!exportedImageUrl) { setErr("בחר עיצוב מ-Canva תחילה"); return; }
+    const mediaReady = uploadSource === "canva" ? !!exportedImageUrl : !!(localImageHash || localVideoId);
+    if (!mediaReady) {
+      setErr(uploadSource === "canva" ? "בחר עיצוב מ-Canva תחילה" : "העלה קובץ תחילה");
+      return;
+    }
     if (!campaignName.trim()) { setErr("שם קמפיין נדרש"); return; }
     if (!pageId.trim()) { setErr("Facebook Page ID נדרש"); return; }
     if (!websiteUrl.trim()) { setErr("קישור יעד נדרש"); return; }
@@ -236,7 +289,11 @@ export default function CreateCampaignClient() {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          canvaImageUrl: exportedImageUrl,
+          ...(uploadSource === "canva"
+            ? { canvaImageUrl: exportedImageUrl }
+            : localVideoId
+            ? { videoId: localVideoId }
+            : { imageHash: localImageHash }),
           campaignName: campaignName.trim(),
           objective,
           launchStatus,
@@ -309,8 +366,104 @@ export default function CreateCampaignClient() {
         </div>
       )}
 
+      {/* ── Source Toggle ── */}
+      <div style={{ display: "flex", gap: 8 }}>
+        {(["canva", "local"] as const).map((src) => (
+          <button
+            key={src}
+            type="button"
+            onClick={() => { setUploadSource(src); setErr(null); }}
+            style={{
+              flex: 1,
+              padding: "12px 0",
+              borderRadius: 12,
+              border: `2px solid ${uploadSource === src ? "#7c3aed" : "#e5e7eb"}`,
+              background: uploadSource === src ? "#f5f3ff" : "#fff",
+              fontWeight: 800,
+              fontSize: 15,
+              color: uploadSource === src ? "#7c3aed" : "#6b7280",
+              cursor: "pointer",
+            }}
+          >
+            {src === "canva" ? "🎨 עיצוב מ-Canva" : "💻 העלאה מהמחשב"}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Local File Upload ── */}
+      {uploadSource === "local" && (
+        <Section title="העלאת תמונה / סרטון מהמחשב">
+          <div style={{ display: "grid", gap: 12 }}>
+            <div style={{ fontSize: 13, color: "#4b5563" }}>
+              תומך ב-JPG, PNG, GIF (תמונות) ו-MP4, MOV (סרטונים עד 4MB).
+              לסרטונים גדולים יותר, העלה ישירות ב-Meta Ads Manager.
+            </div>
+            <label
+              style={{
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                gap: 8, padding: "28px 20px",
+                border: "2px dashed #d1d5db", borderRadius: 14,
+                background: "#fafafa", cursor: "pointer",
+                transition: "border-color 0.15s",
+              }}
+              onDragOver={(e) => { e.preventDefault(); (e.currentTarget as HTMLLabelElement).style.borderColor = "#7c3aed"; }}
+              onDragLeave={(e) => { (e.currentTarget as HTMLLabelElement).style.borderColor = "#d1d5db"; }}
+              onDrop={(e) => {
+                e.preventDefault();
+                (e.currentTarget as HTMLLabelElement).style.borderColor = "#d1d5db";
+                const file = e.dataTransfer.files?.[0];
+                if (file) {
+                  const fakeEvent = { target: { files: [file], value: "" } } as unknown as React.ChangeEvent<HTMLInputElement>;
+                  void handleLocalFileChange(fakeEvent);
+                }
+              }}
+            >
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/gif,video/mp4,video/quicktime,video/mov"
+                style={{ display: "none" }}
+                onChange={(e) => void handleLocalFileChange(e)}
+                disabled={localUploading}
+              />
+              {localUploading ? (
+                <div style={{ color: "#7c3aed", fontWeight: 700 }}>מעלה ל-Meta... אנא המתן</div>
+              ) : localPreviewUrl && (localImageHash || localVideoId) ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%" }}>
+                  {localMediaType === "video" ? (
+                    <video
+                      src={localPreviewUrl}
+                      controls
+                      style={{ width: 120, height: 80, objectFit: "cover", borderRadius: 8, border: "1px solid #e5e7eb" }}
+                    />
+                  ) : (
+                    <img
+                      src={localPreviewUrl}
+                      alt="preview"
+                      style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 8, border: "1px solid #e5e7eb" }}
+                    />
+                  )}
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: "#374151" }}>{localFileName}</div>
+                    <div style={{ fontSize: 12, color: "#065f46", marginTop: 2 }}>
+                      {localMediaType === "video" ? "סרטון" : "תמונה"} הועלה בהצלחה ל-Meta
+                    </div>
+                    <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>לחץ להחלפה</div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 32 }}>📁</div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: "#374151" }}>גרור קובץ לכאן או לחץ לבחירה</div>
+                  <div style={{ fontSize: 12, color: "#9ca3af" }}>JPG · PNG · GIF · MP4 · MOV (עד 4MB)</div>
+                </>
+              )}
+            </label>
+          </div>
+        </Section>
+      )}
+
       {/* ── Canva Connection ── */}
-      <Section title="חיבור Canva">
+      {uploadSource === "canva" && (<Section title="חיבור Canva">
         {canvaStatusLoading ? (
           <div style={{ color: "#6b7280", fontSize: 13 }}>בודק חיבור...</div>
         ) : canvaStatus?.connected ? (
@@ -388,7 +541,7 @@ export default function CreateCampaignClient() {
             </div>
           </div>
         )}
-      </Section>
+      </Section>)}
 
       {/* ── Campaign Settings ── */}
       <Section title="הגדרות קמפיין">
@@ -573,28 +726,37 @@ export default function CreateCampaignClient() {
       </Section>
 
       {/* ── Submit ── */}
-      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <button
-          type="button"
-          onClick={() => void submitCampaign()}
-          disabled={submitting || !exportedImageUrl}
-          style={{
-            padding: "14px 28px",
-            borderRadius: 12,
-            border: "none",
-            background: exportedImageUrl ? "#1d4ed8" : "#9ca3af",
-            color: "#fff",
-            fontWeight: 900,
-            fontSize: 16,
-            cursor: submitting || !exportedImageUrl ? "not-allowed" : "pointer",
-          }}
-        >
-          {submitting ? "מעלה קמפיין..." : "העלה קמפיין ל-Meta"}
-        </button>
-        {!exportedImageUrl && (
-          <div style={{ fontSize: 13, color: "#6b7280" }}>יש לבחור עיצוב מ-Canva תחילה</div>
-        )}
-      </div>
+      {(() => {
+        const mediaReady = uploadSource === "canva"
+          ? !!exportedImageUrl
+          : !!(localImageHash || localVideoId);
+        return (
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={() => void submitCampaign()}
+              disabled={submitting || !mediaReady}
+              style={{
+                padding: "14px 28px",
+                borderRadius: 12,
+                border: "none",
+                background: mediaReady ? "#1d4ed8" : "#9ca3af",
+                color: "#fff",
+                fontWeight: 900,
+                fontSize: 16,
+                cursor: submitting || !mediaReady ? "not-allowed" : "pointer",
+              }}
+            >
+              {submitting ? "מעלה קמפיין..." : "העלה קמפיין ל-Meta"}
+            </button>
+            {!mediaReady && (
+              <div style={{ fontSize: 13, color: "#6b7280" }}>
+                {uploadSource === "canva" ? "יש לבחור עיצוב מ-Canva תחילה" : "יש להעלות תמונה/סרטון תחילה"}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }

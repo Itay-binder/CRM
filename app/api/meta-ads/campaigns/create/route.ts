@@ -19,7 +19,9 @@ function canManage(user: { profile: { role: string }; email?: string }): boolean
 }
 
 type RequestBody = {
-  canvaImageUrl?: string;
+  canvaImageUrl?: string; // Canva exported URL → will be uploaded to Meta
+  imageHash?: string;     // already-uploaded image hash
+  videoId?: string;       // already-uploaded video ID
   campaignName?: string;
   objective?: string;
   launchStatus?: string;
@@ -64,13 +66,16 @@ export async function POST(req: NextRequest) {
   }
 
   const canvaImageUrl = body.canvaImageUrl?.trim() ?? "";
+  const prebuiltImageHash = body.imageHash?.trim() ?? "";
+  const prebuiltVideoId = body.videoId?.trim() ?? "";
   const campaignName = body.campaignName?.trim() ?? "";
   const pageId = body.pageId?.trim() ?? "";
   const websiteUrl = body.websiteUrl?.trim() ?? "";
   const primaryText = body.primaryText?.trim() ?? "";
   const headline = body.headline?.trim() ?? "";
 
-  if (!canvaImageUrl) return NextResponse.json({ ok: false, error: "תמונת Canva נדרשת" }, { status: 400 });
+  if (!canvaImageUrl && !prebuiltImageHash && !prebuiltVideoId)
+    return NextResponse.json({ ok: false, error: "תמונה או סרטון נדרשים" }, { status: 400 });
   if (!campaignName) return NextResponse.json({ ok: false, error: "שם קמפיין נדרש" }, { status: 400 });
   if (!pageId) return NextResponse.json({ ok: false, error: "Facebook Page ID נדרש" }, { status: 400 });
   if (!websiteUrl) return NextResponse.json({ ok: false, error: "קישור יעד נדרש" }, { status: 400 });
@@ -87,8 +92,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Upload Canva image to Meta
-    const imageHash = await uploadImageToMeta(config, canvaImageUrl);
+    // Resolve image hash / video id
+    let imageHash: string | undefined = prebuiltImageHash || undefined;
+    let videoId: string | undefined = prebuiltVideoId || undefined;
+    if (canvaImageUrl && !imageHash && !videoId) {
+      imageHash = await uploadImageToMeta(config, canvaImageUrl);
+    }
 
     const input: CreateCampaignInput = {
       campaignName,
@@ -110,6 +119,7 @@ export async function POST(req: NextRequest) {
       adName: body.adName?.trim() || campaignName,
       pageId,
       imageHash,
+      videoId,
       primaryText,
       headline,
       description: body.description?.trim() || undefined,

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 import type { MetaAdsCampaignVm, MetaAdSetVm, MetaAdVm } from "@/lib/metaAds/graph";
+import CreateCampaignClient from "@/app/meta-ads/CreateCampaignClient";
 
 type SettingsVm = {
   appId: string;
@@ -23,7 +24,7 @@ type TokenStatus = {
   error: string | null;
 };
 
-type Tab = "campaigns" | "adsets" | "ads";
+type Tab = "campaigns" | "adsets" | "ads" | "create";
 type MetaObjectType = "campaign" | "adset" | "ad";
 type PendingToggle = {
   objectType: MetaObjectType;
@@ -524,6 +525,7 @@ export default function MetaAdsClient() {
     { id: "campaigns", label: "קמפיינים", count: campaigns.length },
     { id: "adsets", label: "סדרות מודעות", count: adSets.length },
     { id: "ads", label: "מודעות", count: ads.length },
+    { id: "create", label: "צור קמפיין + Canva", count: 0 },
   ];
 
   return (
@@ -935,7 +937,9 @@ export default function MetaAdsClient() {
 
         {/* Tables */}
         <div style={{ padding: 16 }}>
-          {loading ? (
+          {activeTab === "create" ? (
+            <CreateCampaignClient />
+          ) : loading ? (
             <div style={{ color: "#6b7280", padding: "20px 0" }}>טוען...</div>
           ) : activeTab === "campaigns" ? (
             <CampaignsTable

@@ -154,6 +154,99 @@ function billingEventForGoal(goal: OptimizationGoal): string {
   return goal === "LINK_CLICKS" ? "LINK_CLICKS" : "IMPRESSIONS";
 }
 
+// ── Add ad to existing ad set ─────────────────────────────────────────────────
+
+export type AddAdInput = {
+  adSetId: string;
+  pageId: string;
+  imageHash?: string;
+  videoId?: string;
+  adName: string;
+  primaryText: string;
+  headline: string;
+  description?: string;
+  callToAction: CallToActionType;
+  websiteUrl: string;
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  utmContent?: string;
+  utmTerm?: string;
+  advantageCreative: boolean;
+  launchStatus: "ACTIVE" | "PAUSED";
+};
+
+export async function addAdToAdSet(
+  config: MetaAdsConfig,
+  input: AddAdInput
+): Promise<{ adCreativeId: string; adId: string }> {
+  const adAccountId = normalizeAdAccountId(config.adAccountId);
+  if (!adAccountId) throw new Error("חסר Ad Account ID בהגדרות");
+  if (!config.accessToken) throw new Error("חסר Access Token בהגדרות");
+  if (!input.adSetId.trim()) throw new Error("חסר Ad Set ID");
+  if (!input.imageHash && !input.videoId) throw new Error("חובה לספק תמונה או סרטון");
+
+  const finalUrl = buildFinalUrl({
+    ...input,
+    // buildFinalUrl only uses utm* + websiteUrl
+    campaignName: "", objective: "OUTCOME_LEADS", launchStatus: "PAUSED",
+    budgetType: "daily", budget: 0, adSetName: "", optimizationGoal: "LEAD_GENERATION",
+    countries: [], ageMin: 18, ageMax: 65, genders: [], advantageAudience: false,
+    adName: input.adName,
+  } as CreateCampaignInput);
+
+  let storySpec: Record<string, unknown>;
+  if (input.videoId) {
+    const videoData: Record<string, unknown> = {
+      video_id: input.videoId,
+      message: input.primaryText,
+      title: input.headline,
+      call_to_action: { type: input.callToAction, value: { link: finalUrl } },
+    };
+    if (input.description?.trim()) videoData.description = input.description.trim();
+    storySpec = { page_id: input.pageId, video_data: videoData };
+  } else {
+    const linkData: Record<string, unknown> = {
+      image_hash: input.imageHash,
+      link: finalUrl,
+      message: input.primaryText,
+      name: input.headline,
+      call_to_action: { type: input.callToAction, value: { link: finalUrl } },
+    };
+    if (input.description?.trim()) linkData.description = input.description.trim();
+    storySpec = { page_id: input.pageId, link_data: linkData };
+  }
+
+  const creativeBody: Record<string, unknown> = {
+    name: `${input.adName} - Creative`,
+    object_story_spec: storySpec,
+  };
+  if (input.advantageCreative) {
+    creativeBody.degrees_of_freedom_spec = {
+      creative_features_spec: { standard_enhancements: { enroll_status: "OPT_IN" } },
+    };
+  }
+
+  const creativeRes = await metaPost<{ id?: string }>(
+    config,
+    `/act_${adAccountId}/adcreatives`,
+    creativeBody
+  );
+  const adCreativeId = creativeRes.id;
+  if (!adCreativeId) throw new Error("יצירת קריאייטיב נכשלה");
+
+  const adRes = await metaPost<{ id?: string }>(config, `/act_${adAccountId}/ads`, {
+    name: input.adName,
+    adset_id: input.adSetId,
+    creative: { creative_id: adCreativeId },
+    status: input.launchStatus,
+  });
+  const adId = adRes.id;
+  if (!adId) throw new Error("יצירת מודעה נכשלה");
+
+  return { adCreativeId, adId };
+}
+
 export async function createMetaCampaign(
   config: MetaAdsConfig,
   input: CreateCampaignInput

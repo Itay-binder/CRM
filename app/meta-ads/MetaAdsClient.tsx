@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
 import type { MetaAdsCampaignVm, MetaAdSetVm, MetaAdVm } from "@/lib/metaAds/graph";
 import CreateCampaignClient from "@/app/meta-ads/CreateCampaignClient";
+import AddAdModal from "@/app/meta-ads/AddAdModal";
 
 type SettingsVm = {
   appId: string;
@@ -140,6 +141,7 @@ export default function MetaAdsClient() {
   const [togglePassword, setTogglePassword] = useState("");
   const [statusTogglePasswordInput, setStatusTogglePasswordInput] = useState("");
   const [resettingStatusPassword, setResettingStatusPassword] = useState(false);
+  const [addAdTarget, setAddAdTarget] = useState<{ adSetId: string; adSetName: string } | null>(null);
 
   // Advanced / manual token section
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -962,6 +964,7 @@ export default function MetaAdsClient() {
                 askTogglePassword("adset", id, status, effectiveStatus)
               }
               onRowClick={(id) => { setSelectedAdSetId(id); setActiveTab("ads"); }}
+              onAddAd={(id: string, name: string) => setAddAdTarget({ adSetId: id, adSetName: name })}
             />
           ) : (
             <AdsTable
@@ -975,6 +978,17 @@ export default function MetaAdsClient() {
           )}
         </div>
       </div>
+      {addAdTarget && (
+        <AddAdModal
+          adSetId={addAdTarget.adSetId}
+          adSetName={addAdTarget.adSetName}
+          onClose={() => setAddAdTarget(null)}
+          onSuccess={() => {
+            setOkMsg("המודעה נוצרה בהצלחה ב-Meta Ads Manager.");
+            setAddAdTarget(null);
+          }}
+        />
+      )}
       {pendingToggle && (
         <div
           style={{
@@ -1175,6 +1189,7 @@ function AdSetsTable({
   togglingIds,
   onRowClick,
   onToggleStatus,
+  onAddAd,
 }: {
   rows: MetaAdSetVm[];
   selectedId?: string | null;
@@ -1182,6 +1197,7 @@ function AdSetsTable({
   togglingIds: string[];
   onRowClick?: (id: string) => void;
   onToggleStatus?: (id: string, status: string, effectiveStatus: string) => void;
+  onAddAd?: (id: string, name: string) => void;
 }) {
   if (rows.length === 0)
     return <div style={{ color: "#6b7280" }}>אין סדרות מודעות להצגה.</div>;
@@ -1190,7 +1206,7 @@ function AdSetsTable({
       <table style={{ width: "100%", minWidth: 1200, borderCollapse: "collapse" }}>
         <thead>
           <tr>
-            {["סדרת מודעות", "קמפיין", "סטטוס", "פעולה", "אופטימיזציה", "תוצאות", "עלות/תוצאה", "הוצאה", "חשיפות", "Reach", "קליקי קישור", "CTR (קישור)", "CPC (קישור)", "CPM", "תקציב"].map((h) => (
+            {["סדרת מודעות", "קמפיין", "סטטוס", "פעולה", "הוסף מודעה", "אופטימיזציה", "תוצאות", "עלות/תוצאה", "הוצאה", "חשיפות", "Reach", "קליקי קישור", "CTR (קישור)", "CPC (קישור)", "CPM", "תקציב"].map((h) => (
               <th key={h} style={TH_STYLE}>{h}</th>
             ))}
           </tr>
@@ -1220,6 +1236,29 @@ function AdSetsTable({
                     disabled={togglingIds.includes(s.id)}
                     onClick={() => onToggleStatus?.(s.id, s.status, s.effectiveStatus)}
                   />
+                ) : (
+                  "—"
+                )}
+              </td>
+              <td style={TD_STYLE}>
+                {canManage ? (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onAddAd?.(s.id, s.name); }}
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: 8,
+                      border: "1px solid #a5b4fc",
+                      background: "#eff6ff",
+                      color: "#1d4ed8",
+                      fontWeight: 700,
+                      fontSize: 12,
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    + מודעה
+                  </button>
                 ) : (
                   "—"
                 )}

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { formatIsraelDateTime } from "@/lib/datetime/formatIsrael";
+import type { MetaAdsCampaignVm, MetaAdSetVm } from "@/lib/metaAds/graph";
 
 type CanvaStatus = { connected: boolean; expiresAt: string; updatedAt: string };
 type CanvaDesign = { id: string; title: string; thumbnailUrl: string; updatedAt: string };
@@ -115,13 +116,27 @@ function DesignCard({
 }
 
 type Props = {
-  adSetId: string;
-  adSetName: string;
+  adSetId?: string;
+  adSetName?: string;
+  campaigns: MetaAdsCampaignVm[];
+  adSets: MetaAdSetVm[];
   onClose: () => void;
   onSuccess: () => void;
 };
 
-export default function AddAdModal({ adSetId, adSetName, onClose, onSuccess }: Props) {
+export default function AddAdModal({ adSetId: adSetIdProp, adSetName: adSetNameProp, campaigns, adSets, onClose, onSuccess }: Props) {
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>(() => {
+    if (adSetIdProp) return adSets.find((s) => s.id === adSetIdProp)?.campaignId ?? "";
+    return campaigns.length === 1 ? campaigns[0].id : "";
+  });
+  const [selectedAdSetId, setSelectedAdSetId] = useState<string>(adSetIdProp ?? "");
+
+  const filteredAdSets = selectedCampaignId
+    ? adSets.filter((s) => s.campaignId === selectedCampaignId)
+    : adSets;
+
+  const resolvedAdSetId = selectedAdSetId;
+  const resolvedAdSetName = adSets.find((s) => s.id === selectedAdSetId)?.name ?? adSetNameProp ?? "";
   const [canvaStatus, setCanvaStatus] = useState<CanvaStatus | null>(null);
   const [canvaStatusLoading, setCanvaStatusLoading] = useState(true);
   const [disconnectingCanva, setDisconnectingCanva] = useState(false);
@@ -274,6 +289,7 @@ export default function AddAdModal({ adSetId, adSetName, onClose, onSuccess }: P
   }
 
   async function submitAd() {
+    if (!resolvedAdSetId) { setErr("יש לבחור סדרת מודעות תחילה"); return; }
     const mediaReady = uploadSource === "canva" ? !!exportedImageUrl : !!(localImageHash || localVideoId);
     if (!mediaReady) { setErr(uploadSource === "canva" ? "בחר עיצוב מ-Canva תחילה" : "העלה קובץ תחילה"); return; }
     if (!pageId.trim()) { setErr("Facebook Page ID נדרש"); return; }
@@ -291,7 +307,7 @@ export default function AddAdModal({ adSetId, adSetName, onClose, onSuccess }: P
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          adSetId,
+          adSetId: resolvedAdSetId,
           ...(uploadSource === "canva"
             ? { canvaImageUrl: exportedImageUrl }
             : localVideoId
@@ -352,12 +368,7 @@ export default function AddAdModal({ adSetId, adSetName, onClose, onSuccess }: P
           display: "flex", alignItems: "center", justifyContent: "space-between",
           padding: "16px 20px", borderBottom: "1px solid #e5e7eb",
         }}>
-          <div>
-            <div style={{ fontWeight: 900, fontSize: 17 }}>הוסף מודעה לסדרת מודעות</div>
-            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>
-              {adSetName} <span dir="ltr" style={{ fontFamily: "monospace" }}>({adSetId})</span>
-            </div>
-          </div>
+          <div style={{ fontWeight: 900, fontSize: 17 }}>הוסף מודעה</div>
           <button
             type="button"
             onClick={onClose}
@@ -394,6 +405,46 @@ export default function AddAdModal({ adSetId, adSetName, onClose, onSuccess }: P
               </button>
             </div>
           )}
+
+          {/* Campaign / Ad Set selector */}
+          <SectionBox title="קמפיין וסדרת מודעות">
+            <FormGrid>
+              <Field label="קמפיין">
+                <select
+                  value={selectedCampaignId}
+                  onChange={(e) => {
+                    setSelectedCampaignId(e.target.value);
+                    setSelectedAdSetId("");
+                  }}
+                  style={{ ...inputStyle }}
+                >
+                  <option value="">— בחר קמפיין —</option>
+                  {campaigns.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="סדרת מודעות">
+                <select
+                  value={selectedAdSetId}
+                  onChange={(e) => setSelectedAdSetId(e.target.value)}
+                  disabled={!selectedCampaignId && adSets.length === 0}
+                  style={{ ...inputStyle }}
+                >
+                  <option value="">— בחר סדרת מודעות —</option>
+                  {filteredAdSets.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </Field>
+            </FormGrid>
+            {resolvedAdSetId && (
+              <div style={{ marginTop: 8, fontSize: 12, color: "#065f46" }}>
+                ✓ {resolvedAdSetName}
+                <span dir="ltr" style={{ color: "#9ca3af", marginRight: 6, fontFamily: "monospace" }}>({resolvedAdSetId})</span>
+              </div>
+            )}
+          </SectionBox>
 
           {/* Source Toggle */}
           <div style={{ display: "flex", gap: 8 }}>

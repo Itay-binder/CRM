@@ -141,7 +141,7 @@ export default function MetaAdsClient() {
   const [togglePassword, setTogglePassword] = useState("");
   const [statusTogglePasswordInput, setStatusTogglePasswordInput] = useState("");
   const [resettingStatusPassword, setResettingStatusPassword] = useState(false);
-  const [addAdTarget, setAddAdTarget] = useState<{ adSetId: string; adSetName: string } | null>(null);
+  const [addAdTarget, setAddAdTarget] = useState<{ adSetId?: string; adSetName?: string } | null>(null);
 
   // Advanced / manual token section
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -901,6 +901,24 @@ export default function MetaAdsClient() {
             >
               {refreshing ? "מרענן..." : "רענן"}
             </button>
+            {settings?.canManage && adSets.length > 0 && activeTab !== "create" && (
+              <button
+                type="button"
+                onClick={() => setAddAdTarget({})}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "#1d4ed8",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                + הוסף מודעה
+              </button>
+            )}
           </div>
         </div>
 
@@ -982,6 +1000,8 @@ export default function MetaAdsClient() {
         <AddAdModal
           adSetId={addAdTarget.adSetId}
           adSetName={addAdTarget.adSetName}
+          campaigns={campaigns}
+          adSets={adSets}
           onClose={() => setAddAdTarget(null)}
           onSuccess={() => {
             setOkMsg("המודעה נוצרה בהצלחה ב-Meta Ads Manager.");

@@ -151,7 +151,12 @@ function buildFinalUrl(input: CreateCampaignInput): string {
 }
 
 function billingEventForGoal(goal: OptimizationGoal): string {
-  return goal === "LINK_CLICKS" ? "LINK_CLICKS" : "IMPRESSIONS";
+  // Meta requires billing_event to match the optimization goal category.
+  // LINK_CLICKS is the only goal billed per click; all others are billed per impression.
+  switch (goal) {
+    case "LINK_CLICKS": return "LINK_CLICKS";
+    default: return "IMPRESSIONS";
+  }
 }
 
 // ── Add ad to existing ad set ─────────────────────────────────────────────────
@@ -257,11 +262,14 @@ export async function createMetaCampaign(
   if (!input.imageHash && !input.videoId) throw new Error("חובה לספק תמונה או סרטון");
 
   // Step 1: Campaign
+  // Explicitly disable Campaign Budget Optimization (CBO) so budget stays at ad-set level.
+  // Without this, Meta v22+ may default to CBO and reject ad-set-level budgets.
   const campRes = await metaPost<{ id?: string }>(config, `/act_${adAccountId}/campaigns`, {
     name: input.campaignName,
     objective: input.objective,
     status: input.launchStatus,
     special_ad_categories: [],
+    campaign_budget_optimization: false,
   });
   const campaignId = campRes.id;
   if (!campaignId) throw new Error("יצירת קמפיין נכשלה — לא התקבל ID");
@@ -284,6 +292,11 @@ export async function createMetaCampaign(
     status: input.launchStatus,
     targeting,
   };
+
+  // promoted_object is required for lead-gen and offsite-conversion optimization goals
+  if (input.optimizationGoal === "LEAD_GENERATION" || input.optimizationGoal === "QUALITY_LEAD") {
+    adSetBody.promoted_object = { page_id: input.pageId };
+  }
   if (input.budgetType === "daily") {
     adSetBody.daily_budget = budgetToCents(input.budget);
   } else {

@@ -6,7 +6,7 @@ export type AudienceLogic = "and" | "or";
 /** field: tag = label id for hasTag/notHasTag */
 export type AudienceCondition = {
   id: string;
-  field: "tag" | "name" | "phone" | "email" | "status";
+  field: "tag" | "name" | "phone" | "email" | "status" | "pipeline" | "stage" | "assignedRep";
   op:
     | "contains"
     | "notContains"
@@ -78,6 +78,34 @@ function evaluateOne(lead: LeadRecord, c: AudienceCondition): boolean {
       if (c.op === "notEquals") return st !== v;
       if (c.op === "contains") return norm(st).includes(norm(v));
       if (c.op === "notContains") return !norm(st).includes(norm(v));
+      return true;
+    }
+    case "pipeline": {
+      const pid = String(lead.pipelineId ?? "").trim();
+      if (c.op === "isEmpty") return !pid;
+      if (c.op === "notEmpty") return Boolean(pid);
+      if (c.op === "equals") return pid === v;
+      if (c.op === "notEquals") return pid !== v;
+      return true;
+    }
+    case "stage": {
+      const s = String(lead.stage ?? "").trim();
+      if (c.op === "isEmpty") return !s;
+      if (c.op === "notEmpty") return Boolean(s);
+      if (c.op === "contains") return norm(s).includes(norm(v));
+      if (c.op === "notContains") return !norm(s).includes(norm(v));
+      if (c.op === "equals") return norm(s) === norm(v);
+      if (c.op === "notEquals") return norm(s) !== norm(v);
+      return true;
+    }
+    case "assignedRep": {
+      const r = norm(lead.assignedRep);
+      if (c.op === "isEmpty") return !r;
+      if (c.op === "notEmpty") return Boolean(r);
+      if (c.op === "contains") return r.includes(norm(v));
+      if (c.op === "notContains") return !r.includes(norm(v));
+      if (c.op === "equals") return r === norm(v);
+      if (c.op === "notEquals") return r !== norm(v);
       return true;
     }
     default:

@@ -29,6 +29,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     parameterValues?: string[];
     conditions?: AudienceCondition[];
     logic?: AudienceLogic;
+    audiencePinnedIds?: string[];
   };
   try {
     body = (await req.json()) as typeof body;
@@ -49,6 +50,9 @@ export async function PUT(req: NextRequest, { params }: Params) {
       parameterValues: Array.isArray(body.parameterValues) ? body.parameterValues : existing.parameterValues,
       conditions: Array.isArray(body.conditions) ? body.conditions : existing.conditions,
       logic: body.logic === "or" ? "or" : body.logic === "and" ? "and" : existing.logic,
+      audiencePinnedIds: Array.isArray(body.audiencePinnedIds)
+        ? body.audiencePinnedIds.map((x) => String(x).trim()).filter(Boolean)
+        : existing.audiencePinnedIds,
       createdBy: existing.createdBy,
       createdAt: existing.createdAt,
     });

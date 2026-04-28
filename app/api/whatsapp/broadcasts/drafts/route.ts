@@ -36,6 +36,7 @@ export async function POST(req: NextRequest) {
     parameterValues?: string[];
     conditions?: AudienceCondition[];
     logic?: AudienceLogic;
+    audiencePinnedIds?: string[];
     id?: string;
   };
   try {
@@ -54,6 +55,9 @@ export async function POST(req: NextRequest) {
     const id = body.id?.trim() || randomUUID();
     const conditions = Array.isArray(body.conditions) ? body.conditions : [];
     const logic: AudienceLogic = body.logic === "or" ? "or" : "and";
+    const audiencePinnedIds = Array.isArray(body.audiencePinnedIds)
+      ? body.audiencePinnedIds.map((x) => String(x).trim()).filter(Boolean)
+      : [];
     const saved = await saveWhatsAppBroadcastDraft(db, {
       id,
       name: body.name?.trim() ?? "טיוטה",
@@ -61,6 +65,7 @@ export async function POST(req: NextRequest) {
       parameterValues: Array.isArray(body.parameterValues) ? body.parameterValues : [],
       conditions,
       logic,
+      audiencePinnedIds,
       createdBy: auth.user.email ?? auth.user.uid,
     });
     return NextResponse.json({ ok: true, draft: saved });

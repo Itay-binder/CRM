@@ -55,6 +55,9 @@ const OPS_BY_FIELD: Record<AudienceCondition["field"], AudienceCondition["op"][]
   phone: ["contains", "notContains", "equals", "notEquals", "isEmpty", "notEmpty"],
   email: ["contains", "notContains", "equals", "notEquals", "isEmpty", "notEmpty"],
   status: ["equals", "notEquals"],
+  pipeline: ["equals", "notEquals", "isEmpty", "notEmpty"],
+  stage: ["contains", "notContains", "equals", "notEquals", "isEmpty", "notEmpty"],
+  assignedRep: ["contains", "notContains", "equals", "notEquals", "isEmpty", "notEmpty"],
 };
 
 export default function AudiencesClient() {

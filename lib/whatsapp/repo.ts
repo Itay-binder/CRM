@@ -136,6 +136,7 @@ export type WhatsAppBroadcastDraftRecord = {
   parameterValues: string[];
   conditions: AudienceCondition[];
   logic: AudienceLogic;
+  audiencePinnedIds: string[];
   createdAt: string;
   updatedAt: string;
   createdBy: string;
@@ -660,7 +661,7 @@ function parseAudienceConditions(raw: unknown): AudienceCondition[] {
     const op = asString(o.op).trim() as AudienceCondition["op"];
     const value = asString(o.value);
     if (!id) continue;
-    if (!["tag", "name", "phone", "email", "status"].includes(field)) continue;
+    if (!["tag", "name", "phone", "email", "status", "pipeline", "stage", "assignedRep"].includes(field)) continue;
     out.push({ id, field, op, value });
   }
   return out;
@@ -748,6 +749,7 @@ export async function listWhatsAppBroadcastDrafts(db: Firestore): Promise<WhatsA
         parameterValues: asStringArray(row.parameterValues),
         conditions: parseAudienceConditions(row.conditions),
         logic,
+        audiencePinnedIds: asStringArray(row.audiencePinnedIds),
         createdAt: asString(row.createdAt),
         updatedAt: asString(row.updatedAt),
         createdBy: asString(row.createdBy),
@@ -774,6 +776,7 @@ export async function saveWhatsAppBroadcastDraft(
       parameterValues: input.parameterValues.map((x) => x.trim()).filter(Boolean),
       conditions: input.conditions,
       logic: input.logic,
+      audiencePinnedIds: input.audiencePinnedIds,
       updatedAt: now,
     };
     drafts[idx] = updated;
@@ -787,6 +790,7 @@ export async function saveWhatsAppBroadcastDraft(
     parameterValues: input.parameterValues.map((x) => x.trim()).filter(Boolean),
     conditions: input.conditions,
     logic: input.logic,
+    audiencePinnedIds: input.audiencePinnedIds,
     createdAt: input.createdAt ?? now,
     updatedAt: now,
     createdBy: input.createdBy,

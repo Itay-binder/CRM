@@ -22,7 +22,9 @@ type TemplateVm = {
   buttonRows?: Array<{ type: string; text: string; url?: string }>;
 };
 
-type LabelOpt = { id: string; name: string };
+type LabelOpt = { id: string; name: string; count: number };
+
+type PipelineOpt = { id: string; name: string };
 
 type DraftVm = {
   id: string;
@@ -31,6 +33,7 @@ type DraftVm = {
   parameterValues: string[];
   conditions: AudienceCondition[];
   logic: AudienceLogic;
+  audiencePinnedIds?: string[];
 };
 
 type AudienceContactRow = {
@@ -82,6 +85,31 @@ const OPS_BY_FIELD: Record<
   phone: ["contains", "notContains", "equals", "notEquals", "isEmpty", "notEmpty"],
   email: ["contains", "notContains", "equals", "notEquals", "isEmpty", "notEmpty"],
   status: ["equals", "notEquals"],
+  pipeline: ["equals", "notEquals", "isEmpty", "notEmpty"],
+  stage: ["contains", "notContains", "equals", "notEquals", "isEmpty", "notEmpty"],
+  assignedRep: ["contains", "notContains", "equals", "notEquals", "isEmpty", "notEmpty"],
+};
+
+const OP_LABELS: Record<AudienceCondition["op"], string> = {
+  hasTag: "יש תגית",
+  notHasTag: "אין תגית",
+  contains: "מכיל",
+  notContains: "לא מכיל",
+  equals: "שווה",
+  notEquals: "לא שווה",
+  isEmpty: "ריק",
+  notEmpty: "לא ריק",
+};
+
+const FIELD_LABELS: Record<AudienceCondition["field"], string> = {
+  tag: "תגית",
+  name: "שם",
+  phone: "טלפון",
+  email: "אימייל",
+  status: "סטטוס",
+  pipeline: "פייפליין",
+  stage: "שלב",
+  assignedRep: "נציג",
 };
 
 export default function BroadcastNewClient() {
@@ -98,6 +126,7 @@ export default function BroadcastNewClient() {
 
   const [templates, setTemplates] = useState<TemplateVm[]>([]);
   const [labels, setLabels] = useState<LabelOpt[]>([]);
+  const [pipelines, setPipelines] = useState<PipelineOpt[]>([]);
   const [audiences, setAudiences] = useState<AudienceVm[]>([]);
   const [tplSearch, setTplSearch] = useState("");
 
@@ -116,9 +145,10 @@ export default function BroadcastNewClient() {
   const [audienceTruncated, setAudienceTruncated] = useState(false);
 
   const loadBase = useCallback(async () => {
-    const [tRes, lRes, aRes] = await Promise.all([
+    const [tRes, lRes, pRes, aRes] = await Promise.all([
       fetch("/api/whatsapp/templates", { credentials: "include", cache: "no-store" }),
-      fetch("/api/labels", { credentials: "include", cache: "no-store" }),
+      fetch("/api/whatsapp/audiences/tag-stats", { credentials: "include", cache: "no-store" }),
+      fetch("/api/opportunities/pipelines", { credentials: "include", cache: "no-store" }),
       fetch("/api/whatsapp/audiences", { credentials: "include", cache: "no-store" }),
     ]);
     if (tRes.status === 401) {
@@ -126,10 +156,12 @@ export default function BroadcastNewClient() {
       return;
     }
     const tj = await parseJson<{ ok?: boolean; templates?: TemplateVm[] }>(tRes);
-    const lj = await parseJson<{ ok?: boolean; labels?: LabelOpt[] }>(lRes);
+    const lj = await parseJson<{ ok?: boolean; tagStats?: Array<{ id: string; name: string; count: number }> }>(lRes);
+    const pj = await parseJson<{ ok?: boolean; pipelines?: PipelineOpt[] }>(pRes);
     const aj = await parseJson<{ ok?: boolean; audiences?: AudienceVm[] }>(aRes);
     if (tj.ok) setTemplates(tj.templates ?? []);
-    if (lj.ok) setLabels(lj.labels ?? []);
+    if (lj.ok) setLabels((lj.tagStats ?? []).map((t) => ({ id: t.id, name: t.name, count: t.count })));
+    if (pj.ok) setPipelines(pj.pipelines ?? []);
     if (aj.ok) setAudiences(aj.audiences ?? []);
   }, []);
 
@@ -146,6 +178,9 @@ export default function BroadcastNewClient() {
     setParameterValuesStr(d.parameterValues.join(", "));
     setLogic(d.logic);
     setConditions(d.conditions.length ? d.conditions : []);
+    if (Array.isArray(d.audiencePinnedIds) && d.audiencePinnedIds.length > 0) {
+      setAudiencePinnedIds(d.audiencePinnedIds);
+    }
   }, [draftQ]);
 
   const loadCampaign = useCallback(async () => {
@@ -353,6 +388,7 @@ export default function BroadcastNewClient() {
         parameterValues,
         conditions,
         logic,
+        audiencePinnedIds,
       };
       const res = await fetch("/api/whatsapp/broadcasts/drafts", {
         method: "POST",
@@ -696,11 +732,9 @@ export default function BroadcastNewClient() {
                     }}
                     style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e5e7eb" }}
                   >
-                    <option value="tag">תגית</option>
-                    <option value="name">שם</option>
-                    <option value="phone">טלפון</option>
-                    <option value="email">אימייל</option>
-                    <option value="status">סטטוס</option>
+                    {(Object.keys(FIELD_LABELS) as AudienceCondition["field"][]).map((f) => (
+                      <option key={f} value={f}>{FIELD_LABELS[f]}</option>
+                    ))}
                   </select>
                   <select
                     value={c.op}
@@ -709,7 +743,7 @@ export default function BroadcastNewClient() {
                   >
                     {(OPS_BY_FIELD[c.field] ?? OPS_BY_FIELD.name).map((op) => (
                       <option key={op} value={op}>
-                        {op}
+                        {OP_LABELS[op] ?? op}
                       </option>
                     ))}
                   </select>
@@ -722,7 +756,7 @@ export default function BroadcastNewClient() {
                       <option value="">בחר תגית</option>
                       {labels.map((l) => (
                         <option key={l.id} value={l.id}>
-                          {l.name}
+                          {l.name}{l.count > 0 ? ` (${l.count})` : ""}
                         </option>
                       ))}
                     </select>
@@ -736,13 +770,25 @@ export default function BroadcastNewClient() {
                       <option value="זכיה">זכיה</option>
                       <option value="הפסד">הפסד</option>
                     </select>
+                  ) : c.field === "pipeline" ? (
+                    <select
+                      value={c.value}
+                      onChange={(e) => patchCondition(c.id, { value: e.target.value })}
+                      disabled={c.op === "isEmpty" || c.op === "notEmpty"}
+                      style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e5e7eb", background: (c.op === "isEmpty" || c.op === "notEmpty") ? "#f3f4f6" : "#fff" }}
+                    >
+                      <option value="">בחר פייפליין</option>
+                      {pipelines.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
                   ) : (
                     <input
                       value={c.value}
                       onChange={(e) => patchCondition(c.id, { value: e.target.value })}
                       placeholder="ערך"
                       disabled={c.op === "isEmpty" || c.op === "notEmpty"}
-                      style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e5e7eb" }}
+                      style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e5e7eb", background: (c.op === "isEmpty" || c.op === "notEmpty") ? "#f3f4f6" : "#fff" }}
                     />
                   )}
                   <button

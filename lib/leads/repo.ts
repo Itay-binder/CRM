@@ -340,6 +340,35 @@ export async function listLeadsFiltered(dateFrom?: string | null, dateTo?: strin
   return leads;
 }
 
+/**
+ * מוזג labelIds מהזדמנויות לתוך רשומות אנשי הקשר.
+ * תגית שמוגדרת על הזדמנות של איש קשר תיחשב גם כתגית של איש הקשר עצמו.
+ */
+export async function enrichLeadsWithOpportunityLabels(leads: LeadRecord[]): Promise<LeadRecord[]> {
+  if (!leads.length) return leads;
+  const db = await getAdminDb();
+  const snap = await db.collection("opportunities").get();
+  const oppLabelMap = new Map<string, Set<string>>();
+  for (const doc of snap.docs) {
+    const d = (doc.data() ?? {}) as Record<string, unknown>;
+    const contactId = String(d.contactId ?? "").trim();
+    if (!contactId) continue;
+    const labelIds = Array.isArray(d.labelIds)
+      ? (d.labelIds as unknown[]).map((x) => String(x).trim()).filter(Boolean)
+      : [];
+    if (!labelIds.length) continue;
+    const set = oppLabelMap.get(contactId) ?? new Set<string>();
+    for (const lid of labelIds) set.add(lid);
+    oppLabelMap.set(contactId, set);
+  }
+  return leads.map((lead) => {
+    const oppLabels = oppLabelMap.get(lead.id);
+    if (!oppLabels?.size) return lead;
+    const merged = Array.from(new Set([...(lead.labelIds ?? []), ...oppLabels]));
+    return { ...lead, labelIds: merged };
+  });
+}
+
 export async function getLeadById(id: string): Promise<LeadRecord | null> {
   const docId = normalizeUniqueKey(id);
   const db = await getAdminDb();

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { listLabels } from "@/lib/labels/repo";
-import { isLeadWhatsAppMarketingApproved, listLeadsFiltered } from "@/lib/leads/repo";
+import { enrichLeadsWithOpportunityLabels, isLeadWhatsAppMarketingApproved, listLeadsFiltered } from "@/lib/leads/repo";
 import {
   filterLeadsByAudience,
   type AudienceCondition,
@@ -54,7 +54,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const conditions = await normalizeTagConditions(conditionsRaw);
-    const leads = await listLeadsFiltered(null, null);
+    const leadsRaw = await listLeadsFiltered(null, null);
+    const leads = await enrichLeadsWithOpportunityLabels(leadsRaw);
     const matchedBase = filterLeadsByAudience(leads, conditions, logic);
     const matched =
       recipientIds.length > 0 ? matchedBase.filter((l) => recipientIds.includes(l.id)) : matchedBase;

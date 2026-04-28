@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { listLabels } from "@/lib/labels/repo";
-import { listLeadsFiltered } from "@/lib/leads/repo";
+import { enrichLeadsWithOpportunityLabels, listLeadsFiltered } from "@/lib/leads/repo";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: auth.error } satisfies ApiErr, { status: auth.status });
   }
   try {
-    const [labels, leads] = await Promise.all([listLabels(), listLeadsFiltered(null, null)]);
+    const [labels, leadsRaw] = await Promise.all([listLabels(), listLeadsFiltered(null, null)]);
+    const leads = await enrichLeadsWithOpportunityLabels(leadsRaw);
     const byId = new Map(
       labels.map((l) => [
         l.id,

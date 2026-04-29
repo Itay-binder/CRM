@@ -8,7 +8,7 @@ const PIPE = [MOVING_ORDERS_INTAKE_PIPELINE_ID];
 
 const SPECS: SeedSpec[] = [
   { key: "order_id", label: "מזהה הזמנה", type: "text" },
-  { key: "moving_timing", label: "דחיפות הובלה", type: "text" },
+  { key: "moving_timing", label: "למתי ההובלה", type: "text" },
   { key: "move_type", label: "סוג הובלה", type: "text" },
   { key: "pickup", label: "כתובת איסוף", type: "text" },
   { key: "dropoff", label: "כתובת פריקה", type: "text" },

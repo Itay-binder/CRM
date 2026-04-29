@@ -30,12 +30,29 @@ function orderDisplayName(order: MovingOrderRecord): string {
   return order.payload.name?.trim() || cardTitle(order);
 }
 
-function moveTimingLabel(order: MovingOrderRecord): string {
+function moveDateRaw(order: MovingOrderRecord): string {
+  const cv = order.customValues ?? {};
+  const d = cv.moving_order_date;
+  if (typeof d === "string" && d.trim()) return d.trim();
+  if (typeof d === "number" && Number.isFinite(d)) return String(d);
+  return order.payload.date?.trim() || "";
+}
+
+function moveDateLabel(order: MovingOrderRecord, matchUi: OrderMatchUiHints | null | undefined): string {
+  const raw = moveDateRaw(order);
+  const base = raw || "—";
+  const wd = matchUi?.moveWeekdayHe?.trim();
+  if (!wd || base === "—") return wd && base === "—" ? `— · ${wd}` : base;
+  if (base.includes(wd)) return base;
+  return `${base} · ${wd}`;
+}
+
+function moveWhenLabel(order: MovingOrderRecord, matchUi: OrderMatchUiHints | null | undefined): string {
   const cv = order.customValues ?? {};
   const raw = cv.moving_order_moving_timing ?? order.payload.moving_timing;
   if (typeof raw === "string" && raw.trim()) return raw.trim();
   if (typeof raw === "number" && Number.isFinite(raw)) return String(raw);
-  return "—";
+  return moveDateLabel(order, matchUi);
 }
 
 function sortDriverIdsForMatch(order: MovingOrderRecord, ids: string[]): string[] {
@@ -492,7 +509,7 @@ export function MatchOrderCard({
           <strong>תאריך יצירת ההזמנה:</strong> {createdShort}
         </div>
         <div style={{ fontSize: 14, color: "#374151", marginBottom: 4 }}>
-          <strong>דחיפות הובלה:</strong> {moveTimingLabel(order)}
+          <strong>למתי ההובלה:</strong> {moveWhenLabel(order, matchUi)}
         </div>
         {orderShortSummary(order) ? (
           <div style={{ fontSize: 13, color: "#374151", marginBottom: 4, lineHeight: 1.45 }}>
@@ -663,7 +680,7 @@ export function MatchOrderCard({
             <h2 style={{ margin: "0 0 8px", fontSize: 20 }}>{orderDisplayName(order)}</h2>
             <div style={{ fontSize: 14, color: "#4b5563", lineHeight: 1.6 }}>
               <div><strong>תאריך יצירה:</strong> {createdShort}</div>
-              <div><strong>דחיפות הובלה:</strong> {moveTimingLabel(order)}</div>
+              <div><strong>למתי ההובלה:</strong> {moveWhenLabel(order, matchUi)}</div>
             </div>
             <h3 style={{ fontSize: 15, margin: "18px 0 6px" }}>ערים ואזורי פעילות (לפי מפת הערים)</h3>
             <div

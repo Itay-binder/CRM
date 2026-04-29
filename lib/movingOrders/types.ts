@@ -25,6 +25,7 @@ export type OrderMatchedOpportunitySummary = {
 /** גוף הזמנה כפי שנכנס מ-webhook חיצוני */
 export type MovingOrderPayload = {
   order_id: string;
+  moving_timing?: string;
   move_type?: string;
   pickup?: string;
   dropoff?: string;

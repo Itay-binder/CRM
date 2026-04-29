@@ -2,6 +2,7 @@ import type { MovingOrderPayload } from "@/lib/movingOrders/types";
 
 const KEYS: (keyof MovingOrderPayload)[] = [
   "order_id",
+  "moving_timing",
   "move_type",
   "pickup",
   "dropoff",

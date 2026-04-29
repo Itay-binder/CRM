@@ -5,6 +5,7 @@ import {
   MOVING_ORDER_PIPELINE_NAME,
   MOVING_ORDER_STAGES,
 } from "@/lib/movingOrders/pipelineConstants";
+import { upsertCustomField } from "@/lib/customFields/repo";
 
 function mapTs(ts: unknown): Date | null {
   if (ts && typeof ts === "object" && "toDate" in ts) {
@@ -65,6 +66,18 @@ export async function ensureMovingOrdersIntakePipeline(): Promise<MovingOrderPip
 
   const again = await ref.get();
   const d = (again.data() ?? {}) as Record<string, unknown>;
+
+  // Keep newly added system fields visible in existing workspaces too.
+  await upsertCustomField({
+    entityType: "moving_order",
+    fieldId: "moving_timing",
+    label: "למתי ההובלה",
+    type: "text",
+    pipelineIds: [MOVING_ORDERS_INTAKE_PIPELINE_ID],
+    isRequired: false,
+    isActive: true,
+  });
+
   return {
     id: again.id,
     name: String(d.name ?? MOVING_ORDER_PIPELINE_NAME),

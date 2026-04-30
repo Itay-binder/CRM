@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApprovedUser } from "@/lib/auth/guard";
-import { isValidIngestApiKeyAsync } from "@/lib/ingest/apiKey";
+import { requireApprovedUserOrIngestApiKey } from "@/lib/auth/guard";
 import { appendOpportunityNote } from "@/lib/opportunities/repo";
 
 export const dynamic = "force-dynamic";
@@ -12,11 +11,11 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userAuth = await requireApprovedUser(req);
-  if (!userAuth.ok && !(await isValidIngestApiKeyAsync(req))) {
+  const auth = await requireApprovedUserOrIngestApiKey(req);
+  if (!auth.ok) {
     return NextResponse.json(
-      { ok: false, error: "Unauthorized" } satisfies ApiErr,
-      { status: 401 }
+      { ok: false, error: auth.error } satisfies ApiErr,
+      { status: auth.status }
     );
   }
 

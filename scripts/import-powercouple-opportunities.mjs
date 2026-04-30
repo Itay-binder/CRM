@@ -537,7 +537,7 @@ async function main() {
             ? `powercouple-import:${oppExt}:raw`
             : `powercouple-import:${oppExt}:n${e._i}`;
           const nr = await fetch(
-            `${args.baseUrl}/api/opportunities/${encodeURIComponent(opportunityId)}/notes`,
+            `${args.baseUrl}/api/ingest/opportunity-note`,
             {
               method: "POST",
               headers: {
@@ -546,6 +546,7 @@ async function main() {
                 "x-api-key": args.apiKey,
               },
               body: JSON.stringify({
+                opportunityId,
                 id: noteId,
                 text: e.text,
                 createdBy: "ייבוא Powercouple",

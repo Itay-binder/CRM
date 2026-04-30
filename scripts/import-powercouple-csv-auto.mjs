@@ -97,6 +97,7 @@ async function main() {
   }
   const headers = matrix[0].map(trimKey);
   const records = matrix.slice(1).filter((r) => r.some((c) => String(c ?? "").trim() !== ""));
+  const hIndex = new Map(headers.map((h, i) => [h, i]));
 
   const known = new Set([
     "Opportunity Name",
@@ -185,46 +186,52 @@ async function main() {
     }
   }
 
-  const pipeRes = await fetch(`${baseUrl}/api/opportunities/pipelines`, {
-    headers: {
-      "x-api-key": apiKey,
-      "x-crm-tenant-database-id": databaseId,
-    },
-  });
-  const pipeJson = await pipeRes.json();
-  if (!pipeRes.ok || !pipeJson.ok) {
-    throw new Error(pipeJson.error ?? "Failed to fetch pipelines");
-  }
-  const pipelines = Array.isArray(pipeJson.pipelines) ? pipeJson.pipelines : [];
-  const pipelineByName = new Map(
-    pipelines.map((p) => [String(p.name ?? "").trim().toLowerCase(), String(p.id ?? "").trim()])
-  );
-
-  const hIndex = new Map(headers.map((h, i) => [h, i]));
   const idxPipeName = hIndex.get("pipeline");
-  const idxPipeExportId = hIndex.get("Pipeline ID");
-  const pipelineMap = {};
-  if (idxPipeName != null && idxPipeExportId != null) {
+  const idxPipeId = hIndex.get("Pipeline ID");
+  const idxStage = hIndex.get("stage");
+  const byPipeId = new Map();
+  if (idxPipeId != null) {
     for (const r of records) {
-      const name = trimKey(r[idxPipeName] ?? "").toLowerCase();
-      const exportId = trimKey(r[idxPipeExportId] ?? "");
-      if (!name || !exportId) continue;
-      const real = pipelineByName.get(name);
-      if (real) pipelineMap[exportId] = real;
+      const id = trimKey(r[idxPipeId] ?? "");
+      if (!id) continue;
+      const name = idxPipeName != null ? trimKey(r[idxPipeName] ?? "") : "";
+      const stage = idxStage != null ? trimKey(r[idxStage] ?? "") : "";
+      const prev = byPipeId.get(id) ?? { name: name || id, stages: new Set() };
+      if (name) prev.name = name;
+      if (stage) prev.stages.add(stage);
+      byPipeId.set(id, prev);
+    }
+  }
+  const pipelinesPayload = Array.from(byPipeId.entries()).map(([id, v]) => ({
+    id,
+    name: v.name,
+    stages: Array.from(v.stages),
+  }));
+  if (pipelinesPayload.length > 0) {
+    const pr = await fetch(`${baseUrl}/api/ingest/pipelines-upsert`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "x-crm-tenant-database-id": databaseId,
+      },
+      body: JSON.stringify({ pipelines: pipelinesPayload }),
+    });
+    const pj = await pr.json();
+    if (!pr.ok || !pj.ok) {
+      throw new Error(pj.error ?? "Failed to upsert pipelines");
     }
   }
 
   const tmpDir = path.resolve("scripts");
   const fieldMapPath = path.join(tmpDir, ".tmp-powercouple-field-map.json");
-  const pipelineMapPath = path.join(tmpDir, ".tmp-powercouple-pipeline-map.json");
   fs.writeFileSync(fieldMapPath, JSON.stringify(fieldMap, null, 2), "utf8");
-  fs.writeFileSync(pipelineMapPath, JSON.stringify(pipelineMap, null, 2), "utf8");
 
   console.log("Prepared maps:", {
     customHeaders: customHeaders.length,
     contactMapped: Object.keys(fieldMap.contact).length,
     opportunityMapped: Object.keys(fieldMap.opportunity).length,
-    pipelineMappings: Object.keys(pipelineMap).length,
+    pipelineMappings: pipelinesPayload.length,
   });
 
   await runNodeScript(path.resolve("scripts/import-powercouple-opportunities.mjs"), [
@@ -238,8 +245,6 @@ async function main() {
     databaseId,
     "--field-map",
     fieldMapPath,
-    "--pipeline-map",
-    pipelineMapPath,
     "--concurrency",
     String(concurrency),
     "--delay-ms",

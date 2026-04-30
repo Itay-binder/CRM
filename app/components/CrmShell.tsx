@@ -20,6 +20,8 @@ export default function CrmShell({
   tenantForbidden = false,
   children,
 }: Props) {
+  const isHotAfikTenant = currentTenantId === "hot-afik";
+
   return (
     <div
       className="crm-shell-layout"
@@ -68,10 +70,12 @@ export default function CrmShell({
           {isMovingOrdersTenant(currentTenantId) ? (
             <CrmNavLink href="/orders" label="ניהול הזמנות" />
           ) : null}
-          <CrmNavLink href="/billing" label="סליקה" />
-          <CrmNavLink href="/whatsapp-automations" label="אוטומציות ווצאפ" />
-          <CrmNavLink href="/meta-ads" label="חיבור למטא" />
-          <CrmNavLink href="/seo" label="סוכן SEO" />
+          {!isHotAfikTenant ? <CrmNavLink href="/billing" label="סליקה" /> : null}
+          {!isHotAfikTenant ? (
+            <CrmNavLink href="/whatsapp-automations" label="אוטומציות ווצאפ" />
+          ) : null}
+          {!isHotAfikTenant ? <CrmNavLink href="/meta-ads" label="חיבור למטא" /> : null}
+          {!isHotAfikTenant ? <CrmNavLink href="/seo" label="סוכן SEO" /> : null}
           <CrmNavLink href="/settings" label="הגדרות" />
         </nav>
       </aside>

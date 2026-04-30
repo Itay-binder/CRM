@@ -196,8 +196,15 @@ export async function POST(req: NextRequest) {
       if (ref?.entityType === "opportunity") oppId = ref.entityId;
     }
 
+    let existingOpp =
+      oppId ? await getOpportunityById(oppId) : null;
+    if (oppId && !existingOpp) {
+      // Stale external ref: entity was deleted/reset; create a fresh opportunity below.
+      oppId = null;
+    }
+
     if (oppId) {
-      const existing = await getOpportunityById(oppId);
+      const existing = existingOpp;
       const effectivePipe = (pipelineId ?? existing?.pipelineId ?? "").trim();
       const customValues = await validateCustomValues("opportunity", customMerged, {
         pipelineId: effectivePipe || null,

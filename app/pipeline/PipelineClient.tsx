@@ -497,6 +497,13 @@ export default function PipelineClient() {
   const [confettiKey, setConfettiKey] = useState(0);
   const [oppDeleteOpen, setOppDeleteOpen] = useState(false);
   const [oppDeleteConfirm, setOppDeleteConfirm] = useState("");
+  const [selectedOppIds, setSelectedOppIds] = useState<string[]>([]);
+  const [bulkStage, setBulkStage] = useState("");
+  const [bulkStatus, setBulkStatus] = useState<"" | "פתוח" | "זכיה" | "הפסד">("");
+  const [bulkAssignedRep, setBulkAssignedRep] = useState("__NO_CHANGE__");
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState("");
+  const [bulkBusy, setBulkBusy] = useState<null | "update" | "delete">(null);
 
   const selectedPipeline = useMemo(
     () => pipelines.find((p) => p.id === selectedPipelineId) ?? null,
@@ -1289,6 +1296,19 @@ export default function PipelineClient() {
     return sorted;
   }, [oppForSelectedPipeline, oppDisplayCols, oppColFilters, oppSort, advFilters, advLogic]);
 
+  const filteredOppIds = useMemo(
+    () => new Set(filteredSortedOpps.map((o) => o.id)),
+    [filteredSortedOpps]
+  );
+  const selectedVisibleCount = useMemo(
+    () => selectedOppIds.filter((id) => filteredOppIds.has(id)).length,
+    [selectedOppIds, filteredOppIds]
+  );
+
+  useEffect(() => {
+    setSelectedOppIds((prev) => prev.filter((id) => filteredOppIds.has(id)));
+  }, [filteredOppIds]);
+
   function openAdvancedFilters() {
     setDraftAdvLogic(advLogic);
     setDraftAdvFilters(advFilters.length ? [...advFilters] : []);
@@ -1306,6 +1326,109 @@ export default function PipelineClient() {
       if (!prev || prev.col !== col) return { col, dir: "asc" };
       return { col, dir: prev.dir === "asc" ? "desc" : "asc" };
     });
+  }
+
+  function toggleOppSelection(id: string, checked: boolean) {
+    setSelectedOppIds((prev) => {
+      const set = new Set(prev);
+      if (checked) set.add(id);
+      else set.delete(id);
+      return Array.from(set);
+    });
+  }
+
+  function toggleSelectAllVisible(checked: boolean) {
+    setSelectedOppIds((prev) => {
+      const set = new Set(prev);
+      for (const o of filteredSortedOpps) {
+        if (checked) set.add(o.id);
+        else set.delete(o.id);
+      }
+      return Array.from(set);
+    });
+  }
+
+  async function applyBulkUpdate() {
+    const ids = [...selectedOppIds];
+    if (ids.length === 0) return;
+    const patch: { stage?: string; status?: "פתוח" | "זכיה" | "הפסד"; assignedRep?: string } = {};
+    if (bulkStage.trim()) patch.stage = bulkStage.trim();
+    if (bulkStatus) patch.status = bulkStatus;
+    if (bulkAssignedRep === "__CLEAR__") patch.assignedRep = "";
+    else if (bulkAssignedRep !== "__NO_CHANGE__") patch.assignedRep = bulkAssignedRep.trim();
+    if (!patch.stage && !patch.status && bulkAssignedRep === "__NO_CHANGE__") {
+      setErr("בחרו לפחות שדה אחד לעדכון מרובה");
+      return;
+    }
+    setBulkBusy("update");
+    try {
+      const res = await fetch("/api/opportunities/bulk", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids, patch }),
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        updated?: number;
+        failed?: Array<{ id: string; error: string }>;
+      };
+      if (!res.ok || !j.ok) {
+        setErr(j.error ?? "עדכון מרובה נכשל");
+        return;
+      }
+      const failCount = Array.isArray(j.failed) ? j.failed.length : 0;
+      setToastMessage(
+        failCount > 0
+          ? `עודכנו ${j.updated ?? 0} הזדמנויות (${failCount} נכשלו)`
+          : `עודכנו ${j.updated ?? 0} הזדמנויות`
+      );
+      setSelectedOppIds([]);
+      await mutatePipeline();
+    } finally {
+      setBulkBusy(null);
+    }
+  }
+
+  async function confirmBulkDelete() {
+    if (bulkDeleteConfirm.trim() !== "DELETE") return;
+    const ids = [...selectedOppIds];
+    if (ids.length === 0) return;
+    setBulkBusy("delete");
+    try {
+      const res = await fetch("/api/opportunities/bulk", {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids, confirm: "DELETE" }),
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        deleted?: number;
+        failed?: Array<{ id: string; error: string }>;
+      };
+      if (!res.ok || !j.ok) {
+        setErr(j.error ?? "מחיקה מרובה נכשלה");
+        return;
+      }
+      const failCount = Array.isArray(j.failed) ? j.failed.length : 0;
+      setToastMessage(
+        failCount > 0
+          ? `נמחקו ${j.deleted ?? 0} הזדמנויות (${failCount} נכשלו)`
+          : `נמחקו ${j.deleted ?? 0} הזדמנויות`
+      );
+      setBulkDeleteOpen(false);
+      setBulkDeleteConfirm("");
+      setSelectedOppIds([]);
+      if (selectedOpp && ids.includes(selectedOpp.id)) {
+        setSelectedOpp(null);
+      }
+      await mutatePipeline();
+    } finally {
+      setBulkBusy(null);
+    }
   }
 
   function moveOppColumn(from: number, to: number) {
@@ -1481,6 +1604,108 @@ export default function PipelineClient() {
 
       {tab === "opportunities" && (
         <>
+          {viewMode === "list" && selectedOppIds.length > 0 && (
+            <div
+              style={{
+                marginTop: 14,
+                background: "#fff",
+                border: "1px solid #e5e7eb",
+                borderRadius: 14,
+                padding: 12,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <div style={{ fontWeight: 900, marginInlineEnd: 6 }}>
+                נבחרו {selectedOppIds.length} הזדמנויות
+              </div>
+              <select
+                value={bulkStage}
+                onChange={(e) => setBulkStage(e.target.value)}
+                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+              >
+                <option value="">ללא שינוי שלב</option>
+                {(selectedPipeline?.stages ?? []).map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={bulkStatus}
+                onChange={(e) =>
+                  setBulkStatus((e.target.value as "" | "פתוח" | "זכיה" | "הפסד") ?? "")
+                }
+                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+              >
+                <option value="">ללא שינוי סטטוס</option>
+                <option value="פתוח">פתוח</option>
+                <option value="זכיה">זכיה</option>
+                <option value="הפסד">הפסד</option>
+              </select>
+              <select
+                value={bulkAssignedRep}
+                onChange={(e) => setBulkAssignedRep(e.target.value)}
+                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+              >
+                <option value="__NO_CHANGE__">ללא שינוי שיוך</option>
+                <option value="__CLEAR__">נקה שיוך</option>
+                {adminUsers.map((u) => (
+                  <option key={u.email} value={u.email}>
+                    {u.name?.trim() || u.email}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => void applyBulkUpdate()}
+                disabled={bulkBusy !== null}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  border: "1px solid #d1d5db",
+                  background: "#fff",
+                  cursor: bulkBusy === null ? "pointer" : "not-allowed",
+                  fontWeight: 800,
+                }}
+              >
+                החל עדכון מרובה
+              </button>
+              <button
+                type="button"
+                onClick={() => setBulkDeleteOpen(true)}
+                disabled={bulkBusy !== null}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "#b91c1c",
+                  color: "#fff",
+                  cursor: bulkBusy === null ? "pointer" : "not-allowed",
+                  fontWeight: 800,
+                }}
+              >
+                מחיקה מרובה
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedOppIds([])}
+                disabled={bulkBusy !== null}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  border: "1px solid #e5e7eb",
+                  background: "#fff",
+                  cursor: bulkBusy === null ? "pointer" : "not-allowed",
+                  fontWeight: 700,
+                }}
+              >
+                נקה בחירה
+              </button>
+            </div>
+          )}
           {viewMode === "list" ? (
             <div
               style={{
@@ -1497,6 +1722,23 @@ export default function PipelineClient() {
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 980 }}>
                 <thead>
                   <tr>
+                    <th
+                      style={{
+                        textAlign: "center",
+                        padding: "8px 10px",
+                        borderBottom: "2px solid #e5e7eb",
+                        background: "#f8fafc",
+                        width: 46,
+                        minWidth: 46,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={filteredSortedOpps.length > 0 && selectedVisibleCount === filteredSortedOpps.length}
+                        onChange={(e) => toggleSelectAllVisible(e.target.checked)}
+                        aria-label="בחירת כל ההזדמנויות המוצגות"
+                      />
+                    </th>
                     {oppDisplayCols.map((h) => (
                       <th key={h} style={{ textAlign: "right", padding: "8px 10px", borderBottom: "2px solid #e5e7eb", background: "#f8fafc", fontSize: 12, fontWeight: 900, whiteSpace: "nowrap", minWidth: oppColWidths[h] ?? oppDefaultColWidth(h), width: oppColWidths[h] ?? oppDefaultColWidth(h), position: "relative", verticalAlign: "top" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -1541,6 +1783,14 @@ export default function PipelineClient() {
                           : "1px solid #e8e8ea",
                       }}
                     >
+                      <td style={{ padding: "10px 12px", textAlign: "center", width: 46, minWidth: 46 }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedOppIds.includes(o.id)}
+                          onChange={(e) => toggleOppSelection(o.id, e.target.checked)}
+                          aria-label={`בחירת הזדמנות ${o.name}`}
+                        />
+                      </td>
                       {oppDisplayCols.map((col, idx) => (
                         <td
                           key={col}
@@ -1669,7 +1919,7 @@ export default function PipelineClient() {
                       ))}
                     </tr>
                   ))}
-                  {!loading && filteredSortedOpps.length === 0 && <tr><td colSpan={Math.max(oppDisplayCols.length, 1)} style={{ padding: 16, color: "#6b7280", fontWeight: 700 }}>אין הזדמנויות בפייפליין הנבחר.</td></tr>}
+                  {!loading && filteredSortedOpps.length === 0 && <tr><td colSpan={Math.max(oppDisplayCols.length + 1, 1)} style={{ padding: 16, color: "#6b7280", fontWeight: 700 }}>אין הזדמנויות בפייפליין הנבחר.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -3097,6 +3347,99 @@ export default function PipelineClient() {
                   ביטול
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bulkDeleteOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 110,
+            background: "rgba(0,0,0,0.35)",
+            display: "grid",
+            placeItems: "center",
+            padding: 16,
+          }}
+          onMouseDown={() => {
+            if (bulkBusy) return;
+            setBulkDeleteOpen(false);
+            setBulkDeleteConfirm("");
+          }}
+        >
+          <div
+            style={{
+              width: "min(460px, 94vw)",
+              background: "#fff",
+              borderRadius: 16,
+              border: "1px solid #e5e7eb",
+              padding: 20,
+              boxShadow: "0 20px 50px rgba(0,0,0,0.12)",
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>מחיקה מרובה של הזדמנויות</div>
+            <p style={{ margin: "0 0 12px", color: "#4b5563", lineHeight: 1.55, fontSize: 14 }}>
+              פעולה זו תמחק לצמיתות <strong>{selectedOppIds.length}</strong> הזדמנויות. אי אפשר לבטל.
+            </p>
+            <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 700 }}>
+              כדי לאשר, הקלידו במדויק: <code dir="ltr">DELETE</code>
+            </p>
+            <input
+              dir="ltr"
+              value={bulkDeleteConfirm}
+              onChange={(e) => setBulkDeleteConfirm(e.target.value)}
+              placeholder="DELETE"
+              autoComplete="off"
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #e5e7eb",
+                marginBottom: 14,
+                fontFamily: "monospace",
+              }}
+            />
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (bulkBusy) return;
+                  setBulkDeleteOpen(false);
+                  setBulkDeleteConfirm("");
+                }}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "1px solid #e5e7eb",
+                  background: "#fff",
+                  cursor: bulkBusy ? "not-allowed" : "pointer",
+                  fontWeight: 700,
+                }}
+              >
+                ביטול
+              </button>
+              <button
+                type="button"
+                disabled={bulkDeleteConfirm.trim() !== "DELETE" || bulkBusy !== null}
+                onClick={() => void confirmBulkDelete()}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: bulkDeleteConfirm.trim() === "DELETE" ? "#b91c1c" : "#fca5a5",
+                  color: "#fff",
+                  cursor:
+                    bulkDeleteConfirm.trim() === "DELETE" && bulkBusy === null
+                      ? "pointer"
+                      : "not-allowed",
+                  fontWeight: 800,
+                }}
+              >
+                מחק הכל (DELETE)
+              </button>
             </div>
           </div>
         </div>

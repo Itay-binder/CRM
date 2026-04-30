@@ -1370,6 +1370,37 @@ export async function deleteOpportunity(id: string): Promise<void> {
   await ref.delete();
 }
 
+export async function resetAllOpportunities(params?: {
+  execute?: boolean;
+}): Promise<{ total: number; deleted: number; mode: "dry-run" | "execute" }> {
+  const execute = params?.execute === true;
+  const db = await getAdminDb();
+  const snap = await db.collection("opportunities").get();
+  const total = snap.size;
+  if (!execute) {
+    return { total, deleted: 0, mode: "dry-run" };
+  }
+
+  let deleted = 0;
+  let batch = db.batch();
+  let inBatch = 0;
+  for (const doc of snap.docs) {
+    batch.delete(doc.ref);
+    inBatch += 1;
+    if (inBatch >= 450) {
+      await batch.commit();
+      deleted += inBatch;
+      batch = db.batch();
+      inBatch = 0;
+    }
+  }
+  if (inBatch > 0) {
+    await batch.commit();
+    deleted += inBatch;
+  }
+  return { total, deleted, mode: "execute" };
+}
+
 export async function deletePipeline(id: string): Promise<void> {
   if (id === "default-sales" && (await shouldSeedDefaultPipeline())) {
     throw new Error("Default pipeline cannot be deleted");

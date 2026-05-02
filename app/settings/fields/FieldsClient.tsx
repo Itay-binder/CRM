@@ -114,6 +114,9 @@ const MOVING_ORDER_SYSTEM_FIELDS: SystemField[] = [
   },
 ];
 
+/** בטננט hot-afik לא מנהלים הזמנות הובלה ולא מציגים שני שדות מערכת בהזדמנות. */
+const HOT_AFIK_HIDDEN_OPPORTUNITY_SYSTEM_FIELD_IDS = new Set(["opportunity_last_lead_at", "opportunity_leads_count"]);
+
 const LABEL_SWATCHES = [
   "#2563eb",
   "#0d9488",
@@ -335,7 +338,11 @@ function LabelsCatalogBlock() {
   );
 }
 
-export default function FieldsClient() {
+type FieldsClientProps = { tenantId?: string | null };
+
+export default function FieldsClient({ tenantId = null }: FieldsClientProps) {
+  const isHotAfikFieldsTenant = tenantId === "hot-afik";
+
   const [scope, setScope] = useState<FieldScope>("all");
   const [entityType, setEntityType] = useState<EntityType>("contact");
   const [loading, setLoading] = useState(false);
@@ -362,18 +369,21 @@ export default function FieldsClient() {
     setLoading(true);
     setErr(null);
     try {
-      const [res, pRes, mRes] = await Promise.all([
+      const hotAfik = isHotAfikFieldsTenant;
+      const [res, pRes] = await Promise.all([
         fetch(`/api/custom-fields`, { credentials: "include", cache: "no-store" }),
         fetch(`/api/opportunities/pipelines`, { credentials: "include", cache: "no-store" }),
-        fetch(`/api/opportunities/pipelines?scope=moving_order`, { credentials: "include", cache: "no-store" }),
       ]);
-      if (res.status === 401 || pRes.status === 401 || mRes.status === 401) {
+      const mRes = hotAfik
+        ? null
+        : await fetch(`/api/opportunities/pipelines?scope=moving_order`, { credentials: "include", cache: "no-store" });
+      if (res.status === 401 || pRes.status === 401 || (!hotAfik && mRes?.status === 401)) {
         window.location.href = `/login?returnTo=${encodeURIComponent(
           "/settings/fields"
         )}`;
         return;
       }
-      if (res.status === 403 || pRes.status === 403 || mRes.status === 403) {
+      if (res.status === 403 || pRes.status === 403 || (!hotAfik && mRes?.status === 403)) {
         window.location.href = `/pending?returnTo=${encodeURIComponent(
           "/settings/fields"
         )}`;
@@ -383,10 +393,12 @@ export default function FieldsClient() {
         ok?: boolean;
         pipelines?: Array<{ id: string; name: string }>;
       };
-      const mJson = (await mRes.json().catch(() => ({}))) as {
-        ok?: boolean;
-        pipelines?: Array<{ id: string; name: string }>;
-      };
+      const mJson = hotAfik
+        ? { ok: false as const, pipelines: [] as Array<{ id: string; name: string }> }
+        : ((await mRes!.json().catch(() => ({}))) as {
+            ok?: boolean;
+            pipelines?: Array<{ id: string; name: string }>;
+          });
       const merged: PipelineOpt[] = [];
       const seen = new Set<string>();
       for (const list of [
@@ -419,7 +431,15 @@ export default function FieldsClient() {
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [tenantId]);
+
+  useEffect(() => {
+    if (isHotAfikFieldsTenant && scope === "moving_order") setScope("all");
+  }, [isHotAfikFieldsTenant, scope]);
+
+  useEffect(() => {
+    if (isHotAfikFieldsTenant && entityType === "moving_order") setEntityType("contact");
+  }, [isHotAfikFieldsTenant, entityType]);
 
   function resetForm() {
     setEditingFieldId(null);
@@ -526,13 +546,31 @@ export default function FieldsClient() {
     setPipelinePick((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
+  const opportunitySystemForTenant: SystemField[] = isHotAfikFieldsTenant
+    ? OPPORTUNITY_SYSTEM_FIELDS.filter((f) => !HOT_AFIK_HIDDEN_OPPORTUNITY_SYSTEM_FIELD_IDS.has(f.fieldId))
+    : OPPORTUNITY_SYSTEM_FIELDS;
+
   const systemRows: SystemField[] = [
     ...CONTACT_SYSTEM_FIELDS,
-    ...OPPORTUNITY_SYSTEM_FIELDS,
-    ...MOVING_ORDER_SYSTEM_FIELDS,
+    ...opportunitySystemForTenant,
+    ...(isHotAfikFieldsTenant ? [] : MOVING_ORDER_SYSTEM_FIELDS),
   ];
   const filteredSystemRows = systemRows.filter((f) => scope === "all" || f.entityType === scope);
-  const filteredCustomRows = rows.filter((f) => scope === "all" || f.entityType === scope);
+  const rowsForTenant = isHotAfikFieldsTenant ? rows.filter((f) => f.entityType !== "moving_order") : rows;
+  const filteredCustomRows = rowsForTenant.filter((f) => scope === "all" || f.entityType === scope);
+
+  const folderTabs: Array<{ id: FieldScope; label: string }> = isHotAfikFieldsTenant
+    ? [
+        { id: "all", label: "כל השדות" },
+        { id: "contact", label: "תיקיית אנשי קשר" },
+        { id: "opportunity", label: "תיקיית הזדמנויות" },
+      ]
+    : [
+        { id: "all", label: "כל השדות" },
+        { id: "contact", label: "תיקיית אנשי קשר" },
+        { id: "opportunity", label: "תיקיית הזדמנויות" },
+        { id: "moving_order", label: "תיקיית הזמנות הובלה" },
+      ];
 
   return (
     <div style={{ maxWidth: 1100 }}>
@@ -562,7 +600,7 @@ export default function FieldsClient() {
           >
             <option value="contact">Contact</option>
             <option value="opportunity">Opportunity</option>
-            <option value="moving_order">הזמנות הובלה</option>
+            {!isHotAfikFieldsTenant ? <option value="moving_order">הזמנות הובלה</option> : null}
           </select>
         </div>
 
@@ -776,12 +814,7 @@ export default function FieldsClient() {
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 12, borderBottom: "1px solid #f3f4f6" }}>
           <span style={{ fontWeight: 800 }}>תיקיות:</span>
-          {([
-            { id: "all", label: "כל השדות" },
-            { id: "contact", label: "תיקיית אנשי קשר" },
-            { id: "opportunity", label: "תיקיית הזדמנויות" },
-            { id: "moving_order", label: "תיקיית הזמנות הובלה" },
-          ] as Array<{ id: FieldScope; label: string }>).map((f) => (
+          {folderTabs.map((f) => (
             <button
               key={f.id}
               type="button"

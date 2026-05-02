@@ -32,7 +32,7 @@ export default async function CustomFieldsPage() {
       currentTenantId={ctx.tenant.id}
     >
       <SettingsSectionNav active="fields" showMovingOrders={isMovingOrdersTenant(ctx.tenant.id)} />
-      <FieldsClient />
+      <FieldsClient tenantId={ctx.tenant.id} />
     </CrmShell>
   );
 }

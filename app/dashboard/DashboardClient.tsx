@@ -64,6 +64,21 @@ type WidgetId =
 type WidgetConfig = { id: WidgetId; title: string; visible: boolean };
 const DASHBOARD_WIDGETS_KEY = "crm:dashboard:widgets";
 
+/** בטננט hot-afik הדשבורד מציג רק את המודולים הרלוונטיים ללקוח. */
+const HOT_AFIK_DASHBOARD_HIDDEN: ReadonlySet<WidgetId> = new Set([
+  "orders_per_mover",
+  "orders_count",
+  "leads_by_channel",
+  "paying_count",
+  "customers_by_channel",
+  "sales_mvp",
+  "active_movers_by_region",
+]);
+
+function isDashboardWidgetHiddenForTenant(tenantId: string | null | undefined, id: WidgetId): boolean {
+  return tenantId === "hot-afik" && HOT_AFIK_DASHBOARD_HIDDEN.has(id);
+}
+
 const DEFAULT_WIDGETS: WidgetConfig[] = [
   { id: "opp_count", title: "כמות לידים (הזדמנויות)", visible: true },
   { id: "orders_count", title: "כמות הזמנות", visible: true },
@@ -87,7 +102,9 @@ function sortedEntries(rec: Record<string, number>): [string, number][] {
 
 const DASH_AUTH_REDIRECT = "CRM_DASH_AUTH_REDIRECT";
 
-export default function DashboardClient() {
+type DashboardClientProps = { tenantId?: string | null };
+
+export default function DashboardClient({ tenantId = null }: DashboardClientProps) {
   const [err, setErr] = useState<string | null>(null);
   const [widgets, setWidgets] = useState<WidgetConfig[]>(DEFAULT_WIDGETS);
   const [manageOpen, setManageOpen] = useState(false);
@@ -191,12 +208,19 @@ export default function DashboardClient() {
     } catch {}
   }, [widgets]);
 
-  function moveWidget(idx: number, dir: -1 | 1) {
+  function moveWidgetById(id: WidgetId, dir: -1 | 1) {
     setWidgets((arr) => {
+      const hidden = (wid: WidgetId) => isDashboardWidgetHiddenForTenant(tenantId, wid);
+      const orderIds = arr.filter((w) => !hidden(w.id)).map((w) => w.id);
+      const idx = orderIds.indexOf(id);
       const to = idx + dir;
-      if (to < 0 || to >= arr.length) return arr;
+      if (idx < 0 || to < 0 || to >= orderIds.length) return arr;
+      const swapWithId = orderIds[to];
+      const i = arr.findIndex((w) => w.id === id);
+      const j = arr.findIndex((w) => w.id === swapWithId);
+      if (i < 0 || j < 0) return arr;
       const next = [...arr];
-      [next[idx], next[to]] = [next[to], next[idx]];
+      [next[i], next[j]] = [next[j], next[i]];
       return next;
     });
   }
@@ -539,8 +563,16 @@ export default function DashboardClient() {
     return null;
   }
 
+  const manageableWidgets = useMemo(
+    () => widgets.filter((w) => !isDashboardWidgetHiddenForTenant(tenantId, w.id)),
+    [widgets, tenantId]
+  );
+
   /** Group consecutive KPI-style widgets into one responsive row */
-  const visibleWidgets = widgets.filter((w) => w.visible);
+  const visibleWidgets = useMemo(
+    () => widgets.filter((w) => w.visible && !isDashboardWidgetHiddenForTenant(tenantId, w.id)),
+    [widgets, tenantId]
+  );
   const renderedBlocks: ReactNode[] = [];
   let kpiRun: WidgetId[] = [];
   const flushKpiRun = () => {
@@ -638,7 +670,7 @@ export default function DashboardClient() {
         <div style={{ marginTop: 12, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 12 }}>
           <div style={{ fontWeight: 900, marginBottom: 8 }}>בחירת חלוניות וסדר</div>
           <div style={{ display: "grid", gap: 8 }}>
-            {widgets.map((w, idx) => (
+            {manageableWidgets.map((w) => (
               <div key={w.id} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <input
                   type="checkbox"
@@ -650,10 +682,10 @@ export default function DashboardClient() {
                   }
                 />
                 <span style={{ minWidth: 200, flex: "1 1 200px" }}>{w.title}</span>
-                <button type="button" onClick={() => moveWidget(idx, -1)} style={{ border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff", cursor: "pointer" }}>
+                <button type="button" onClick={() => moveWidgetById(w.id, -1)} style={{ border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff", cursor: "pointer" }}>
                   ↑
                 </button>
-                <button type="button" onClick={() => moveWidget(idx, 1)} style={{ border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff", cursor: "pointer" }}>
+                <button type="button" onClick={() => moveWidgetById(w.id, 1)} style={{ border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff", cursor: "pointer" }}>
                   ↓
                 </button>
               </div>

@@ -29,7 +29,7 @@ export default async function DashboardPage() {
       tenants={ctx.accessibleTenants.map((t) => ({ id: t.id, label: t.label }))}
       currentTenantId={ctx.tenant.id}
     >
-      <DashboardClient />
+      <DashboardClient tenantId={ctx.tenant.id} />
     </CrmShell>
   );
 }

@@ -126,11 +126,15 @@ function pushBrowserNotification(title: string, body: string, tag: string) {
   }
 }
 
-export default function CrmGlobalNotifications() {
+type CrmGlobalNotificationsProps = { tenantId?: string | null };
+
+export default function CrmGlobalNotifications({ tenantId = null }: CrmGlobalNotificationsProps) {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [toasts, setToasts] = useState<InAppToast[]>([]);
   const initRef = useRef(false);
+  const tenantIdRef = useRef(tenantId);
+  tenantIdRef.current = tenantId;
   const waBaselineRef = useRef<Map<string, WaBaselineSnap>>(new Map());
   const leadBaselineRef = useRef<{ id: string; createdAt: string }>({ id: "", createdAt: "" });
   const oppBaselineRef = useRef<{ id: string; createdAt: string }>({ id: "", createdAt: "" });
@@ -204,8 +208,9 @@ export default function CrmGlobalNotifications() {
       const looksNewInbound = inboundTimeAdvanced || unreadRose || newThreadFirstSeen;
 
       if (looksNewInbound) {
+        const waMutedForTenant = tenantIdRef.current === "hot-afik";
         const label = t.contactName?.trim() || t.phone;
-        if (prefs.inAppWhatsApp) {
+        if (!waMutedForTenant && prefs.inAppWhatsApp) {
           addToast({
             kind: "wa",
             title: "הודעת וואטסאפ חדשה",
@@ -213,7 +218,11 @@ export default function CrmGlobalNotifications() {
             threadId: t.id,
           });
         }
-        if (prefs.browserWhatsApp && prefs.schemaVersion >= CRM_NOTIFICATION_SCHEMA_VERSION) {
+        if (
+          !waMutedForTenant &&
+          prefs.browserWhatsApp &&
+          prefs.schemaVersion >= CRM_NOTIFICATION_SCHEMA_VERSION
+        ) {
           const tagKey = curIn || `${t.lastMessageAt}-${curUn}`;
           pushBrowserNotification("הודעת וואטסאפ חדשה", `מ־${label}`, `wa-${t.id}-${tagKey}`);
         }

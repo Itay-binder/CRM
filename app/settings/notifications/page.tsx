@@ -30,7 +30,10 @@ export default async function SettingsNotificationsPage() {
       tenants={ctx.accessibleTenants.map((t) => ({ id: t.id, label: t.label }))}
       currentTenantId={ctx.tenant.id}
     >
-      <NotificationsClient showMovingOrders={isMovingOrdersTenant(ctx.tenant.id)} />
+      <NotificationsClient
+        showMovingOrders={isMovingOrdersTenant(ctx.tenant.id)}
+        tenantId={ctx.tenant.id}
+      />
     </CrmShell>
   );
 }

@@ -113,7 +113,7 @@ export default function CrmShell({
         ) : (
           <>
             {children}
-            <CrmGlobalNotifications />
+            <CrmGlobalNotifications tenantId={currentTenantId} />
           </>
         )}
       </section>

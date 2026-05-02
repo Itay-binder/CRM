@@ -11,6 +11,7 @@ import { CRM_NOTIFICATION_SCHEMA_VERSION } from "@/lib/crmNotificationPrefsSchem
 
 type Props = {
   showMovingOrders?: boolean;
+  tenantId?: string | null;
 };
 
 type DevicePushPrefs = {
@@ -78,7 +79,8 @@ async function parseJson<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
-export default function NotificationsClient({ showMovingOrders }: Props) {
+export default function NotificationsClient({ showMovingOrders, tenantId = null }: Props) {
+  const hideWhatsAppNotificationPrefs = tenantId === "hot-afik";
   const [prefs, setPrefs] = useState<CrmNotificationPrefs>(() => loadCrmNotificationPrefs());
   const [isAdmin, setIsAdmin] = useState(false);
   const [resetBusy, setResetBusy] = useState(false);
@@ -161,7 +163,7 @@ export default function NotificationsClient({ showMovingOrders }: Props) {
   const persistBrowserToggles = useCallback(
     (next: CrmNotificationPrefs) => {
       const anyBrowser =
-        next.browserWhatsApp ||
+        (hideWhatsAppNotificationPrefs ? false : next.browserWhatsApp) ||
         next.browserNewLead ||
         next.browserNewOpportunity ||
         next.browserNewOrder;
@@ -173,7 +175,7 @@ export default function NotificationsClient({ showMovingOrders }: Props) {
       }
       persist(out);
     },
-    [persist]
+    [persist, hideWhatsAppNotificationPrefs]
   );
 
   const patchDevicePrefs = useCallback(async (next: DevicePushPrefs) => {
@@ -325,7 +327,7 @@ export default function NotificationsClient({ showMovingOrders }: Props) {
 
   const browserNeedsConsent =
     prefs.schemaVersion < CRM_NOTIFICATION_SCHEMA_VERSION &&
-    (prefs.browserWhatsApp ||
+    ((hideWhatsAppNotificationPrefs ? false : prefs.browserWhatsApp) ||
       prefs.browserNewLead ||
       prefs.browserNewOpportunity ||
       prefs.browserNewOrder);
@@ -379,12 +381,14 @@ export default function NotificationsClient({ showMovingOrders }: Props) {
         <section style={{ marginBottom: 28 }}>
           <h2 style={{ fontSize: 16, fontWeight: 800, margin: "0 0 12px" }}>בתוך המערכת</h2>
           <div style={{ display: "grid", gap: 10 }}>
-            {row(
-              "התראה צפה — הודעת וואטסאפ נכנסת",
-              "כרטיס בראש המסך עם מספר השולח וכפתור מעבר לצ׳אטים.",
-              prefs.inAppWhatsApp,
-              (v) => persist({ ...prefs, inAppWhatsApp: v })
-            )}
+            {!hideWhatsAppNotificationPrefs
+              ? row(
+                  "התראה צפה — הודעת וואטסאפ נכנסת",
+                  "כרטיס בראש המסך עם מספר השולח וכפתור מעבר לצ׳אטים.",
+                  prefs.inAppWhatsApp,
+                  (v) => persist({ ...prefs, inAppWhatsApp: v })
+                )
+              : null}
             {row(
               "התראה צפה — ליד חדש",
               "כרטיס כשנוצר איש קשר חדש (הליד העדכני ביותר במערכת השתנה).",
@@ -436,12 +440,14 @@ export default function NotificationsClient({ showMovingOrders }: Props) {
             </div>
           ) : null}
           <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
-            {row(
-              "דחיפה — הודעת וואטסאפ נכנסת",
-              "נשלח כשנכנסת הודעה לווטסאפ העסקי (אחרי אישור הרשמה למטה).",
-              devicePrefs.whatsapp,
-              (v) => void patchDevicePrefs({ ...devicePrefs, whatsapp: v })
-            )}
+            {!hideWhatsAppNotificationPrefs
+              ? row(
+                  "דחיפה — הודעת וואטסאפ נכנסת",
+                  "נשלח כשנכנסת הודעה לווטסאפ העסקי (אחרי אישור הרשמה למטה).",
+                  devicePrefs.whatsapp,
+                  (v) => void patchDevicePrefs({ ...devicePrefs, whatsapp: v })
+                )
+              : null}
             {row(
               "דחיפה — ליד חדש",
               "נשלח כשנוצר איש קשר חדש במסד הנוכחי.",
@@ -578,12 +584,14 @@ export default function NotificationsClient({ showMovingOrders }: Props) {
             )}
           </div>
           <div style={{ display: "grid", gap: 10 }}>
-            {row(
-              "התראת דפדפן — וואטסאפ",
-              "מופעל רק אם ההרשאה מאושרת וגם אפשרות זו מסומנת.",
-              prefs.browserWhatsApp,
-              (v) => persistBrowserToggles({ ...prefs, browserWhatsApp: v })
-            )}
+            {!hideWhatsAppNotificationPrefs
+              ? row(
+                  "התראת דפדפן — וואטסאפ",
+                  "מופעל רק אם ההרשאה מאושרת וגם אפשרות זו מסומנת.",
+                  prefs.browserWhatsApp,
+                  (v) => persistBrowserToggles({ ...prefs, browserWhatsApp: v })
+                )
+              : null}
             {row(
               "התראת דפדפן — ליד חדש",
               "מופעל רק אם ההרשאה מאושרת וגם אפשרות זו מסומנת.",

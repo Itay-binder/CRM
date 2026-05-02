@@ -82,6 +82,16 @@ export async function getAdminDb(): Promise<admin.firestore.Firestore> {
 }
 
 /**
+ * מזהה מסד Firestore שאליו מצביע webhook ווטסאפ (ללא אתחול admin).
+ * אותה לוגיקה כמו {@link getFirestoreForWhatsAppWebhook}.
+ */
+export function getWhatsAppWebhookDatabaseId(): string {
+  const explicit = process.env.WHATSAPP_WEBHOOK_FIRESTORE_DATABASE_ID?.trim();
+  if (explicit) return explicit;
+  return fallbackTenantDatabaseId();
+}
+
+/**
  * מסד Firestore להודעות WhatsApp מ-webhook של מטא.
  * בקשות ממטא אין בהן עוגיית tenant — לכן לא משתמשים ב-headers() של הדפדפן.
  * הגדירו WHATSAPP_WEBHOOK_FIRESTORE_DATABASE_ID ב-Vercel (אותו databaseId כמו ב-CRM_TENANTS / FIRESTORE_DATABASE_ID)
@@ -89,9 +99,7 @@ export async function getAdminDb(): Promise<admin.firestore.Firestore> {
  */
 export function getFirestoreForWhatsAppWebhook(): admin.firestore.Firestore {
   ensureAdmin();
-  const explicit = process.env.WHATSAPP_WEBHOOK_FIRESTORE_DATABASE_ID?.trim();
-  if (explicit) return getFirestoreForDatabaseId(explicit);
-  return getFirestoreForDatabaseId(fallbackTenantDatabaseId());
+  return getFirestoreForDatabaseId(getWhatsAppWebhookDatabaseId());
 }
 
 /** Default bucket resolves from project when FIREBASE_STORAGE_BUCKET is unset. */

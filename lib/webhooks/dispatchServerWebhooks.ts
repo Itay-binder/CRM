@@ -1,5 +1,5 @@
 import type { Firestore } from "firebase-admin/firestore";
-import { getWebhookTriggers } from "@/lib/webhooks/triggersRepo";
+import { getWebhookTriggers, isHotAfikWebhookTenantDb } from "@/lib/webhooks/triggersRepo";
 import { WEBHOOK_EVENT_DEFAULT_URLS, type WebhookEventId } from "@/lib/webhooks/triggersTypes";
 
 function buildBody(event: WebhookEventId, payload: Record<string, unknown>): string {
@@ -46,7 +46,8 @@ export async function postWebhookForEvent(
   const targets = triggers.filter((t) => t.enabled && t.event === event && t.url.trim());
   const urls = targets.map((t) => t.url.trim());
   const fallback = WEBHOOK_EVENT_DEFAULT_URLS[event]?.trim();
-  if (urls.length === 0 && fallback) {
+  const blockMakeFallback = await isHotAfikWebhookTenantDb(db);
+  if (urls.length === 0 && fallback && !blockMakeFallback) {
     return sendToUrls([fallback], buildBody(event, payload));
   }
   return sendToUrls(urls, buildBody(event, payload));

@@ -207,6 +207,17 @@ export async function listMovingOrders(
   return filtered.slice(0, lim);
 }
 
+/** הזמנות האחרונות לפי createdAt (לסיכומים / cron). מסמכים בלי createdAt לא יוחזרו. */
+export async function listRecentMovingOrders(
+  opts: { db?: Firestore; maxFetch?: number } = {}
+): Promise<MovingOrderRecord[]> {
+  await ensureMovingOrdersIntakePipeline();
+  const d = opts.db ?? (await getAdminDb());
+  const maxFetch = Math.min(8000, Math.max(1, opts.maxFetch ?? 2500));
+  const snap = await d.collection(COLLECTION).orderBy("createdAt", "desc").limit(maxFetch).get();
+  return snap.docs.map((doc) => mapDoc(doc.id, (doc.data() ?? {}) as Record<string, unknown>));
+}
+
 export async function getMovingOrder(id: string, db?: Firestore): Promise<MovingOrderRecord | null> {
   const d = db ?? (await getAdminDb());
   const snap = await d.collection(COLLECTION).doc(id).get();

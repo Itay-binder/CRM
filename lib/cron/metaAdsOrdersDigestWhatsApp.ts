@@ -3,7 +3,8 @@ import { getGreenApiConfig } from "@/lib/whatsapp/repo";
 import { sendTextMessageViaGreenApi } from "@/lib/whatsapp/greenapi";
 import { getMetaAdsConfig } from "@/lib/metaAds/repo";
 import { listActiveMetaAdsCampaigns, type MetaAdsCampaignVm } from "@/lib/metaAds/graph";
-import { listRecentMovingOrders, type MovingOrderRecord } from "@/lib/movingOrders/repo";
+import { listRecentMovingOrders } from "@/lib/movingOrders/repo";
+import type { MovingOrderRecord } from "@/lib/movingOrders/types";
 import { createdAtYmdInIsrael, israelCalendarYmd } from "@/lib/cron/israelYmd";
 
 export type MetaAdsOrdersDigestResult = {

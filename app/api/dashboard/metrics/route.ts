@@ -1,17 +1,12 @@
+import type { Firestore } from "firebase-admin/firestore";
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { createdAtInYmdRange } from "@/lib/datetime/ymdBoundary";
+import { israelTodayAndTomorrowKeys } from "@/lib/datetime/taskTimestamps";
+import { getAdminDb } from "@/lib/firebase/admin";
 import { listLeadsFiltered } from "@/lib/leads/repo";
-import { listMovingOrders } from "@/lib/movingOrders/repo";
 import { assertMovingOrdersWorkspace } from "@/lib/movingOrders/guard";
 import { getCityRegionRows } from "@/lib/movingOrders/cityRegionSettingsRepo";
-import {
-  getPayingCustomersPipelineId,
-  getPayingCustomersPipelineMeta,
-  listOpportunities,
-} from "@/lib/opportunities/repo";
-import { MOVER_OPPORTUNITY_FIELD_IDS } from "@/lib/movingOrders/fieldIds";
-import type { OpportunityRecord } from "@/lib/opportunities/repo";
 import {
   leadIsMoverPoolMember,
   mergeLeadAndOpportunity,
@@ -19,6 +14,16 @@ import {
   normHe,
   readMoverRegionsText,
 } from "@/lib/movingOrders/moverFieldReaders";
+import { countMovingOrdersCreatedInIsraelDay, listMovingOrders } from "@/lib/movingOrders/repo";
+import { getMetaAdsTodaySnapshot } from "@/lib/metaAds/graph";
+import { getMetaAdsConfig } from "@/lib/metaAds/repo";
+import {
+  getPayingCustomersPipelineId,
+  getPayingCustomersPipelineMeta,
+  listOpportunities,
+  type OpportunityRecord,
+} from "@/lib/opportunities/repo";
+import { MOVER_OPPORTUNITY_FIELD_IDS } from "@/lib/movingOrders/fieldIds";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -57,6 +62,15 @@ type ApiOk = {
       opportunityName: string;
     }>;
   }>;
+  /** הזמנות שנוצרו היום (יום לוח ישראל) — סריקה מוגבלת אם מודול הזמנות פעיל */
+  ordersCreatedTodayIsrael: number;
+  /** Meta Ads — רק אם יש חיבור + טוקן */
+  metaAdsConnected: boolean;
+  metaAdsSpendToday: number | null;
+  metaAdsCurrency: string | null;
+  metaAdsActiveCampaigns: number | null;
+  metaAdsCampaignsWithSpendToday: number | null;
+  metaAdsError?: string;
   movingOrdersWorkspace: boolean;
   warning?: string;
 };
@@ -248,8 +262,10 @@ export async function GET(req: NextRequest) {
     });
 
     const g = await assertMovingOrdersWorkspace();
+    let ordersDb: Firestore | null = null;
     if (g.ok) {
       movingOrdersWorkspace = true;
+      ordersDb = g.db;
       const orders = await listMovingOrders({
         db: g.db,
         dateFrom,
@@ -260,6 +276,38 @@ export async function GET(req: NextRequest) {
       ordersCount = orders.length;
     } else if (g.status !== 403) {
       warning = g.error;
+    }
+
+    const { today: todayIsrael } = israelTodayAndTomorrowKeys();
+
+    let ordersCreatedTodayIsrael = 0;
+    if (ordersDb) {
+      ordersCreatedTodayIsrael = await countMovingOrdersCreatedInIsraelDay(todayIsrael, {
+        db: ordersDb,
+        maxFetch: 8000,
+      });
+    }
+
+    let metaAdsConnected = false;
+    let metaAdsSpendToday: number | null = null;
+    let metaAdsCurrency: string | null = null;
+    let metaAdsActiveCampaigns: number | null = null;
+    let metaAdsCampaignsWithSpendToday: number | null = null;
+    let metaAdsError: string | undefined;
+
+    const db = await getAdminDb();
+    const metaCfg = await getMetaAdsConfig(db);
+    if (metaCfg?.accessToken && metaCfg.adAccountId) {
+      metaAdsConnected = true;
+      try {
+        const snap = await getMetaAdsTodaySnapshot(metaCfg);
+        metaAdsSpendToday = snap.spendToday;
+        metaAdsCurrency = snap.currency;
+        metaAdsActiveCampaigns = snap.activeCampaigns;
+        metaAdsCampaignsWithSpendToday = snap.campaignsWithSpendToday;
+      } catch (e) {
+        metaAdsError = e instanceof Error ? e.message : "Meta error";
+      }
     }
 
     const payload: ApiOk = {
@@ -274,6 +322,13 @@ export async function GET(req: NextRequest) {
       payingCustomersOpenCount: payingOpen.length,
       ordersPerMover,
       activeMoversByRegion,
+      ordersCreatedTodayIsrael,
+      metaAdsConnected,
+      metaAdsSpendToday,
+      metaAdsCurrency,
+      metaAdsActiveCampaigns,
+      metaAdsCampaignsWithSpendToday,
+      ...(metaAdsError ? { metaAdsError } : {}),
       movingOrdersWorkspace,
       ...(warning ? { warning } : {}),
     };

@@ -13,6 +13,7 @@ import { driverIdsForOpportunitiesColumn } from "@/lib/movingOrders/driverIdsFor
 import { MOVING_ORDERS_INTAKE_PIPELINE_ID, MOVING_ORDER_STAGES } from "@/lib/movingOrders/pipelineConstants";
 import { defaultStageForStatus, statusFromStage } from "@/lib/movingOrders/stageSync";
 import { isoCreatedAtInYmdRange } from "@/lib/datetime/ymdBoundary";
+import { isoCreatedAtInJerusalemCalendarDay } from "@/lib/datetime/taskTimestamps";
 import type {
   DriverMatchFlag,
   MovingOrderPayload,
@@ -205,6 +206,23 @@ export async function listMovingOrders(
   const lim = opts.resultLimit === undefined ? 200 : opts.resultLimit;
   if (lim === null) return filtered;
   return filtered.slice(0, lim);
+}
+
+/** ספירת הזמנות שנוצרו ביום לוח ישראלי (Asia/Jerusalem) — סריקה עד maxFetch מסמכים */
+export async function countMovingOrdersCreatedInIsraelDay(
+  ymd: string,
+  opts: { db?: Firestore; maxFetch?: number } = {}
+): Promise<number> {
+  await ensureMovingOrdersIntakePipeline();
+  const d = opts.db ?? (await getAdminDb());
+  const maxFetch = opts.maxFetch ?? 8000;
+  const snap = await d.collection(COLLECTION).limit(maxFetch).get();
+  let n = 0;
+  for (const doc of snap.docs) {
+    const row = mapDoc(doc.id, (doc.data() ?? {}) as Record<string, unknown>);
+    if (isoCreatedAtInJerusalemCalendarDay(row.createdAt, ymd)) n += 1;
+  }
+  return n;
 }
 
 export async function getMovingOrder(id: string, db?: Firestore): Promise<MovingOrderRecord | null> {

@@ -103,6 +103,21 @@ const DATE_PRESETS = [
   { value: "maximum", label: "מקסימום" },
 ];
 
+const DATE_PRESET_SET = new Set(DATE_PRESETS.map((p) => p.value));
+const META_ADS_DATE_PRESET_COOKIE = "crm_meta_ads_date_preset";
+const META_ADS_DATE_PRESET_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
+
+function readCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const m = document.cookie.match(new RegExp(`(?:^|; )${esc}=([^;]*)`));
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+function writeMetaAdsDatePresetCookie(value: string) {
+  document.cookie = `${encodeURIComponent(META_ADS_DATE_PRESET_COOKIE)}=${encodeURIComponent(value)}; path=/; max-age=${META_ADS_DATE_PRESET_COOKIE_MAX_AGE}; SameSite=Lax`;
+}
+
 const TH_STYLE: React.CSSProperties = {
   textAlign: "right",
   padding: "10px 12px",
@@ -132,7 +147,7 @@ export default function MetaAdsClient() {
   const [fetchedAt, setFetchedAt] = useState("");
 
   const [activeTab, setActiveTab] = useState<Tab>("campaigns");
-  const [datePreset, setDatePreset] = useState("last_7d");
+  const [datePreset, setDatePreset] = useState("today");
   const [search, setSearch] = useState("");
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [selectedAdSetId, setSelectedAdSetId] = useState<string | null>(null);
@@ -161,6 +176,11 @@ export default function MetaAdsClient() {
       setErr(decodeURIComponent(metaError));
       window.history.replaceState({}, "", "/meta-ads");
     }
+  }, []);
+
+  useEffect(() => {
+    const c = readCookie(META_ADS_DATE_PRESET_COOKIE)?.trim();
+    if (c && DATE_PRESET_SET.has(c)) setDatePreset(c);
   }, []);
 
   const loadSettings = useCallback(async () => {
@@ -870,7 +890,11 @@ export default function MetaAdsClient() {
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             <select
               value={datePreset}
-              onChange={(e) => setDatePreset(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                setDatePreset(v);
+                writeMetaAdsDatePresetCookie(v);
+              }}
               style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb", fontSize: 13 }}
             >
               {DATE_PRESETS.map((p) => (

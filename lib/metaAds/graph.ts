@@ -25,6 +25,7 @@ type MetaCampaignInsight = {
   inline_link_clicks?: string;
   inline_link_click_ctr?: string;
   cost_per_inline_link_click?: string;
+  account_currency?: string;
   actions?: MetaActionStat[];
 };
 
@@ -284,10 +285,13 @@ export async function validateMetaToken(config: MetaAdsConfig): Promise<MetaToke
 
 // ── Campaigns ─────────────────────────────────────────────────────────────────
 
-export async function listActiveMetaAdsCampaigns(
+/**
+ * רשימת קמפיינים + מטבע מ־insights (account_currency).
+ */
+export async function listActiveMetaAdsCampaignsWithCurrency(
   config: MetaAdsConfig,
-  datePreset = "last_7d"
-): Promise<MetaAdsCampaignVm[]> {
+  datePreset: string
+): Promise<{ rows: MetaAdsCampaignVm[]; currency: string }> {
   const adAccountId = normalizeAdAccountId(config.adAccountId);
   if (!adAccountId.trim()) throw new Error("חסר Ad Account ID.");
   if (!config.accessToken.trim()) throw new Error("חסר Access Token.");
@@ -296,10 +300,10 @@ export async function listActiveMetaAdsCampaigns(
     "id,name,status,effective_status,objective,daily_budget,lifetime_budget,start_time,stop_time,updated_time," +
     "insights.date_preset(" +
     datePreset +
-    "){spend,impressions,reach,inline_link_clicks,inline_link_click_ctr,cost_per_inline_link_click,actions}";
+    "){spend,impressions,reach,inline_link_clicks,inline_link_click_ctr,cost_per_inline_link_click,actions,account_currency}";
   const query = new URLSearchParams({
     fields,
-    limit: "200",
+    limit: "500",
     effective_status: JSON.stringify(["ACTIVE", "PAUSED", "PENDING_REVIEW", "IN_PROCESS"]),
   });
 
@@ -308,8 +312,16 @@ export async function listActiveMetaAdsCampaigns(
     `/act_${adAccountId}/campaigns`,
     query
   );
-  const rows = Array.isArray(json.data) ? json.data : [];
-  return rows
+  const rawRows = Array.isArray(json.data) ? json.data : [];
+  let currency = "ILS";
+  for (const r of rawRows) {
+    const ac = r.insights?.data?.[0]?.account_currency?.trim();
+    if (ac) {
+      currency = ac;
+      break;
+    }
+  }
+  const rows = rawRows
     .filter((r) => r.id)
     .map((r) => {
       const insight = r.insights?.data?.[0];
@@ -334,6 +346,53 @@ export async function listActiveMetaAdsCampaigns(
       };
     })
     .sort((a, b) => b.spend - a.spend || b.impressions - a.impressions);
+  return { rows, currency };
+}
+
+export async function listActiveMetaAdsCampaigns(
+  config: MetaAdsConfig,
+  datePreset = "last_7d"
+): Promise<MetaAdsCampaignVm[]> {
+  const { rows } = await listActiveMetaAdsCampaignsWithCurrency(config, datePreset);
+  return rows;
+}
+
+export async function metaAdsActiveCampaignCount(config: MetaAdsConfig): Promise<number> {
+  const adAccountId = normalizeAdAccountId(config.adAccountId);
+  if (!adAccountId.trim() || !config.accessToken.trim()) return 0;
+  const query = new URLSearchParams({
+    fields: "id",
+    limit: "500",
+    effective_status: JSON.stringify(["ACTIVE"]),
+  });
+  const json = await callMetaGraph<{ data?: Array<{ id?: string }> }>(
+    config,
+    `/act_${adAccountId}/campaigns`,
+    query
+  );
+  return Array.isArray(json.data) ? json.data.filter((x) => x.id).length : 0;
+}
+
+export type MetaAdsTodaySnapshot = {
+  spendToday: number;
+  currency: string;
+  activeCampaigns: number;
+  campaignsWithSpendToday: number;
+};
+
+export async function getMetaAdsTodaySnapshot(config: MetaAdsConfig): Promise<MetaAdsTodaySnapshot> {
+  const [{ rows, currency }, activeCount] = await Promise.all([
+    listActiveMetaAdsCampaignsWithCurrency(config, "today"),
+    metaAdsActiveCampaignCount(config),
+  ]);
+  const spendToday = rows.reduce((s, r) => s + r.spend, 0);
+  const campaignsWithSpendToday = rows.filter((r) => r.spend > 0).length;
+  return {
+    spendToday,
+    currency,
+    activeCampaigns: activeCount,
+    campaignsWithSpendToday,
+  };
 }
 
 // ── Ad Sets ───────────────────────────────────────────────────────────────────

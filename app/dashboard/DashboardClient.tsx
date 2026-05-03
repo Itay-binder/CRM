@@ -33,6 +33,14 @@ type DashboardMetricsOk = {
     }>;
   }>;
   movingOrdersWorkspace: boolean;
+  /** הזמנות שנכנסו היום (יום לוח ישראל) */
+  ordersCreatedTodayIsrael: number;
+  metaAdsConnected: boolean;
+  metaAdsSpendToday: number | null;
+  metaAdsCurrency: string | null;
+  metaAdsActiveCampaigns: number | null;
+  metaAdsCampaignsWithSpendToday: number | null;
+  metaAdsError?: string;
   warning?: string;
 };
 type DashboardMetricsErr = { ok: false; error: string };
@@ -173,6 +181,18 @@ export default function DashboardClient({ tenantId = null }: DashboardClientProp
   );
 
   const loading = Boolean((metricsLoading && !metrics) || (tasksLoading && !tasks.length));
+
+  const metaSpendLabel = useMemo(() => {
+    const m = metrics;
+    if (!m?.metaAdsConnected) return "—";
+    if (m.metaAdsSpendToday == null) return m.metaAdsError ? "שגיאה" : "—";
+    const cur = m.metaAdsCurrency || "ILS";
+    try {
+      return new Intl.NumberFormat("he-IL", { style: "currency", currency: cur }).format(m.metaAdsSpendToday);
+    } catch {
+      return `${m.metaAdsSpendToday.toFixed(2)} ${cur}`;
+    }
+  }, [metrics]);
 
   useEffect(() => {
     if (metricsSwrError && metricsSwrError.message !== DASH_AUTH_REDIRECT) {
@@ -602,6 +622,56 @@ export default function DashboardClient({ tenantId = null }: DashboardClientProp
 
   return (
     <div>
+      {tenantId !== "hot-afik" && (
+      <div
+        style={{
+          display: "grid",
+          gap: 12,
+          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+          marginBottom: 18,
+        }}
+      >
+        <div style={{ background: "linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)", border: "1px solid #c7d2fe", borderRadius: 16, padding: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: "#4338ca" }}>הוצאת מודעות היום (Meta)</div>
+          <div style={{ fontSize: 28, fontWeight: 900, color: "#312e81", marginTop: 6 }}>{metaSpendLabel}</div>
+          {metrics?.metaAdsError && metrics.metaAdsConnected ? (
+            <div style={{ marginTop: 6, fontSize: 11, color: "#b91c1c" }}>{metrics.metaAdsError}</div>
+          ) : !metrics?.metaAdsConnected ? (
+            <div style={{ marginTop: 6, fontSize: 11, color: "#6b7280" }}>
+              <a href="/meta-ads" style={{ color: "#4f46e5", fontWeight: 700 }}>
+                חברו Meta Ads
+              </a>
+            </div>
+          ) : (
+            <div style={{ marginTop: 6, fontSize: 11, color: "#5b21b6" }}>
+              קמפיינים פעילים:{" "}
+              <strong>{metrics?.metaAdsActiveCampaigns ?? "—"}</strong>
+              {metrics && metrics.metaAdsCampaignsWithSpendToday != null ? (
+                <> · עם הוצאה היום: {metrics.metaAdsCampaignsWithSpendToday}</>
+              ) : null}
+            </div>
+          )}
+        </div>
+        <div style={{ background: "linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)", border: "1px solid #6ee7b7", borderRadius: 16, padding: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: "#047857" }}>הזמנות שנכנסו היום</div>
+          <div style={{ fontSize: 28, fontWeight: 900, color: "#065f46", marginTop: 6 }}>
+            {metrics ? prettyCount(metrics.ordersCreatedTodayIsrael) : "—"}
+          </div>
+          {!metrics?.movingOrdersWorkspace ? (
+            <div style={{ marginTop: 6, fontSize: 11, color: "#6b7280" }}>מודול הזמנות לא מופעל בעסק</div>
+          ) : (
+            <div style={{ marginTop: 6, fontSize: 11, color: "#047857" }}>לפי יום לוח בישראל (עד ~8K הזמנות אחרונות)</div>
+          )}
+        </div>
+        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: "#6b7280" }}>קישור מהיר</div>
+          <a href="/meta-ads" style={{ display: "inline-block", marginTop: 8, fontWeight: 800, color: "#1d4ed8" }}>
+            ניהול קמפיינים במטא →
+          </a>
+        </div>
+      </div>
+      )}
+
       <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <label style={{ fontSize: 12, fontWeight: 800, color: "#6b7280" }}>מתאריך</label>

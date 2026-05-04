@@ -1,28 +1,27 @@
 /**
  * מריץ קליטת מוביל (מוקד מכירות → זכיה + לקוחות משלמים) עבור ולדימיר רזינץ.
  *
- * דורש: FIREBASE_SERVICE_ACCOUNT_JSON, CRM_TENANTS (כולל liftygo-customers + databaseId),
- * ואופציונלי: CRM_MOVING_ORDERS_TENANT_IDS אם הטננט לא ברירת המחדל.
+ * דורש: FIREBASE_SERVICE_ACCOUNT_JSON, CRM_TENANTS (או ברירת מחדל יחידה),
+ * ו־CRM_DEFAULT_TENANT_ID אם יש כמה טננטים.
  *
  * שימוש:
  *   npx tsx scripts/onboard-vladimir-mover.ts
  */
 
 import { withTenantDatabaseId } from "@/lib/server/tenantDbContext";
-import { getTenantConfigs } from "@/lib/tenant/config";
+import { getDefaultTenantId, resolveTenantById } from "@/lib/tenant/config";
 import { processMoverWelcomeItems } from "@/lib/movingOrders/processMoverWelcomeItems";
 
-function liftygoCustomersDatabaseId(): string {
-  const configs = getTenantConfigs();
-  const t = configs.find((c) => c.id === "liftygo-customers");
+function defaultTenantDatabaseId(): string {
+  const t = resolveTenantById(getDefaultTenantId());
   if (!t?.databaseId?.trim()) {
-    throw new Error('לא נמצא טננט id=liftygo-customers ב-CRM_TENANTS (או חסר databaseId)');
+    throw new Error("לא נמצא טננט ברירת מחדל (CRM_TENANTS / CRM_DEFAULT_TENANT_ID)");
   }
   return t.databaseId.trim();
 }
 
 async function main() {
-  const databaseId = liftygoCustomersDatabaseId();
+  const databaseId = defaultTenantDatabaseId();
   const item = {
     name: "ולדימיר רזינץ",
     phone: "0526825511",

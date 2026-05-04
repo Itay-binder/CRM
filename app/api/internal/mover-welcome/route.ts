@@ -8,7 +8,7 @@ type ApiErr = { ok: false; error: string };
 
 /**
  * אותה לוגיקה כמו `/api/ingest/mover-welcome` אך עם CRON_SECRET (ללא מפתח ingest).
- * כותרת `x-crm-tenant-database-id` חייבת להתאים לטננט עם ניהול הזמנות.
+ * כותרת `x-crm-tenant-database-id` אופציונלית — אם חסרה, משתמשים בטננט ברירת המחדל (עוגיה / CRM_DEFAULT_TENANT_ID).
  */
 export async function POST(req: NextRequest) {
   const secret = process.env.CRON_SECRET?.trim();

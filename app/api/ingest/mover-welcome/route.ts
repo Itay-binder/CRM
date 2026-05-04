@@ -36,10 +36,10 @@ export async function POST(req: NextRequest) {
 
   const out = await processMoverWelcomeItems(body);
   if (!out.ok) {
-    return NextResponse.json(
-      { ok: false, error: out.error, results: out.results },
-      { status: 400 }
-    );
+    const tenantBlocked =
+      out.results.length === 0 && out.error.includes("ניהול הזמנות");
+    const status = tenantBlocked ? 403 : 400;
+    return NextResponse.json({ ok: false, error: out.error, results: out.results }, { status });
   }
 
   return NextResponse.json({ ok: true, results: out.results });

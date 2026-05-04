@@ -86,6 +86,8 @@ type MetaAdSetNode = {
   daily_budget?: string;
   lifetime_budget?: string;
   optimization_goal?: string;
+  bid_strategy?: string;
+  bid_amount?: string;
   insights?: { data?: MetaAdSetInsight[] };
 };
 
@@ -97,6 +99,10 @@ export type MetaAdSetVm = {
   campaignId: string;
   campaignName: string;
   optimizationGoal: string;
+  /** אסטרטגיית הצעות מחיר מ-Meta (למשל LOWEST_COST_WITH_BID_CAP). */
+  bidStrategy: string;
+  /** סכום ביד-קאפ / עלות יעד ביחידות מטבע (כמו dailyBudget). */
+  bidAmount: number;
   spend: number;
   impressions: number;
   reach: number;
@@ -108,6 +114,21 @@ export type MetaAdSetVm = {
   lifetimeBudget: number;
   results: number;
 };
+
+/** נתוני ביד-קאפ לעדכון (מטבע — minor units ב-Meta, כאן אנו שומרים minor בבירור). */
+export type MetaAdSetBidMeta = {
+  id: string;
+  bidStrategy: string;
+  /** ערך גולמי מ־API (אגורות/סנטים). */
+  bidAmountMinor: number;
+};
+
+/** סדרת מודעות שבה אפשר לשלוט בביד-קאפ דרך ה-API (כאשר מוגדר או אסטרטגיה רלוונטית). */
+export function metaAdSetEligibleForBidCap(meta: { bidStrategy: string; bidAmountMinor: number }): boolean {
+  if (meta.bidAmountMinor > 0) return true;
+  const st = (meta.bidStrategy || "").toUpperCase();
+  return st === "LOWEST_COST_WITH_BID_CAP" || st === "COST_CAP";
+}
 
 // ── Ads ───────────────────────────────────────────────────────────────────────
 
@@ -406,6 +427,7 @@ export async function listAdSets(
 
   const fields =
     "id,name,status,effective_status,campaign_id,campaign{name},daily_budget,lifetime_budget,optimization_goal," +
+    "bid_strategy,bid_amount," +
     "insights.date_preset(" +
     datePreset +
     "){spend,impressions,reach,inline_link_clicks,inline_link_click_ctr,cost_per_inline_link_click,cpm,actions}";
@@ -433,6 +455,8 @@ export async function listAdSets(
         campaignId: (r.campaign_id ?? "").trim(),
         campaignName: (r.campaign?.name ?? "").trim(),
         optimizationGoal: (r.optimization_goal ?? "").trim(),
+        bidStrategy: (r.bid_strategy ?? "").trim(),
+        bidAmount: budgetToCurrency(r.bid_amount),
         spend: toNum(insight?.spend),
         impressions: toInt(insight?.impressions),
         reach: toInt(insight?.reach),
@@ -446,6 +470,61 @@ export async function listAdSets(
       };
     })
     .sort((a, b) => b.spend - a.spend);
+}
+
+/** סדרות מודעות תחת קמפיין — שדות ביד-קאפ בלבד (ללא insights). */
+export async function listAdSetBidMetasInCampaign(
+  config: MetaAdsConfig,
+  campaignId: string
+): Promise<MetaAdSetBidMeta[]> {
+  const cid = campaignId.trim();
+  if (!cid) throw new Error("חסר מזהה קמפיין.");
+  const query = new URLSearchParams({
+    fields: "id,bid_strategy,bid_amount",
+    limit: "500",
+  });
+  const json = await callMetaGraph<{
+    data?: Array<{ id?: string; bid_strategy?: string; bid_amount?: string }>;
+  }>(config, `/${cid}/adsets`, query);
+  const rows = Array.isArray(json.data) ? json.data : [];
+  return rows
+    .filter((r) => r.id)
+    .map((r) => ({
+      id: (r.id ?? "").trim(),
+      bidStrategy: (r.bid_strategy ?? "").trim(),
+      bidAmountMinor: toInt(r.bid_amount),
+    }));
+}
+
+function minorUnitsFromShekels(shekels: number): number {
+  return Math.max(1, Math.round(shekels * 100));
+}
+
+/** מעדכן ביד-קאפ או cost cap (לפי bid_strategy של הסדרה). */
+export async function updateAdSetBidCapForShekels(
+  config: MetaAdsConfig,
+  adSet: MetaAdSetBidMeta,
+  shekels: number
+): Promise<void> {
+  const base = graphBaseUrl().replace(/\/$/, "");
+  const minor = minorUnitsFromShekels(shekels);
+  const st = (adSet.bidStrategy || "").toUpperCase();
+  const body = new URLSearchParams({ access_token: config.accessToken });
+  if (st === "COST_CAP") {
+    body.set("cost_cap", String(minor));
+  } else {
+    body.set("bid_amount", String(minor));
+  }
+  const res = await fetch(`${base}/${adSet.id}`, { method: "POST", body, cache: "no-store" });
+  const json = (await res.json().catch(() => ({}))) as { success?: boolean; error?: MetaGraphError };
+  if (!res.ok || json.success === false) {
+    const msg =
+      json.error?.error_user_msg?.trim() ||
+      json.error?.error_user_title?.trim() ||
+      json.error?.message?.trim() ||
+      `Meta API error (${res.status})`;
+    throw new Error(msg);
+  }
 }
 
 // ── Ads ───────────────────────────────────────────────────────────────────────

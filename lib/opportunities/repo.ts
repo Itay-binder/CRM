@@ -13,7 +13,7 @@ import { normalizeIncomingLabelIds } from "@/lib/labels/repo";
 import { ensureMovingOrdersIntakePipeline } from "@/lib/movingOrders/ensureIntakePipeline";
 import { MOVING_ORDERS_INTAKE_PIPELINE_ID } from "@/lib/movingOrders/pipelineConstants";
 import { statusFromStage } from "@/lib/movingOrders/stageSync";
-import { normalizePhone } from "@/lib/leads/repo";
+import { normalizePhone, getLeadById, normalizeUniqueKey } from "@/lib/leads/repo";
 
 const PIPELINES_LIST_CACHE_TTL_MS = 45_000;
 
@@ -454,7 +454,7 @@ export async function listOpportunities(pipelineId?: string | null): Promise<Opp
     snap = await db.collection("opportunities").get();
   }
 
-  const out = snap.docs.map((doc) => {
+  const rows = snap.docs.map((doc) => {
     const d = (doc.data() ?? {}) as Record<string, unknown>;
     return {
       id: doc.id,
@@ -511,6 +511,63 @@ export async function listOpportunities(pipelineId?: string | null): Promise<Opp
       updatedAt: mapTs(d.updatedAt),
     } satisfies OpportunityRecord;
   });
+
+  const uniqueContactIds = Array.from(
+    new Set(rows.map((r) => String(r.contactId ?? "").trim()).filter(Boolean))
+  );
+  const missingLeadIds = new Set<string>();
+  if (uniqueContactIds.length) {
+    const chunkSize = 30;
+    for (let i = 0; i < uniqueContactIds.length; i += chunkSize) {
+      const chunk = uniqueContactIds.slice(i, i + chunkSize);
+      const refs = chunk.map((id) => db.collection("leads").doc(id));
+      const snaps = await db.getAll(...refs);
+      for (const s of snaps) {
+        if (!s.exists) missingLeadIds.add(s.id);
+      }
+    }
+  }
+
+  const out: OpportunityRecord[] = [];
+  const persistContactFixes: Array<{ oppId: string; contactId: string }> = [];
+
+  for (const row of rows) {
+    const cid = String(row.contactId ?? "").trim();
+    let next = row;
+    if (cid && missingLeadIds.has(cid)) {
+      const resolved = await resolveCanonicalContactIdForOpportunity(
+        cid,
+        row.phone ?? row.contactPhone,
+        row.email ?? row.contactEmail
+      );
+      if (resolved && resolved !== cid) {
+        next = { ...row, contactId: resolved };
+        persistContactFixes.push({ oppId: row.id, contactId: resolved });
+      }
+    }
+    out.push(next);
+  }
+
+  if (persistContactFixes.length) {
+    const chunkSize = 400;
+    for (let i = 0; i < persistContactFixes.length; i += chunkSize) {
+      const slice = persistContactFixes.slice(i, i + chunkSize);
+      const batch = db.batch();
+      const now = FieldValue.serverTimestamp();
+      for (const { oppId, contactId } of slice) {
+        batch.set(
+          db.collection("opportunities").doc(oppId),
+          { contactId, updatedAt: now },
+          { merge: true }
+        );
+      }
+      try {
+        await batch.commit();
+      } catch {
+        /* נמשיך לתצוגה גם אם commit נכשל */
+      }
+    }
+  }
 
   return out.sort((a, b) => {
     const at = a.createdAt?.getTime() ?? 0;
@@ -871,6 +928,33 @@ export async function findCustomersPipelineOpportunityByNormalizedPhone(
     }
   }
   return bestId;
+}
+
+/**
+ * כש־contactId על הזדמנות מצביע למסמך leads שנמחק (למשל אחרי מיגרציה מאימייל לטלפון),
+ * אבל יש phone/email על ההזדמנות שמתאימים לליד קיים במזהה הקנוני — מחזיר את מזהה הליד הנכון.
+ */
+export async function resolveCanonicalContactIdForOpportunity(
+  contactId: string,
+  phone?: string | null,
+  email?: string | null
+): Promise<string | null> {
+  const cid = contactId.trim();
+  if (!cid) return null;
+  const existing = await getLeadById(cid);
+  if (existing) return existing.id;
+
+  const nPhone = normalizePhone(phone ?? undefined);
+  if (nPhone) {
+    const byPhone = await getLeadById(normalizeUniqueKey(nPhone));
+    if (byPhone) return byPhone.id;
+  }
+  const em = String(email ?? "").trim().toLowerCase();
+  if (em) {
+    const byEmail = await getLeadById(normalizeUniqueKey(em));
+    if (byEmail) return byEmail.id;
+  }
+  return null;
 }
 
 export async function getOpportunityById(id: string): Promise<OpportunityRecord | null> {

@@ -86,7 +86,8 @@ export type LeadUpsertInput = {
   updatedAt?: string;
 };
 
-function normalizeUniqueKey(raw: string): string {
+/** מזהה מסמך leads — מנורמל (אימייל lower-case, טלפון כפי שמוחזר מ-normalizePhone). */
+export function normalizeUniqueKey(raw: string): string {
   return raw.trim().toLowerCase();
 }
 

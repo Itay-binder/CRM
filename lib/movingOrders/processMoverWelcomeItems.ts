@@ -19,7 +19,13 @@ import {
   updateOpportunity,
   WON_PIPELINE_STAGE_LABEL,
 } from "@/lib/opportunities/repo";
-import { getLeadById, normalizePhone, updateLead, upsertLead } from "@/lib/leads/repo";
+import {
+  getLeadById,
+  normalizePhone,
+  normalizeUniqueKey,
+  updateLead,
+  upsertLead,
+} from "@/lib/leads/repo";
 
 export type MoverWelcomeProcessResultRow = {
   opportunityId: string;
@@ -269,12 +275,42 @@ export async function processMoverWelcomeItems(body: unknown): Promise<MoverWelc
         customValues,
       });
 
-      const effectiveContactId = String(existing.contactId ?? "").trim();
-      if (effectiveContactId) {
+      let leadContactId = String(existing.contactId ?? "").trim();
+      /** אחרי מיגרציה מזהה מסמך יכול להישאר אימייל בעוד שהליד בפועל ב־972... — מיישרים לפני upsert */
+      const desiredLeadDocId = normalizedPhone
+        ? normalizeUniqueKey(normalizedPhone)
+        : normalizedEmail
+          ? normalizeUniqueKey(normalizedEmail)
+          : "";
+      if (
+        leadContactId &&
+        desiredLeadDocId &&
+        normalizeUniqueKey(leadContactId) !== desiredLeadDocId
+      ) {
+        const atCanonical = await getLeadById(desiredLeadDocId);
+        if (atCanonical) {
+          await updateOpportunity(payingOppId, { contactId: atCanonical.id });
+          leadContactId = atCanonical.id;
+        } else if (normalizedPhone) {
+          const created = await upsertLead({
+            ...(normalizedName ? { name: normalizedName } : {}),
+            ...(normalizedEmail ? { email: normalizedEmail } : {}),
+            phone: normalizedPhone,
+            source: "mover_welcome",
+            pipelineId: payingPipelineId,
+            status: "זכיה",
+            stage: WON_PIPELINE_STAGE_LABEL,
+          });
+          await updateOpportunity(payingOppId, { contactId: created.id });
+          leadContactId = created.id;
+        }
+      }
+
+      if (leadContactId) {
         const lead =
-          (await getLeadById(effectiveContactId)) ??
+          (await getLeadById(leadContactId)) ??
           (await upsertLead({
-            id: effectiveContactId,
+            id: leadContactId,
             ...(normalizedName ? { name: normalizedName } : {}),
             ...(normalizedEmail ? { email: normalizedEmail } : {}),
             ...(normalizedPhone ? { phone: normalizedPhone } : {}),
@@ -296,7 +332,7 @@ export async function processMoverWelcomeItems(body: unknown): Promise<MoverWelc
             customFields = { ...customFields, [fid]: patchRec[fid] };
           }
         }
-        await updateLead(effectiveContactId, {
+        await updateLead(leadContactId, {
           pipelineId: payingPipelineId,
           status: "זכיה",
           stage: WON_PIPELINE_STAGE_LABEL,
@@ -305,7 +341,7 @@ export async function processMoverWelcomeItems(body: unknown): Promise<MoverWelc
           ...(normalizedPhone ? { phone: normalizedPhone } : {}),
           customFields,
         });
-        results.push({ opportunityId: payingOppId, contactId: effectiveContactId, updated: true });
+        results.push({ opportunityId: payingOppId, contactId: leadContactId, updated: true });
       } else {
         results.push({
           opportunityId: payingOppId,

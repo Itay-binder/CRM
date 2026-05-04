@@ -242,14 +242,35 @@ export default function MetaAdsClient() {
       parseJson<{ ok?: boolean; ads?: MetaAdVm[]; error?: string }>(aRes),
     ]);
 
-    if (!cRes.ok || !cj.ok) throw new Error(cj.error || "טעינת קמפיינים נכשלה");
-    if (!sRes.ok || !sj.ok) throw new Error(sj.error || "טעינת סדרות מודעות נכשלה");
-    if (!aRes.ok || !aj.ok) throw new Error(aj.error || "טעינת מודעות נכשלה");
+    const partialErrors: string[] = [];
+    if (!cRes.ok || !cj.ok) {
+      setCampaigns([]);
+      setFetchedAt("");
+    } else {
+      setCampaigns(cj.campaigns ?? []);
+      setFetchedAt(cj.fetchedAt ?? "");
+    }
+    if (!sRes.ok || !sj.ok) {
+      setAdSets([]);
+      partialErrors.push(sj.error || "טעינת סדרות מודעות נכשלה");
+    } else {
+      setAdSets(sj.adSets ?? []);
+    }
+    if (!aRes.ok || !aj.ok) {
+      setAds([]);
+      partialErrors.push(aj.error || "טעינת מודעות נכשלה");
+    } else {
+      setAds(aj.ads ?? []);
+    }
 
-    setCampaigns(cj.campaigns ?? []);
-    setAdSets(sj.adSets ?? []);
-    setAds(aj.ads ?? []);
-    setFetchedAt(cj.fetchedAt ?? "");
+    if (!cRes.ok || !cj.ok) {
+      throw new Error(cj.error || "טעינת קמפיינים נכשלה");
+    }
+    if (partialErrors.length > 0) {
+      setErr(partialErrors.join(" · "));
+    } else {
+      setErr(null);
+    }
   }, []);
 
   const loadAll = useCallback(

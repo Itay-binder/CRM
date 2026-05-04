@@ -16,6 +16,23 @@ type MetaGraphError = {
 
 type MetaActionStat = { action_type?: string; value?: string };
 
+/**
+ * סטטוסים לשאילתת Graph (effective_status). צר מדי = קמפיינים „נעלמים” (למשל WITH_ISSUES, ARCHIVED).
+ * לא כוללים DELETED — בדרך כלל לא רלוונטי לניהול.
+ */
+export const META_LISTABLE_EFFECTIVE_STATUSES: string[] = [
+  "ACTIVE",
+  "PAUSED",
+  "PENDING_REVIEW",
+  "IN_PROCESS",
+  "WITH_ISSUES",
+  "DISAPPROVED",
+  "PENDING_BILLING_INFO",
+  "PREAPPROVED",
+  "ARCHIVED",
+  "CAMPAIGN_PAUSED",
+];
+
 // ── Campaigns ────────────────────────────────────────────────────────────────
 
 type MetaCampaignInsight = {
@@ -325,7 +342,7 @@ export async function listActiveMetaAdsCampaignsWithCurrency(
   const query = new URLSearchParams({
     fields,
     limit: "500",
-    effective_status: JSON.stringify(["ACTIVE", "PAUSED", "PENDING_REVIEW", "IN_PROCESS"]),
+    effective_status: JSON.stringify(META_LISTABLE_EFFECTIVE_STATUSES),
   });
 
   const json = await callMetaGraph<{ data?: MetaCampaignNode[] }>(
@@ -434,7 +451,7 @@ export async function listAdSets(
   const query = new URLSearchParams({
     fields,
     limit: "200",
-    effective_status: JSON.stringify(["ACTIVE", "PAUSED", "PENDING_REVIEW", "IN_PROCESS"]),
+    effective_status: JSON.stringify(META_LISTABLE_EFFECTIVE_STATUSES),
   });
 
   const json = await callMetaGraph<{ data?: MetaAdSetNode[] }>(
@@ -544,7 +561,7 @@ export async function listAds(
   const query = new URLSearchParams({
     fields,
     limit: "200",
-    effective_status: JSON.stringify(["ACTIVE", "PAUSED", "PENDING_REVIEW", "IN_PROCESS"]),
+    effective_status: JSON.stringify(META_LISTABLE_EFFECTIVE_STATUSES),
   });
 
   const json = await callMetaGraph<{ data?: MetaAdNode[] }>(

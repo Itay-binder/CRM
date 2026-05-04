@@ -12,7 +12,8 @@
     "lint": "next lint",
     "import:powercouple": "node scripts/import-powercouple-opportunities.mjs",
     "migrate:contact-phone": "tsx scripts/migrate-contact-to-phone.ts",
-    "reset:tenant-opportunities": "tsx scripts/reset-tenant-opportunities.ts"
+    "reset:tenant-opportunities": "tsx scripts/reset-tenant-opportunities.ts",
+    "onboard:vladimir-mover": "tsx scripts/onboard-vladimir-mover.ts"
   },
   "dependencies": {
     "@date-fns/tz": "^1.4.1",

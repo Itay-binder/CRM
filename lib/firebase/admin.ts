@@ -1,6 +1,7 @@
 import * as admin from "firebase-admin";
 import { getFirestore } from "firebase-admin/firestore";
 import { headers } from "next/headers";
+import { getTenantDatabaseIdOverride } from "@/lib/server/tenantDbContext";
 import { TENANT_DB_HEADER, getTenantConfigs } from "@/lib/tenant/config";
 
 let init = false;
@@ -66,6 +67,8 @@ export function fallbackTenantDatabaseId(): string {
 }
 
 export async function getRequestTenantDatabaseId(): Promise<string> {
+  const override = getTenantDatabaseIdOverride();
+  if (override) return override;
   try {
     const h = await headers();
     const fromHeader = h.get(TENANT_DB_HEADER)?.trim();

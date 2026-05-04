@@ -67,7 +67,9 @@ export function resolveMiddlewareDatabaseId(req: MiddlewareRequest): string {
   const pathname = req.nextUrl.pathname;
   const configs = getTenantConfigs();
   const allowHeader =
-    pathname.startsWith("/api/ingest") || pathname.startsWith("/api/leads");
+    pathname.startsWith("/api/ingest") ||
+    pathname.startsWith("/api/leads") ||
+    pathname.startsWith("/api/internal");
 
   if (allowHeader) {
     const headerDb = req.headers.get(TENANT_DB_HEADER)?.trim();

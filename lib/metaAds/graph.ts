@@ -221,17 +221,17 @@ function graphBaseUrl(): string {
   return process.env.META_GRAPH_API_BASE?.trim() || "https://graph.facebook.com/v22.0";
 }
 
-function toNum(raw?: string): number {
-  const n = Number.parseFloat((raw ?? "").trim());
+function toNum(raw?: string | number | null): number {
+  const n = Number.parseFloat(String(raw ?? "").trim());
   return Number.isFinite(n) ? n : 0;
 }
 
-function toInt(raw?: string): number {
-  const n = Number.parseInt((raw ?? "").trim(), 10);
+function toInt(raw?: string | number | null): number {
+  const n = Number.parseInt(String(raw ?? "").trim(), 10);
   return Number.isFinite(n) ? n : 0;
 }
 
-function budgetToCurrency(raw?: string): number {
+function budgetToCurrency(raw?: string | number | null): number {
   const cents = toNum(raw);
   return cents > 0 ? cents / 100 : 0;
 }

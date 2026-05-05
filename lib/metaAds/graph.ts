@@ -17,10 +17,9 @@ type MetaGraphError = {
 type MetaActionStat = { action_type?: string; value?: string };
 
 /**
- * סטטוסים לשאילתת Graph (effective_status). צר מדי = קמפיינים „נעלמים” (למשל WITH_ISSUES, ARCHIVED).
- * לא כוללים DELETED — בדרך כלל לא רלוונטי לניהול.
+ * סטטוסים לקמפיינים (כולל מצבים שגורמים לקמפיינים להיעלם אם לא נכללים).
  */
-export const META_LISTABLE_EFFECTIVE_STATUSES: string[] = [
+export const META_CAMPAIGN_LISTABLE_EFFECTIVE_STATUSES: string[] = [
   "ACTIVE",
   "PAUSED",
   "PENDING_REVIEW",
@@ -30,6 +29,33 @@ export const META_LISTABLE_EFFECTIVE_STATUSES: string[] = [
   "PENDING_BILLING_INFO",
   "PREAPPROVED",
   "ARCHIVED",
+  "CAMPAIGN_PAUSED",
+];
+
+/** סטטוסים תקפים לסדרות מודעות (לא כוללים ערכים ספציפיים לקמפיין). */
+export const META_ADSET_LISTABLE_EFFECTIVE_STATUSES: string[] = [
+  "ACTIVE",
+  "PAUSED",
+  "PENDING_REVIEW",
+  "IN_PROCESS",
+  "WITH_ISSUES",
+  "DISAPPROVED",
+  "PENDING_BILLING_INFO",
+  "PREAPPROVED",
+  "ARCHIVED",
+];
+
+/** סטטוסים תקפים למודעות. */
+export const META_AD_LISTABLE_EFFECTIVE_STATUSES: string[] = [
+  "ACTIVE",
+  "PAUSED",
+  "PENDING_REVIEW",
+  "IN_PROCESS",
+  "WITH_ISSUES",
+  "DISAPPROVED",
+  "PREAPPROVED",
+  "ARCHIVED",
+  "ADSET_PAUSED",
   "CAMPAIGN_PAUSED",
 ];
 
@@ -342,7 +368,7 @@ export async function listActiveMetaAdsCampaignsWithCurrency(
   const query = new URLSearchParams({
     fields,
     limit: "500",
-    effective_status: JSON.stringify(META_LISTABLE_EFFECTIVE_STATUSES),
+    effective_status: JSON.stringify(META_CAMPAIGN_LISTABLE_EFFECTIVE_STATUSES),
   });
 
   const json = await callMetaGraph<{ data?: MetaCampaignNode[] }>(
@@ -451,7 +477,7 @@ export async function listAdSets(
   const query = new URLSearchParams({
     fields,
     limit: "200",
-    effective_status: JSON.stringify(META_LISTABLE_EFFECTIVE_STATUSES),
+    effective_status: JSON.stringify(META_ADSET_LISTABLE_EFFECTIVE_STATUSES),
   });
 
   const json = await callMetaGraph<{ data?: MetaAdSetNode[] }>(
@@ -561,7 +587,7 @@ export async function listAds(
   const query = new URLSearchParams({
     fields,
     limit: "200",
-    effective_status: JSON.stringify(META_LISTABLE_EFFECTIVE_STATUSES),
+    effective_status: JSON.stringify(META_AD_LISTABLE_EFFECTIVE_STATUSES),
   });
 
   const json = await callMetaGraph<{ data?: MetaAdNode[] }>(

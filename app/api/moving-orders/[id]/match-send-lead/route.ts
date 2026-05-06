@@ -63,6 +63,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: false, error: "מוביל לא שייך להזמנה זו" }, { status: 400 });
   }
 
+  if ((order.sentMatchDriverIds ?? []).includes(driverId)) {
+    return NextResponse.json({
+      ok: true,
+      skipped: true,
+      reason: "המוביל כבר קיבל שליחה להזמנה זו.",
+    });
+  }
+
   const webhookOk = await postMatchSendWebhookForDrivers(g.db, order, [driverId], false);
   if (!webhookOk) {
     return NextResponse.json({ ok: false, error: "לא נמצא ליד למוביל או שליחת הוובהוק נכשלה" }, { status: 400 });

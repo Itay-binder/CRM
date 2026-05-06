@@ -135,30 +135,35 @@ export async function applyMatchSendSideEffects(params: {
 }): Promise<void> {
   const head = `הזמנה: ${params.orderCustomerName} · מזהה הזמנה: ${params.orderId}`;
   const extra = (params.transportNoteLines ?? []).map((x) => String(x).trim()).filter(Boolean);
-  const note = extra.length ? [head, ...extra].join("\n") : head;
   const opps = await listOpportunities(PAYING_CUSTOMERS_PIPELINE_ID);
   const idx = opportunitiesByContactId(opps);
 
   for (const contactId of params.contactIds) {
+    let leadsCountText = "";
+    const opp = idx.get(contactId);
+    if (opp) {
+      const cv = { ...(opp.customValues ?? {}) };
+      const k = MOVER_OPPORTUNITY_FIELD_IDS.leadsCount;
+      const next = (Number(cv[k]) || 0) + 1;
+      cv[k] = next;
+      leadsCountText = `כמות לידים כוללת למוביל (כולל הזמנה זו): ${next}`;
+      try {
+        await updateOpportunity(opp.id, { customValues: cv, lastLeadAt: new Date() });
+      } catch {
+        /* ignore */
+      }
+    }
+    const noteLines = [head, ...extra, leadsCountText].filter(Boolean);
+    const note = noteLines.join("\n");
     try {
       await appendLeadNote(contactId, { text: note, createdBy: "התאמת הזמנות" });
     } catch {
       /* איש קשר עלול להיות חסר — ממשיכים */
     }
-    const opp = idx.get(contactId);
-    if (!opp) continue;
-    const cv = { ...(opp.customValues ?? {}) };
-    const k = MOVER_OPPORTUNITY_FIELD_IDS.leadsCount;
-    cv[k] = (Number(cv[k]) || 0) + 1;
-    try {
-      await updateOpportunity(opp.id, { customValues: cv, lastLeadAt: new Date() });
-    } catch {
-      /* ignore */
-    }
   }
 }
 
-/** הפחתת מונה פניות (לידים) כשמסירים שליחת התאמה למוביל — לא משנה פתקיות קיימות */
+/** הפחתת מונה פניות (לידים) כשמסירים שליחת התאמה למוביל + רישום הערת זיכוי */
 export async function applyMatchRemoveSideEffects(contactIds: string[]): Promise<void> {
   const ids = [...new Set(contactIds.map((x) => String(x).trim()).filter(Boolean))];
   if (!ids.length) return;
@@ -166,14 +171,24 @@ export async function applyMatchRemoveSideEffects(contactIds: string[]): Promise
   const idx = opportunitiesByContactId(opps);
 
   for (const contactId of ids) {
+    let next = 0;
     const opp = idx.get(contactId);
     if (!opp) continue;
     const cv = { ...(opp.customValues ?? {}) };
     const k = MOVER_OPPORTUNITY_FIELD_IDS.leadsCount;
-    const next = Math.max(0, (Number(cv[k]) || 0) - 1);
+    next = Math.max(0, (Number(cv[k]) || 0) - 1);
     cv[k] = next;
     try {
       await updateOpportunity(opp.id, { customValues: cv });
+    } catch {
+      /* ignore */
+    }
+    const note = [
+      "זיכוי ליד: הוסרה התאמת הזמנה שנשלחה למוביל.",
+      `כמות לידים כוללת למוביל (לאחר הזיכוי): ${next}`,
+    ].join("\n");
+    try {
+      await appendLeadNote(contactId, { text: note, createdBy: "זיכוי הזמנה" });
     } catch {
       /* ignore */
     }

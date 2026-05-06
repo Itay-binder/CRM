@@ -898,15 +898,36 @@ export async function deleteWhatsAppAudience(db: Firestore, id: string): Promise
 
 export async function listWhatsAppChatThreads(
   db: Firestore,
-  limit = 80
+  limit: number | null = 80
 ): Promise<WhatsAppChatThreadRecord[]> {
-  const snap = await db
+  const qBase = db
     .collection(CHATS_COLLECTION)
     .orderBy("lastMessageAt", "desc")
-    .limit(Math.max(1, Math.min(200, limit)))
-    .select(...CHAT_THREAD_LIST_FIELDS)
-    .get();
-  const rows = snap.docs
+    .select(...CHAT_THREAD_LIST_FIELDS);
+
+  const docs: Array<{ id: string; data: () => FirebaseFirestore.DocumentData }> = [];
+  if (limit == null) {
+    // "כל השיחות": דפדוף באצוות כדי לאפשר טעינה מלאה של הרשימה.
+    const batchSize = 500;
+    let cursor: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+    // guard מונע טעינה אינסופית במקרה נתונים חריג.
+    const hardCap = 10_000;
+    while (docs.length < hardCap) {
+      let q = qBase.limit(batchSize);
+      if (cursor) q = q.startAfter(cursor);
+      const snap = await q.get();
+      if (snap.empty) break;
+      docs.push(...snap.docs);
+      cursor = snap.docs[snap.docs.length - 1] ?? null;
+      if (snap.size < batchSize) break;
+    }
+  } else {
+    const safeLimit = Math.max(1, Math.min(500, limit));
+    const snap = await qBase.limit(safeLimit).get();
+    docs.push(...snap.docs);
+  }
+
+  const rows = docs
     .map((doc): WhatsAppChatThreadRecord | null => {
       const d = (doc.data() ?? {}) as Record<string, unknown>;
       const phone = asString(d.phone).trim() || doc.id;

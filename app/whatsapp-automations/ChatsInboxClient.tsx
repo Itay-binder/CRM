@@ -207,12 +207,14 @@ function IconWa() {
 }
 
 type MobilePanel = "list" | "chat" | "details";
+type ThreadScope = "session" | "all";
 
 export default function ChatsInboxClient() {
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [threads, setThreads] = useState<ChatThread[]>([]);
+  const [threadScope, setThreadScope] = useState<ThreadScope>("session");
   const [listQuery, setListQuery] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const [active, setActive] = useState<ChatThread | null>(null);
@@ -253,7 +255,11 @@ export default function ChatsInboxClient() {
   }, [isNarrow, mobilePanel, selectedId]);
 
   const loadThreads = useCallback(async () => {
-    const res = await fetch("/api/whatsapp/chats", { credentials: "include", cache: "no-store" });
+    const scopeParam = threadScope === "all" ? "all" : "recent";
+    const res = await fetch(`/api/whatsapp/chats?scope=${scopeParam}`, {
+      credentials: "include",
+      cache: "no-store",
+    });
     if (res.status === 401) {
       window.location.href = `/login?returnTo=${encodeURIComponent("/whatsapp-automations/chats")}`;
       return;
@@ -265,7 +271,7 @@ export default function ChatsInboxClient() {
     const narrow =
       typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches;
     setSelectedId((prev) => (narrow ? prev : prev || list[0]?.id || ""));
-  }, []);
+  }, [threadScope]);
 
   const loadThread = useCallback(async (id: string) => {
     if (!id) {
@@ -381,14 +387,18 @@ export default function ChatsInboxClient() {
 
   const filteredThreads = useMemo(() => {
     const q = listQuery.trim().toLowerCase();
-    if (!q) return threads;
-    return threads.filter(
+    let list = threads;
+    if (threadScope === "session") {
+      list = list.filter((t) => sessionOpen(t.lastInboundAt));
+    }
+    if (!q) return list;
+    return list.filter(
       (t) =>
         (t.contactName ?? "").toLowerCase().includes(q) ||
         t.phone.replace(/\D/g, "").includes(q.replace(/\D/g, "")) ||
         (t.lastMessagePreview ?? "").toLowerCase().includes(q)
     );
-  }, [threads, listQuery]);
+  }, [threads, listQuery, threadScope]);
 
   const canSendFreeform = useMemo(() => {
     const inbound = active?.lastInboundAt ?? selectedMeta?.lastInboundAt;
@@ -654,7 +664,43 @@ export default function ChatsInboxClient() {
               </span>
             ) : null}
           </div>
-          <div style={{ padding: "8px 10px", borderBottom: `1px solid ${C.hairline}` }}>
+          <div style={{ padding: "8px 10px", borderBottom: `1px solid ${C.hairline}`, display: "grid", gap: 8 }}>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                type="button"
+                onClick={() => setThreadScope("session")}
+                style={{
+                  border: "1px solid " + (threadScope === "session" ? C.hairline2 : C.hairline),
+                  background: threadScope === "session" ? C.selectedList : C.panel,
+                  color: C.text,
+                  borderRadius: 8,
+                  padding: "5px 9px",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontFamily: font,
+                }}
+              >
+                חלון פתוח
+              </button>
+              <button
+                type="button"
+                onClick={() => setThreadScope("all")}
+                style={{
+                  border: "1px solid " + (threadScope === "all" ? C.hairline2 : C.hairline),
+                  background: threadScope === "all" ? C.selectedList : C.panel,
+                  color: C.text,
+                  borderRadius: 8,
+                  padding: "5px 9px",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontFamily: font,
+                }}
+              >
+                כל השיחות
+              </button>
+            </div>
             <div
               style={{
                 display: "flex",
@@ -689,7 +735,11 @@ export default function ChatsInboxClient() {
           <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
             {filteredThreads.length === 0 ? (
               <div style={{ padding: 16, color: C.muted, fontSize: 14 }}>
-                {threads.length === 0 ? "עדיין לא התקבלו התכתבויות." : "אין תוצאות לחיפוש."}
+                {threads.length === 0
+                  ? "עדיין לא התקבלו התכתבויות."
+                  : threadScope === "session"
+                    ? "אין כרגע שיחות בתוך חלון השירות (24 שעות)."
+                    : "אין תוצאות לחיפוש."}
               </div>
             ) : (
               filteredThreads.map((t) => {

@@ -52,6 +52,7 @@ type NoteItem = {
   createdBy?: string;
   attachments?: Array<{ id: string; fileName: string; url: string }>;
 };
+type NotesViewFilter = "all" | "orders" | "tasks";
 type TaskItem = {
   id: string;
   title: string;
@@ -64,6 +65,25 @@ type TaskItem = {
   syncToGoogleCalendar?: boolean;
   googleCalendarId?: string;
 };
+
+function isOrderFlowNote(note: NoteItem): boolean {
+  const by = (note.createdBy ?? "").trim();
+  const txt = (note.text ?? "").trim();
+  if (by === "התאמת הזמנות" || by === "זיכוי הזמנה") return true;
+  return txt.includes("הזמנה:") || txt.includes("זיכוי ליד");
+}
+
+function isTaskFlowNote(note: NoteItem): boolean {
+  const by = (note.createdBy ?? "").trim();
+  const txt = (note.text ?? "").trim();
+  return by.includes("משימה") || txt.includes("משימה");
+}
+
+function notePassesFilter(note: NoteItem, filter: NotesViewFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "orders") return isOrderFlowNote(note);
+  return isTaskFlowNote(note);
+}
 
 type GCalOpt = { id: string; summary?: string; primary?: boolean };
 
@@ -186,6 +206,7 @@ export default function ContactsClient() {
   const [dateTo, setDateTo] = useState("");
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailTab, setDetailTab] = useState<"details" | "notes" | "tasks" | "whatsapp" | "greenapi">("details");
+  const [detailNotesFilter, setDetailNotesFilter] = useState<NotesViewFilter>("all");
   const [detail, setDetail] = useState<ContactDetail | null>(null);
   const [savingDetail, setSavingDetail] = useState(false);
   const openedFromQueryRef = useRef(false);
@@ -1581,7 +1602,34 @@ export default function ContactsClient() {
 
             {detailTab === "notes" && (
               <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-                {(detail.notes ?? []).map((n) => (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {([
+                    { id: "all", label: "כל ההערות" },
+                    { id: "orders", label: "הזמנות / זיכוי" },
+                    { id: "tasks", label: "הערות משימות" },
+                  ] as const).map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setDetailNotesFilter(opt.id)}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 999,
+                        border: "1px solid #e5e7eb",
+                        background: detailNotesFilter === opt.id ? "#ede9fe" : "#fff",
+                        color: detailNotesFilter === opt.id ? "#5b21b6" : "#374151",
+                        fontWeight: 700,
+                        fontSize: 12,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                {(detail.notes ?? [])
+                  .filter((n) => notePassesFilter(n, detailNotesFilter))
+                  .map((n) => (
                   <div key={n.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, background: "#fff" }}>
                     <div
                       style={{
@@ -1619,7 +1667,9 @@ export default function ContactsClient() {
                     ) : null}
                   </div>
                 ))}
-                {(detailAggNotes ?? []).map((n) => (
+                {(detailAggNotes ?? [])
+                  .filter((n) => notePassesFilter(n, detailNotesFilter))
+                  .map((n) => (
                   <div key={`agg-${n.id}`} style={{ border: "1px dashed #cbd5e1", borderRadius: 10, padding: 10, background: "#f8fafc" }}>
                     <div
                       style={{
@@ -1657,6 +1707,10 @@ export default function ContactsClient() {
                     ) : null}
                   </div>
                 ))}
+                {(detail.notes ?? []).filter((n) => notePassesFilter(n, detailNotesFilter)).length === 0 &&
+                (detailAggNotes ?? []).filter((n) => notePassesFilter(n, detailNotesFilter)).length === 0 ? (
+                  <div style={{ color: "#6b7280", fontSize: 13 }}>אין הערות להצגה לפי הסינון שנבחר.</div>
+                ) : null}
                 <input
                   type="file"
                   multiple

@@ -126,6 +126,7 @@ type NoteItem = {
   createdBy?: string;
   attachments?: Array<{ id: string; fileName: string; url: string }>;
 };
+type NotesViewFilter = "all" | "orders" | "tasks";
 type TaskItem = {
   id: string;
   title: string;
@@ -138,6 +139,25 @@ type TaskItem = {
   syncToGoogleCalendar?: boolean;
   googleCalendarId?: string;
 };
+
+function isOrderFlowNote(note: NoteItem): boolean {
+  const by = (note.createdBy ?? "").trim();
+  const txt = (note.text ?? "").trim();
+  if (by === "התאמת הזמנות" || by === "זיכוי הזמנה") return true;
+  return txt.includes("הזמנה:") || txt.includes("זיכוי ליד");
+}
+
+function isTaskFlowNote(note: NoteItem): boolean {
+  const by = (note.createdBy ?? "").trim();
+  const txt = (note.text ?? "").trim();
+  return by.includes("משימה") || txt.includes("משימה");
+}
+
+function notePassesFilter(note: NoteItem, filter: NotesViewFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "orders") return isOrderFlowNote(note);
+  return isTaskFlowNote(note);
+}
 
 type GCalOptOpp = { id: string; summary?: string; primary?: boolean };
 
@@ -450,6 +470,7 @@ export default function PipelineClient() {
   const [oppDetailTab, setOppDetailTab] = useState<"details" | "notes" | "tasks" | "whatsapp" | "greenapi">(
     "details"
   );
+  const [oppNotesFilter, setOppNotesFilter] = useState<NotesViewFilter>("all");
   const [oppNotes, setOppNotes] = useState<NoteItem[]>([]);
   const [oppTasks, setOppTasks] = useState<TaskItem[]>([]);
   const [oppTaskModal, setOppTaskModal] = useState<
@@ -2960,7 +2981,32 @@ export default function PipelineClient() {
             )}
             {oppDetailTab === "notes" && (
               <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-                {oppNotes.map((n) => (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {([
+                    { id: "all", label: "כל ההערות" },
+                    { id: "orders", label: "הזמנות / זיכוי" },
+                    { id: "tasks", label: "הערות משימות" },
+                  ] as const).map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setOppNotesFilter(opt.id)}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 999,
+                        border: "1px solid #e5e7eb",
+                        background: oppNotesFilter === opt.id ? "#ede9fe" : "#fff",
+                        color: oppNotesFilter === opt.id ? "#5b21b6" : "#374151",
+                        fontWeight: 700,
+                        fontSize: 12,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                {oppNotes.filter((n) => notePassesFilter(n, oppNotesFilter)).map((n) => (
                   <div key={n.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, background: "#fff" }}>
                     <div
                       style={{
@@ -2998,6 +3044,9 @@ export default function PipelineClient() {
                     ) : null}
                   </div>
                 ))}
+                {oppNotes.filter((n) => notePassesFilter(n, oppNotesFilter)).length === 0 ? (
+                  <div style={{ color: "#6b7280", fontSize: 13 }}>אין הערות להצגה לפי הסינון שנבחר.</div>
+                ) : null}
                 <input
                   type="file"
                   multiple

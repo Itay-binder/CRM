@@ -24,11 +24,14 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = (await req.json()) as {
+      title?: string;
       note?: string;
       scheduledAt?: string;
       repId?: string;
       status?: SalesCallStatus;
       completionNote?: string;
+      syncToGoogleCalendar?: boolean;
+      googleCalendarId?: string;
     };
     const call = await updateSalesCall(id, body);
     return NextResponse.json({ ok: true, call });

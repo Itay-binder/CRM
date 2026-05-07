@@ -1,6 +1,11 @@
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { appendLeadNote, getLeadById } from "@/lib/leads/repo";
+import {
+  deleteSalesCallCalendarEventIfAny,
+  reconcileSalesCallGoogleCalendar,
+} from "@/lib/googleCalendar/salesCallSync";
+import { getGoogleCalendarTokensForTenant } from "@/lib/googleCalendar/tokensRepo";
 import { getTeamMemberById } from "@/lib/team/repo";
 
 export type SalesCallStatus = "pending" | "done" | "canceled";
@@ -13,12 +18,17 @@ export type SalesCallRecord = {
   repId: string;
   repName: string;
   note: string;
+  /** כותרת אופציונלית לתצוגה / לוח שנה */
+  title?: string;
   scheduledAt: string | null;
   status: SalesCallStatus;
   followUpOfId?: string | null;
   followUpId?: string | null;
   completedAt: string | null;
   completionNote?: string;
+  syncToGoogleCalendar?: boolean;
+  googleCalendarId?: string;
+  googleEventId?: string;
   createdAt: string | null;
   updatedAt: string | null;
 };
@@ -49,6 +59,7 @@ function mapDoc(id: string, data: Record<string, unknown>): SalesCallRecord {
     repId: typeof data.repId === "string" ? data.repId : "",
     repName: typeof data.repName === "string" ? data.repName : "",
     note: typeof data.note === "string" ? data.note : "",
+    title: typeof data.title === "string" ? data.title : undefined,
     scheduledAt: tsToIso(data.scheduledAt),
     status:
       data.status === "done" || data.status === "canceled" ? data.status : "pending",
@@ -56,6 +67,9 @@ function mapDoc(id: string, data: Record<string, unknown>): SalesCallRecord {
     followUpId: typeof data.followUpId === "string" ? data.followUpId : null,
     completedAt: tsToIso(data.completedAt),
     completionNote: typeof data.completionNote === "string" ? data.completionNote : "",
+    syncToGoogleCalendar: data.syncToGoogleCalendar === true,
+    googleCalendarId: typeof data.googleCalendarId === "string" ? data.googleCalendarId : undefined,
+    googleEventId: typeof data.googleEventId === "string" ? data.googleEventId : undefined,
     createdAt: tsToIso(data.createdAt),
     updatedAt: tsToIso(data.updatedAt),
   };
@@ -112,9 +126,12 @@ function fmtIsoForNote(iso: string | null | undefined): string {
 export async function createSalesCall(input: {
   contactId: string;
   repId: string;
+  title?: string;
   note?: string;
   scheduledAt?: string;
   followUpOfId?: string;
+  syncToGoogleCalendar?: boolean;
+  googleCalendarId?: string;
 }): Promise<SalesCallRecord> {
   const contactId = String(input.contactId ?? "").trim();
   if (!contactId) throw new Error("יש לבחור איש קשר");
@@ -126,8 +143,22 @@ export async function createSalesCall(input: {
   const rep = await getTeamMemberById(repId);
   if (!rep) throw new Error("איש הצוות לא נמצא");
 
+  const titleText = String(input.title ?? "").trim();
   const noteText = String(input.note ?? "").trim();
   const scheduledIso = String(input.scheduledAt ?? "").trim();
+
+  const wantsCal =
+    Boolean(input.syncToGoogleCalendar) &&
+    Boolean(String(input.googleCalendarId ?? "").trim()) &&
+    Boolean(scheduledIso);
+  if (wantsCal) {
+    const stored = await getGoogleCalendarTokensForTenant();
+    if (!stored) {
+      throw new Error(
+        "Google Calendar is not connected. Connect under Calendar in the CRM menu."
+      );
+    }
+  }
 
   const db = await getAdminDb();
   const ref = db.collection(COLLECTION).doc();
@@ -142,6 +173,7 @@ export async function createSalesCall(input: {
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   };
+  if (titleText) payload.title = titleText;
   if (scheduledIso) {
     payload.scheduledAt = Timestamp.fromDate(new Date(scheduledIso));
   }
@@ -156,6 +188,14 @@ export async function createSalesCall(input: {
       .doc(input.followUpOfId.trim())
       .set({ followUpId: ref.id, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
   }
+
+  let snap = await ref.get();
+  let rec = mapDoc(snap.id, (snap.data() ?? {}) as Record<string, unknown>);
+  const calPatch = await reconcileSalesCallGoogleCalendar(null, rec, {
+    syncToGoogleCalendar: input.syncToGoogleCalendar,
+    googleCalendarId: input.googleCalendarId,
+  });
+  await ref.set({ ...calPatch, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
 
   const isFollowUp = Boolean(input.followUpOfId?.trim());
   const noteHeading = isFollowUp ? "פולואפ שיחה נקבע" : "שיחה חדשה נקבעה";
@@ -174,18 +214,21 @@ export async function createSalesCall(input: {
     /* note sync best-effort */
   }
 
-  const after = await ref.get();
-  return mapDoc(after.id, (after.data() ?? {}) as Record<string, unknown>);
+  snap = await ref.get();
+  return mapDoc(snap.id, (snap.data() ?? {}) as Record<string, unknown>);
 }
 
 export async function updateSalesCall(
   id: string,
   input: {
+    title?: string;
     note?: string;
     scheduledAt?: string;
     repId?: string;
     status?: SalesCallStatus;
     completionNote?: string;
+    syncToGoogleCalendar?: boolean;
+    googleCalendarId?: string;
   }
 ): Promise<SalesCallRecord> {
   const callId = id.trim();
@@ -196,9 +239,40 @@ export async function updateSalesCall(
   if (!snap.exists) throw new Error("שיחה לא נמצאה");
   const prev = mapDoc(snap.id, (snap.data() ?? {}) as Record<string, unknown>);
 
+  const nextScheduled =
+    input.scheduledAt !== undefined
+      ? String(input.scheduledAt).trim()
+      : (prev.scheduledAt ?? "");
+  const nextStatus = input.status ?? prev.status;
+  const syncIntent =
+    input.syncToGoogleCalendar !== undefined
+      ? Boolean(input.syncToGoogleCalendar)
+      : Boolean(prev.syncToGoogleCalendar);
+  const calIdMerge = String(input.googleCalendarId ?? prev.googleCalendarId ?? "").trim();
+
+  const willNeedGoogle =
+    syncIntent &&
+    Boolean(calIdMerge) &&
+    Boolean(nextScheduled) &&
+    nextStatus === "pending";
+
+  if (willNeedGoogle) {
+    const stored = await getGoogleCalendarTokensForTenant();
+    if (!stored) {
+      throw new Error(
+        "Google Calendar is not connected. Connect under Calendar in the CRM menu."
+      );
+    }
+  }
+
   const payload: Record<string, unknown> = {
     updatedAt: FieldValue.serverTimestamp(),
   };
+  if (input.title !== undefined) {
+    const t = input.title.trim();
+    if (t) payload.title = t;
+    else payload.title = FieldValue.delete();
+  }
   if (input.note !== undefined) payload.note = input.note.trim();
   if (input.scheduledAt !== undefined) {
     const s = input.scheduledAt.trim();
@@ -224,8 +298,16 @@ export async function updateSalesCall(
   }
 
   await ref.set(payload, { merge: true });
-  const after = await ref.get();
-  const next = mapDoc(after.id, (after.data() ?? {}) as Record<string, unknown>);
+  let after = await ref.get();
+  let next = mapDoc(after.id, (after.data() ?? {}) as Record<string, unknown>);
+
+  const calPatch = await reconcileSalesCallGoogleCalendar(prev, next, {
+    syncToGoogleCalendar: input.syncToGoogleCalendar,
+    googleCalendarId: input.googleCalendarId,
+  });
+  await ref.set({ ...calPatch, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  after = await ref.get();
+  next = mapDoc(after.id, (after.data() ?? {}) as Record<string, unknown>);
 
   // Append summary note when call is closed.
   if (
@@ -255,5 +337,11 @@ export async function updateSalesCall(
 
 export async function deleteSalesCall(id: string): Promise<void> {
   const db = await getAdminDb();
-  await db.collection(COLLECTION).doc(id.trim()).delete();
+  const ref = db.collection(COLLECTION).doc(id.trim());
+  const snap = await ref.get();
+  if (snap.exists) {
+    const prev = mapDoc(snap.id, (snap.data() ?? {}) as Record<string, unknown>);
+    await deleteSalesCallCalendarEventIfAny(prev);
+  }
+  await ref.delete();
 }

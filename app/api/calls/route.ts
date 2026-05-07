@@ -47,16 +47,22 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as {
       contactId?: string;
       repId?: string;
+      title?: string;
       note?: string;
       scheduledAt?: string;
       followUpOfId?: string;
+      syncToGoogleCalendar?: boolean;
+      googleCalendarId?: string;
     };
     const call = await createSalesCall({
       contactId: body.contactId ?? "",
       repId: body.repId ?? "",
+      title: body.title,
       note: body.note,
       scheduledAt: body.scheduledAt,
       followUpOfId: body.followUpOfId,
+      syncToGoogleCalendar: body.syncToGoogleCalendar,
+      googleCalendarId: body.googleCalendarId,
     });
     return NextResponse.json({ ok: true, call });
   } catch (e) {

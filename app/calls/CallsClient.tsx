@@ -16,12 +16,16 @@ type SalesCall = {
   repId: string;
   repName: string;
   note: string;
+  title?: string;
   scheduledAt: string | null;
   status: CallStatus;
   followUpOfId?: string | null;
   followUpId?: string | null;
   completedAt: string | null;
   completionNote?: string;
+  syncToGoogleCalendar?: boolean;
+  googleCalendarId?: string;
+  googleEventId?: string;
   createdAt: string | null;
   updatedAt: string | null;
 };
@@ -38,6 +42,8 @@ type TeamMember = {
   name: string;
   role: string;
 };
+
+type GCalOpt = { id: string; summary?: string; primary?: boolean };
 
 type Tab = "today" | "manage";
 
@@ -102,6 +108,15 @@ export default function CallsClient() {
   const [createContactId, setCreateContactId] = useState("");
   const [createContactQuery, setCreateContactQuery] = useState("");
   const [creating, setCreating] = useState(false);
+
+  const [gcalLoading, setGcalLoading] = useState(false);
+  const [gcalConnected, setGcalConnected] = useState(false);
+  const [gcalList, setGcalList] = useState<GCalOpt[]>([]);
+  const [createCalSync, setCreateCalSync] = useState(false);
+  const [createCalIdPick, setCreateCalIdPick] = useState("primary");
+
+  const [followCalSync, setFollowCalSync] = useState(false);
+  const [followCalIdPick, setFollowCalIdPick] = useState("primary");
 
   // Done / follow-up modal
   const [completing, setCompleting] = useState<SalesCall | null>(null);
@@ -190,6 +205,61 @@ export default function CallsClient() {
   }, [loadCalls, loadMembers, loadContacts]);
 
   useEffect(() => {
+    if (!createOpen && !completing) return;
+    let cancelled = false;
+    void (async () => {
+      setGcalLoading(true);
+      try {
+        const stRes = await fetch("/api/google-calendar/status", {
+          credentials: "include",
+          cache: "no-store",
+        });
+        const st = (await stRes.json().catch(() => ({}))) as {
+          ok?: boolean;
+          connected?: boolean;
+        };
+        const connected = Boolean(stRes.ok && st.ok && st.connected);
+        let cals: GCalOpt[] = [];
+        if (connected) {
+          const cRes = await fetch("/api/google-calendar/calendars", {
+            credentials: "include",
+            cache: "no-store",
+          });
+          const cj = (await cRes.json().catch(() => ({}))) as {
+            ok?: boolean;
+            calendars?: GCalOpt[];
+          };
+          if (cRes.ok && cj.ok) cals = cj.calendars ?? [];
+        }
+        if (cancelled) return;
+        const defaultCal = cals.find((c) => c.primary)?.id ?? cals[0]?.id ?? "primary";
+        setGcalConnected(connected);
+        setGcalList(cals);
+        if (createOpen) {
+          setCreateCalSync(connected);
+          setCreateCalIdPick(defaultCal);
+        }
+        if (completing) {
+          setFollowCalSync(connected);
+          setFollowCalIdPick(defaultCal);
+        }
+      } catch {
+        if (!cancelled) {
+          setGcalConnected(false);
+          setGcalList([]);
+          setCreateCalSync(false);
+          setFollowCalSync(false);
+        }
+      } finally {
+        if (!cancelled) setGcalLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [createOpen, completing]);
+
+  useEffect(() => {
     if (!createOpen) {
       setCreateTitle("");
       setCreateNote("");
@@ -234,6 +304,11 @@ export default function CallsClient() {
       const sched = createScheduledAt.trim()
         ? fromLocalInput(createScheduledAt)
         : "";
+      const syncOk =
+        gcalConnected &&
+        createCalSync &&
+        Boolean(sched.trim()) &&
+        Boolean(createCalIdPick.trim());
       const res = await fetch("/api/calls", {
         method: "POST",
         credentials: "include",
@@ -241,8 +316,12 @@ export default function CallsClient() {
         body: JSON.stringify({
           contactId: cid,
           repId: rid,
+          title: createTitle.trim(),
           note: createNote.trim(),
           scheduledAt: sched,
+          ...(syncOk
+            ? { syncToGoogleCalendar: true, googleCalendarId: createCalIdPick }
+            : {}),
         }),
       });
       const j = (await res.json().catch(() => ({}))) as {
@@ -296,6 +375,11 @@ export default function CallsClient() {
 
       if (createFollowUp) {
         const sched = followUpAt.trim() ? fromLocalInput(followUpAt) : "";
+        const syncFu =
+          gcalConnected &&
+          followCalSync &&
+          Boolean(sched.trim()) &&
+          Boolean(followCalIdPick.trim());
         const fu = await fetch("/api/calls", {
           method: "POST",
           credentials: "include",
@@ -306,6 +390,9 @@ export default function CallsClient() {
             note: followUpNote.trim(),
             scheduledAt: sched,
             followUpOfId: completing.id,
+            ...(syncFu
+              ? { syncToGoogleCalendar: true, googleCalendarId: followCalIdPick }
+              : {}),
           }),
         });
         const fj = (await fu.json().catch(() => ({}))) as {
@@ -460,6 +547,7 @@ export default function CallsClient() {
               <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>טלפון</th>
               <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>נציג</th>
               <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>תאריך לביצוע</th>
+              <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>לוח שנה</th>
               <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>סטטוס</th>
               <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>הערה</th>
               <th style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>פעולות</th>
@@ -468,7 +556,7 @@ export default function CallsClient() {
           <tbody>
             {visibleCalls.length === 0 && !loading ? (
               <tr>
-                <td colSpan={7} style={{ padding: 14, color: "#6b7280", textAlign: "center" }}>
+                <td colSpan={8} style={{ padding: 14, color: "#6b7280", textAlign: "center" }}>
                   {tab === "today" ? "אין שיחות מתוכננות להיום" : "אין שיחות לפי הסינון שנבחר"}
                 </td>
               </tr>
@@ -501,6 +589,24 @@ export default function CallsClient() {
                 <td style={{ padding: 10 }}>{c.repName || "—"}</td>
                 <td style={{ padding: 10 }}>
                   {c.scheduledAt ? formatIsraelDateTime(c.scheduledAt) : "—"}
+                </td>
+                <td style={{ padding: 10, fontSize: 12 }}>
+                  {c.syncToGoogleCalendar && c.googleEventId ? (
+                    <span
+                      style={{
+                        background: "#e0f2fe",
+                        color: "#0369a1",
+                        borderRadius: 999,
+                        padding: "2px 8px",
+                        fontWeight: 800,
+                      }}
+                      title={c.googleCalendarId ?? ""}
+                    >
+                      מסונכרן
+                    </span>
+                  ) : (
+                    <span style={{ color: "#9ca3af" }}>—</span>
+                  )}
                 </td>
                 <td style={{ padding: 10 }}>
                   <span
@@ -692,6 +798,55 @@ export default function CallsClient() {
                 }}
               />
 
+              {gcalLoading ? (
+                <p style={{ margin: 0, fontSize: 11, color: "#6b7280" }}>
+                  בודק חיבור ל-Google Calendar...
+                </p>
+              ) : gcalConnected ? (
+                <div
+                  style={{
+                    border: "1px solid #e9d5ff",
+                    borderRadius: 12,
+                    padding: 10,
+                    background: "#faf5ff",
+                  }}
+                >
+                  <label
+                    style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, fontSize: 12 }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={createCalSync}
+                      onChange={(e) => setCreateCalSync(e.target.checked)}
+                    />
+                    סנכרן ל-Google Calendar (תזכורת בלוח)
+                  </label>
+                  <p style={{ margin: "6px 0 8px", fontSize: 11, color: "#6b7280" }}>
+                    נדרש תאריך לביצוע. ייווצר אירוע של חצי שעה עם התראה קופצת 15 דק׳ לפני.
+                  </p>
+                  <select
+                    value={createCalIdPick}
+                    onChange={(e) => setCreateCalIdPick(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "8px 10px",
+                      borderRadius: 10,
+                      border: "1px solid #e5e7eb",
+                    }}
+                  >
+                    {gcalList.length === 0 ? (
+                      <option value="primary">ראשי (primary)</option>
+                    ) : (
+                      gcalList.map((cal) => (
+                        <option key={cal.id} value={cal.id}>
+                          {(cal.summary ?? cal.id) + (cal.primary ? " ★" : "")}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+              ) : null}
+
               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                 <button
                   type="button"
@@ -829,6 +984,56 @@ export default function CallsClient() {
                       lineHeight: 1.5,
                     }}
                   />
+
+                  {gcalConnected ? (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        border: "1px solid #e9d5ff",
+                        borderRadius: 12,
+                        padding: 10,
+                        background: "#fff",
+                      }}
+                    >
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          fontWeight: 700,
+                          fontSize: 12,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={followCalSync}
+                          onChange={(e) => setFollowCalSync(e.target.checked)}
+                        />
+                        סנכרן פולואפ ל-Google Calendar
+                      </label>
+                      <select
+                        value={followCalIdPick}
+                        onChange={(e) => setFollowCalIdPick(e.target.value)}
+                        style={{
+                          width: "100%",
+                          marginTop: 8,
+                          padding: "8px 10px",
+                          borderRadius: 10,
+                          border: "1px solid #e5e7eb",
+                        }}
+                      >
+                        {gcalList.length === 0 ? (
+                          <option value="primary">ראשי (primary)</option>
+                        ) : (
+                          gcalList.map((cal) => (
+                            <option key={cal.id} value={cal.id}>
+                              {(cal.summary ?? cal.id) + (cal.primary ? " ★" : "")}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 

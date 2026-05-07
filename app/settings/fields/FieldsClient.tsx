@@ -362,6 +362,9 @@ export default function FieldsClient({ tenantId = null }: FieldsClientProps) {
   const [pipelinePick, setPipelinePick] = useState<string[]>([]);
   /** false = כל הפייפליינים (שולחים pipelineIds ריק); true = רק הנבחרים ב-pipelinePick */
   const [restrictPipelines, setRestrictPipelines] = useState(false);
+  const [seedingSystem, setSeedingSystem] = useState(false);
+  const [seedMessage, setSeedMessage] = useState<string | null>(null);
+  const [seedError, setSeedError] = useState<string | null>(null);
 
   const pipelineNameById = useMemo(() => new Map(pipelines.map((p) => [p.id, p.name])), [pipelines]);
 
@@ -432,6 +435,51 @@ export default function FieldsClient({ tenantId = null }: FieldsClientProps) {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
+
+  async function seedSystemFields(opts: { silent?: boolean } = {}) {
+    if (isHotAfikFieldsTenant) return;
+    setSeedingSystem(true);
+    setSeedMessage(null);
+    setSeedError(null);
+    try {
+      const res = await fetch("/api/moving-orders/seed-fields", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        opportunityWelcomeFieldIds?: string[];
+        contactFieldIds?: string[];
+      };
+      if (!res.ok || !j.ok) {
+        if (!opts.silent) setSeedError(j.error ?? "סנכרון שדות מערכת נכשל");
+        return;
+      }
+      if (!opts.silent) {
+        const oppCount = j.opportunityWelcomeFieldIds?.length ?? 0;
+        const contactCount = j.contactFieldIds?.length ?? 0;
+        setSeedMessage(`סונכרנו בהצלחה — ${oppCount} שדות הזדמנות, ${contactCount} שדות איש קשר.`);
+      }
+      await load();
+    } catch (e) {
+      if (!opts.silent) setSeedError(e instanceof Error ? e.message : "סנכרון שדות מערכת נכשל");
+    } finally {
+      setSeedingSystem(false);
+    }
+  }
+
+  useEffect(() => {
+    if (isHotAfikFieldsTenant) return;
+    if (typeof window === "undefined") return;
+    const sessionKey = "fields-seed-system-v2";
+    if (window.sessionStorage.getItem(sessionKey) === "done") return;
+    void seedSystemFields({ silent: true }).then(() => {
+      window.sessionStorage.setItem(sessionKey, "done");
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHotAfikFieldsTenant]);
 
   useEffect(() => {
     if (isHotAfikFieldsTenant && scope === "moving_order") setScope("all");
@@ -574,7 +622,65 @@ export default function FieldsClient({ tenantId = null }: FieldsClientProps) {
 
   return (
     <div style={{ maxWidth: 1100 }}>
-      <h1 style={{ margin: "4px 0 10px", fontSize: 20 }}>שדות מותאמים</h1>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+          flexWrap: "wrap",
+          margin: "4px 0 10px",
+        }}
+      >
+        <h1 style={{ margin: 0, fontSize: 20 }}>שדות מותאמים</h1>
+        {!isHotAfikFieldsTenant ? (
+          <button
+            type="button"
+            onClick={() => void seedSystemFields()}
+            disabled={seedingSystem}
+            title="ייצור/יוודא שכל שדות המערכת של הזדמנויות וקונטקטים קיימים — בטוח להריץ שוב ושוב."
+            style={{
+              padding: "8px 14px",
+              borderRadius: 10,
+              border: "none",
+              background: "linear-gradient(180deg, #34d399 0%, #047857 100%)",
+              color: "#fff",
+              fontWeight: 800,
+              cursor: seedingSystem ? "wait" : "pointer",
+            }}
+          >
+            {seedingSystem ? "מסנכרן…" : "סנכרן שדות מערכת"}
+          </button>
+        ) : null}
+      </div>
+      {seedMessage ? (
+        <div
+          style={{
+            padding: 10,
+            background: "#ecfdf5",
+            color: "#065f46",
+            borderRadius: 10,
+            marginBottom: 10,
+            fontSize: 13,
+          }}
+        >
+          {seedMessage}
+        </div>
+      ) : null}
+      {seedError ? (
+        <div
+          style={{
+            padding: 10,
+            background: "#fef2f2",
+            color: "#b91c1c",
+            borderRadius: 10,
+            marginBottom: 10,
+            fontSize: 13,
+          }}
+        >
+          {seedError}
+        </div>
+      ) : null}
       <LabelsCatalogBlock />
       <div
         style={{

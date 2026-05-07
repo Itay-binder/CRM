@@ -139,21 +139,51 @@ export async function applyMatchSendSideEffects(params: {
   const idx = opportunitiesByContactId(opps);
 
   for (const contactId of params.contactIds) {
-    let leadsCountText = "";
+    const counterLines: string[] = [];
     const opp = idx.get(contactId);
     if (opp) {
       const cv = { ...(opp.customValues ?? {}) };
-      const k = MOVER_OPPORTUNITY_FIELD_IDS.leadsCount;
-      const next = (Number(cv[k]) || 0) + 1;
-      cv[k] = next;
-      leadsCountText = `כמות לידים כוללת למוביל (כולל הזמנה זו): ${next}`;
+      const totalKey = MOVER_OPPORTUNITY_FIELD_IDS.leadsCount;
+      const sentKey = MOVER_OPPORTUNITY_FIELD_IDS.currentPackageSentLeadsCount;
+      const sizeKey = MOVER_OPPORTUNITY_FIELD_IDS.currentPackageLeadsCount;
+
+      const nextTotal = (Number(cv[totalKey]) || 0) + 1;
+      cv[totalKey] = nextTotal;
+      counterLines.push(
+        `כמות לידים כוללת למוביל (כולל הזמנה זו): ${nextTotal}`
+      );
+
+      const packageSize = Number(cv[sizeKey]) || 0;
+      let nextSent = (Number(cv[sentKey]) || 0) + 1;
+      let packageReached = false;
+      if (packageSize > 0 && nextSent >= packageSize) {
+        packageReached = true;
+        counterLines.push(
+          `כמות לידים בחבילה הנוכחית: ${nextSent}/${packageSize}`
+        );
+        nextSent = 0;
+        counterLines.push(
+          `החבילה הנוכחית הסתיימה — הקאונטר אופס לאפס לחבילה הבאה`
+        );
+      } else if (packageSize > 0) {
+        counterLines.push(
+          `כמות לידים בחבילה הנוכחית: ${nextSent}/${packageSize}`
+        );
+      } else {
+        counterLines.push(
+          `כמות לידים בחבילה הנוכחית: ${nextSent}`
+        );
+      }
+      cv[sentKey] = nextSent;
+
       try {
         await updateOpportunity(opp.id, { customValues: cv, lastLeadAt: new Date() });
       } catch {
         /* ignore */
       }
+      void packageReached;
     }
-    const noteLines = [head, ...extra, leadsCountText].filter(Boolean);
+    const noteLines = [head, ...extra, ...counterLines].filter(Boolean);
     const note = noteLines.join("\n");
     try {
       await appendLeadNote(contactId, { text: note, createdBy: "התאמת הזמנות" });
@@ -171,21 +201,32 @@ export async function applyMatchRemoveSideEffects(contactIds: string[]): Promise
   const idx = opportunitiesByContactId(opps);
 
   for (const contactId of ids) {
-    let next = 0;
     const opp = idx.get(contactId);
     if (!opp) continue;
     const cv = { ...(opp.customValues ?? {}) };
-    const k = MOVER_OPPORTUNITY_FIELD_IDS.leadsCount;
-    next = Math.max(0, (Number(cv[k]) || 0) - 1);
-    cv[k] = next;
+    const totalKey = MOVER_OPPORTUNITY_FIELD_IDS.leadsCount;
+    const sentKey = MOVER_OPPORTUNITY_FIELD_IDS.currentPackageSentLeadsCount;
+    const sizeKey = MOVER_OPPORTUNITY_FIELD_IDS.currentPackageLeadsCount;
+
+    const nextTotal = Math.max(0, (Number(cv[totalKey]) || 0) - 1);
+    cv[totalKey] = nextTotal;
+    const nextSent = Math.max(0, (Number(cv[sentKey]) || 0) - 1);
+    cv[sentKey] = nextSent;
+    const packageSize = Number(cv[sizeKey]) || 0;
+
     try {
       await updateOpportunity(opp.id, { customValues: cv });
     } catch {
       /* ignore */
     }
+    const sentLine =
+      packageSize > 0
+        ? `כמות לידים בחבילה הנוכחית (לאחר הזיכוי): ${nextSent}/${packageSize}`
+        : `כמות לידים בחבילה הנוכחית (לאחר הזיכוי): ${nextSent}`;
     const note = [
       "זיכוי ליד: הוסרה התאמת הזמנה שנשלחה למוביל.",
-      `כמות לידים כוללת למוביל (לאחר הזיכוי): ${next}`,
+      `כמות לידים כוללת למוביל (לאחר הזיכוי): ${nextTotal}`,
+      sentLine,
     ].join("\n");
     try {
       await appendLeadNote(contactId, { text: note, createdBy: "זיכוי הזמנה" });

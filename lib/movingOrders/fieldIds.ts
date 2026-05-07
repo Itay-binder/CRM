@@ -54,6 +54,7 @@ export const MOVER_OPPORTUNITY_FIELD_IDS = {
   workAvailabilityStatus: "opportunity_work_availability_status",
   immediateAvailability: "opportunity_immediate_availability",
   currentPackageLeadsCount: "opportunity_package_current_leads_count",
+  currentPackageSentLeadsCount: "opportunity_package_current_leads_count_sent",
   leadsCount: "opportunity_leads_count",
 } as const;
 

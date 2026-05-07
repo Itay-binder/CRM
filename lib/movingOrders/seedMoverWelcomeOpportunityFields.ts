@@ -52,7 +52,12 @@ export async function seedMoverWelcomeOpportunityFields(): Promise<{ fieldIds: s
     },
     {
       fieldId: "package_current_leads_count",
-      label: "כמות לידים בחבילה נוכחית",
+      label: "כמות לידים שרכש (חבילה נוכחית)",
+      type: "number",
+    },
+    {
+      fieldId: "package_current_leads_count_sent",
+      label: "כמות לידים חבילה נוכחית (נשלחו)",
       type: "number",
     },
     {

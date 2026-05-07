@@ -230,7 +230,8 @@ function payingCustomersCustomFieldRank(fieldId: string): number {
     ["mover_same_day", 10],
     ["leads_count", 11],
     ["package_current_leads_count", 12],
-    ["work_availability_status", 13],
+    ["package_current_leads_count_sent", 13],
+    ["work_availability_status", 14],
   ]);
   return ranks.get(k) ?? Number.MAX_SAFE_INTEGER;
 }

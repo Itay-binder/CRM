@@ -191,11 +191,20 @@ export async function createSalesCall(input: {
 
   let snap = await ref.get();
   let rec = mapDoc(snap.id, (snap.data() ?? {}) as Record<string, unknown>);
-  const calPatch = await reconcileSalesCallGoogleCalendar(null, rec, {
-    syncToGoogleCalendar: input.syncToGoogleCalendar,
-    googleCalendarId: input.googleCalendarId,
-  });
-  await ref.set({ ...calPatch, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  if (wantsCal) {
+    try {
+      const calPatch = await reconcileSalesCallGoogleCalendar(null, rec, {
+        syncToGoogleCalendar: input.syncToGoogleCalendar,
+        googleCalendarId: input.googleCalendarId,
+      });
+      await ref.set(
+        { ...calPatch, updatedAt: FieldValue.serverTimestamp() },
+        { merge: true }
+      );
+    } catch (e) {
+      console.error("[salesCalls] calendar sync on create failed", e);
+    }
+  }
 
   const isFollowUp = Boolean(input.followUpOfId?.trim());
   const noteHeading = isFollowUp ? "פולואפ שיחה נקבע" : "שיחה חדשה נקבעה";
@@ -301,13 +310,24 @@ export async function updateSalesCall(
   let after = await ref.get();
   let next = mapDoc(after.id, (after.data() ?? {}) as Record<string, unknown>);
 
-  const calPatch = await reconcileSalesCallGoogleCalendar(prev, next, {
-    syncToGoogleCalendar: input.syncToGoogleCalendar,
-    googleCalendarId: input.googleCalendarId,
-  });
-  await ref.set({ ...calPatch, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-  after = await ref.get();
-  next = mapDoc(after.id, (after.data() ?? {}) as Record<string, unknown>);
+  const hasPrevEvent = Boolean(String(prev.googleEventId ?? "").trim());
+  const userTouchesCal = input.syncToGoogleCalendar !== undefined;
+  if (hasPrevEvent || userTouchesCal || willNeedGoogle) {
+    try {
+      const calPatch = await reconcileSalesCallGoogleCalendar(prev, next, {
+        syncToGoogleCalendar: input.syncToGoogleCalendar,
+        googleCalendarId: input.googleCalendarId,
+      });
+      await ref.set(
+        { ...calPatch, updatedAt: FieldValue.serverTimestamp() },
+        { merge: true }
+      );
+      after = await ref.get();
+      next = mapDoc(after.id, (after.data() ?? {}) as Record<string, unknown>);
+    } catch (e) {
+      console.error("[salesCalls] calendar sync on update failed", e);
+    }
+  }
 
   // Append summary note when call is closed.
   if (

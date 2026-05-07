@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { isMovingOrdersTenant } from "@/lib/tenant/movingOrders";
 
 type EntityType = "contact" | "opportunity" | "moving_order";
 type FieldType =
@@ -362,6 +363,12 @@ export default function FieldsClient({ tenantId = null }: FieldsClientProps) {
   const [pipelinePick, setPipelinePick] = useState<string[]>([]);
   /** false = כל הפייפליינים (שולחים pipelineIds ריק); true = רק הנבחרים ב-pipelinePick */
   const [restrictPipelines, setRestrictPipelines] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [cleanupBusy, setCleanupBusy] = useState(false);
+  const [cleanupMsg, setCleanupMsg] = useState<string | null>(null);
+
+  const showMovingOrdersCleanup =
+    !isHotAfikFieldsTenant && isMovingOrdersTenant(tenantId ?? "");
 
   const pipelineNameById = useMemo(() => new Map(pipelines.map((p) => [p.id, p.name])), [pipelines]);
 
@@ -432,6 +439,56 @@ export default function FieldsClient({ tenantId = null }: FieldsClientProps) {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/auth/me", { credentials: "include", cache: "no-store" });
+        const j = (await res.json().catch(() => ({}))) as { ok?: boolean; isAdmin?: boolean };
+        if (res.ok && j.ok && j.isAdmin) setIsAdmin(true);
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, []);
+
+  async function deleteMoverWelcomeQuestionnaireFields() {
+    setCleanupMsg(null);
+    const ok = window.confirm(
+      "למחוק את כל שדות «שאלון וולקאם מוביל» (מזהים opportunity_mover_welcome_*) מהמערכת?\n\nלא יימחקו: מספר לידים, חבילה נוכחית, כמות נשלחו בחבילה, וזמינות לקבל לידים."
+    );
+    if (!ok) return;
+    setCleanupBusy(true);
+    try {
+      const res = await fetch("/api/moving-orders/delete-mover-welcome-fields", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        deleted?: string[];
+        failed?: Array<{ fieldId: string; error: string }>;
+      };
+      if (!res.ok || !j.ok) {
+        setCleanupMsg(j.error ?? "המחיקה נכשלה");
+        return;
+      }
+      const n = j.deleted?.length ?? 0;
+      const fail = j.failed?.length ?? 0;
+      if (fail > 0) {
+        setCleanupMsg(`נמחקו ${n} שדות; ${fail} נכשלו (ראה לוג שרת).`);
+      } else {
+        setCleanupMsg(`נמחקו ${n} שדות מותאמים. רענן את עמוד ההזדמנות כדי לראות את העדכון.`);
+      }
+      await load();
+    } catch {
+      setCleanupMsg("המחיקה נכשלה");
+    } finally {
+      setCleanupBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (isHotAfikFieldsTenant && scope === "moving_order") setScope("all");
@@ -575,6 +632,42 @@ export default function FieldsClient({ tenantId = null }: FieldsClientProps) {
   return (
     <div style={{ maxWidth: 1100 }}>
       <h1 style={{ margin: "4px 0 10px", fontSize: 20 }}>שדות מותאמים</h1>
+      {showMovingOrdersCleanup && isAdmin ? (
+        <div
+          style={{
+            background: "#fffbeb",
+            border: "1px solid #fcd34d",
+            borderRadius: 16,
+            padding: 14,
+            marginBottom: 14,
+          }}
+        >
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>ניקוי חד־פעמי: שאלון וולקאם מוביל</div>
+          <p style={{ margin: "0 0 10px", fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>
+            מוחק רק מסמכי שדות עם הקידומת <code>opportunity_mover_welcome_</code> — לא נוגע בשדות לידים,
+            חבילה, או זמינות לידים.
+          </p>
+          <button
+            type="button"
+            disabled={cleanupBusy}
+            onClick={() => void deleteMoverWelcomeQuestionnaireFields()}
+            style={{
+              padding: "8px 14px",
+              borderRadius: 10,
+              border: "1px solid #b91c1c",
+              background: "#fff",
+              color: "#b91c1c",
+              fontWeight: 800,
+              cursor: cleanupBusy ? "wait" : "pointer",
+            }}
+          >
+            {cleanupBusy ? "מוחק…" : "מחק שדות וולקאם מוביל"}
+          </button>
+          {cleanupMsg ? (
+            <div style={{ marginTop: 10, fontSize: 13, color: "#065f46" }}>{cleanupMsg}</div>
+          ) : null}
+        </div>
+      ) : null}
       <LabelsCatalogBlock />
       <div
         style={{

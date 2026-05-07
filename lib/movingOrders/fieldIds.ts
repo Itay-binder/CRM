@@ -27,6 +27,19 @@ export const MOVER_WELCOME_OPPORTUNITY_FIELD_IDS = {
   notes: "opportunity_mover_welcome_notes",
 } as const;
 
+/**
+ * מזהי מסמכים ב־customFields — שאלון וולקאם מוביל בלבד (למחיקה יזומה).
+ * לא כולל לידים, חבילה, או שדות זמינות של פייפליין «לקוחות משלמים».
+ */
+export const MOVER_WELCOME_QUESTIONNAIRE_CUSTOM_FIELD_IDS: readonly string[] = Array.from(
+  new Set([
+    ...Object.values(MOVER_WELCOME_OPPORTUNITY_FIELD_IDS).filter((id) =>
+      id.startsWith("opportunity_mover_welcome_")
+    ),
+    "opportunity_mover_welcome_crane",
+  ])
+);
+
 /** שדות מותאמים לאנשי קשר — מובילים */
 export const MOVER_FIELD_IDS = {
   isMover: "contact_mover_is_mover",

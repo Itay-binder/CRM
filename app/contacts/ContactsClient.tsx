@@ -233,6 +233,7 @@ export default function ContactsClient() {
   const [ctTaskDue, setCtTaskDue] = useState("");
   const [ctTaskRem, setCtTaskRem] = useState("");
   const [ctTaskStatus, setCtTaskStatus] = useState<"todo" | "in_progress" | "done">("todo");
+  const [ctTaskNote, setCtTaskNote] = useState("");
   const [gcalLoading, setGcalLoading] = useState(false);
   const [gcalConnected, setGcalConnected] = useState(false);
   const [gcalList, setGcalList] = useState<GCalOpt[]>([]);
@@ -338,6 +339,7 @@ export default function ContactsClient() {
       setCtTaskDue("");
       setCtTaskRem("");
       setCtTaskStatus("todo");
+      setCtTaskNote("");
       return;
     }
     const t = contactTaskModal.task;
@@ -345,6 +347,7 @@ export default function ContactsClient() {
     setCtTaskDue(toLocalInputTask(t.dueAt));
     setCtTaskRem(toLocalInputTask(t.reminderAt ?? ""));
     setCtTaskStatus((t.status ?? (t.done ? "done" : "todo")) as "todo" | "in_progress" | "done");
+    setCtTaskNote("");
   }, [contactTaskModal]);
 
   useEffect(() => {
@@ -1912,6 +1915,23 @@ export default function ContactsClient() {
                 placeholder="כותרת"
                 style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
               />
+              {contactTaskModal.mode === "new" ? (
+                <>
+                  <label style={{ fontWeight: 700, fontSize: 12 }}>הערה לפתקים (אופציונלי)</label>
+                  <textarea
+                    value={ctTaskNote}
+                    onChange={(e) => setCtTaskNote(e.target.value)}
+                    placeholder="הערה שתתווסף לפתקים של איש הקשר/הזדמנות מקושרת..."
+                    style={{
+                      minHeight: 90,
+                      padding: "8px 10px",
+                      borderRadius: 10,
+                      border: "1px solid #e5e7eb",
+                      lineHeight: 1.5,
+                    }}
+                  />
+                </>
+              ) : null}
               <label style={{ fontWeight: 700, fontSize: 12 }}>דדליין (אופציונלי)</label>
               <input
                 type="datetime-local"
@@ -2003,6 +2023,7 @@ export default function ContactsClient() {
                     const remIso = ctTaskRem.trim() ? fromLocalInputTask(ctTaskRem) : "";
                     const title = ctTaskTitle.trim();
                     if (!title) return;
+                    const taskNoteText = ctTaskNote.trim();
                     const syncOk =
                       gcalConnected && ctSyncGcal && Boolean(dueIso.trim());
                     const gcalFields = syncOk
@@ -2023,8 +2044,19 @@ export default function ContactsClient() {
                           ...gcalFields,
                         },
                       ];
-                      setDetail((d) => (d ? { ...d, tasks } : d));
-                      void saveDetail({ tasks });
+                      const noteToAppend = taskNoteText
+                        ? {
+                            id: crypto.randomUUID(),
+                            text: `משימה חדשה: ${title}\n${taskNoteText}`,
+                            createdAt: new Date().toISOString(),
+                            createdBy: "משימות",
+                          }
+                        : null;
+                      const notes = noteToAppend
+                        ? [...(detail.notes ?? []), noteToAppend]
+                        : detail.notes ?? [];
+                      setDetail((d) => (d ? { ...d, tasks, notes } : d));
+                      void saveDetail(noteToAppend ? { tasks, notes } : { tasks });
                     } else {
                       const tid = contactTaskModal.task.id;
                       const tasks = (detail.tasks ?? []).map((x) =>

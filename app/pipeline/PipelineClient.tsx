@@ -480,6 +480,7 @@ export default function PipelineClient() {
   const [oppTfDue, setOppTfDue] = useState("");
   const [oppTfRem, setOppTfRem] = useState("");
   const [oppTfStatus, setOppTfStatus] = useState<"todo" | "in_progress" | "done">("todo");
+  const [oppTaskNote, setOppTaskNote] = useState("");
   const [oppGcalLoading, setOppGcalLoading] = useState(false);
   const [oppGcalConnected, setOppGcalConnected] = useState(false);
   const [oppGcalList, setOppGcalList] = useState<GCalOptOpp[]>([]);
@@ -754,6 +755,7 @@ export default function PipelineClient() {
       setOppTfDue("");
       setOppTfRem("");
       setOppTfStatus("todo");
+      setOppTaskNote("");
       return;
     }
     const t = oppTaskModal.task;
@@ -761,6 +763,7 @@ export default function PipelineClient() {
     setOppTfDue(toLocalInputOppTask(t.dueAt));
     setOppTfRem(toLocalInputOppTask(t.reminderAt ?? ""));
     setOppTfStatus((t.status ?? (t.done ? "done" : "todo")) as "todo" | "in_progress" | "done");
+    setOppTaskNote("");
   }, [oppTaskModal]);
 
   useEffect(() => {
@@ -3236,6 +3239,23 @@ export default function PipelineClient() {
                 placeholder="כותרת"
                 style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
               />
+              {oppTaskModal.mode === "new" ? (
+                <>
+                  <label style={{ fontWeight: 700, fontSize: 12 }}>הערה לפתקים (אופציונלי)</label>
+                  <textarea
+                    value={oppTaskNote}
+                    onChange={(e) => setOppTaskNote(e.target.value)}
+                    placeholder="הערה שתתווסף לפתקים של ההזדמנות/איש קשר מקושר..."
+                    style={{
+                      minHeight: 90,
+                      padding: "8px 10px",
+                      borderRadius: 10,
+                      border: "1px solid #e5e7eb",
+                      lineHeight: 1.5,
+                    }}
+                  />
+                </>
+              ) : null}
               <label style={{ fontWeight: 700, fontSize: 12 }}>דדליין (אופציונלי)</label>
               <input
                 type="datetime-local"
@@ -3326,6 +3346,7 @@ export default function PipelineClient() {
                     const remIso = oppTfRem.trim() ? fromLocalInputOppTask(oppTfRem) : "";
                     const title = oppTfTitle.trim();
                     if (!title) return;
+                    const taskNoteText = oppTaskNote.trim();
                     const id = selectedOpp.id;
                     const syncOk =
                       oppGcalConnected && oppSyncGcal && Boolean(dueIso.trim());
@@ -3347,8 +3368,22 @@ export default function PipelineClient() {
                           ...gcalFields,
                         },
                       ];
+                      const noteToAppend = taskNoteText
+                        ? {
+                            id: crypto.randomUUID(),
+                            text: `משימה חדשה: ${title}\n${taskNoteText}`,
+                            createdAt: new Date().toISOString(),
+                            createdBy: "משימות",
+                          }
+                        : null;
+                      const notes = noteToAppend ? [...oppNotes, noteToAppend] : oppNotes;
                       setOppTasks(tasks);
-                      void saveOpportunityPatch(id, { tasks }, { fromDetail: true });
+                      if (noteToAppend) setOppNotes(notes);
+                      void saveOpportunityPatch(
+                        id,
+                        noteToAppend ? { tasks, notes } : { tasks },
+                        { fromDetail: true }
+                      );
                     } else {
                       const tid = oppTaskModal.task.id;
                       const tasks = oppTasks.map((x) =>

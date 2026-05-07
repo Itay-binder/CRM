@@ -66,6 +66,7 @@ export default function CrmShell({
           <CrmNavLink href="/contacts" label="אנשי קשר" />
           <CrmNavLink href="/pipeline" label="ניהול הזדמנויות" />
           <CrmNavLink href="/tasks" label="משימות" />
+          <CrmNavLink href="/calls" label="ניהול שיחות" />
           <CrmNavLink href="/calendar" label="לוח שנה" />
           {isMovingOrdersTenant(currentTenantId) ? (
             <CrmNavLink href="/orders" label="ניהול הזמנות" />

@@ -52,7 +52,7 @@ type NoteItem = {
   createdBy?: string;
   attachments?: Array<{ id: string; fileName: string; url: string }>;
 };
-type NotesViewFilter = "all" | "orders" | "tasks";
+type NotesViewFilter = "all" | "orders" | "tasks" | "calls";
 type TaskItem = {
   id: string;
   title: string;
@@ -79,9 +79,21 @@ function isTaskFlowNote(note: NoteItem): boolean {
   return by.includes("משימה") || txt.includes("משימה");
 }
 
+function isCallsFlowNote(note: NoteItem): boolean {
+  const by = (note.createdBy ?? "").trim();
+  const txt = (note.text ?? "").trim();
+  if (by === "ניהול שיחות") return true;
+  return (
+    txt.includes("שיחה חדשה נקבעה") ||
+    txt.includes("שיחה בוצעה") ||
+    txt.includes("פולואפ שיחה")
+  );
+}
+
 function notePassesFilter(note: NoteItem, filter: NotesViewFilter): boolean {
   if (filter === "all") return true;
   if (filter === "orders") return isOrderFlowNote(note);
+  if (filter === "calls") return isCallsFlowNote(note);
   return isTaskFlowNote(note);
 }
 
@@ -1610,6 +1622,7 @@ export default function ContactsClient() {
                     { id: "all", label: "כל ההערות" },
                     { id: "orders", label: "הזמנות / זיכוי" },
                     { id: "tasks", label: "הערות משימות" },
+                    { id: "calls", label: "ניהול שיחות" },
                   ] as const).map((opt) => (
                     <button
                       key={opt.id}

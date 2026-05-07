@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-type Section = "fields" | "api" | "triggers" | "cityRegions" | "notifications";
+type Section = "fields" | "api" | "triggers" | "cityRegions" | "notifications" | "team";
 
 export default function SettingsSectionNav({
   active,
@@ -51,6 +51,9 @@ export default function SettingsSectionNav({
         style={active === "notifications" ? activeStyle : idleStyle}
       >
         התראות
+      </Link>
+      <Link href="/settings/team" style={active === "team" ? activeStyle : idleStyle}>
+        ניהול צוות
       </Link>
       {showMovingOrders ? (
         <Link

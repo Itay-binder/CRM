@@ -69,6 +69,8 @@ async function rematchMovingOrderDrivers(input: {
   customValues: Record<string, unknown>;
   prevManual: string[];
   prevExcluded: string[];
+  orderStatus: MovingOrderStatus;
+  sentMatchCount: number;
 }): Promise<{
   matchedDriverIds: string[];
   optionalDriverIds: string[];
@@ -88,7 +90,8 @@ async function rematchMovingOrderDrivers(input: {
       input.payload,
       input.customValues,
       settlementRegionMap,
-      manualSet
+      manualSet,
+      { orderStatus: input.orderStatus, sentMatchCount: input.sentMatchCount }
     );
   const knownIds = new Set<string>([...matchedDriverIds, ...optionalDriverIds, ...manualSet]);
   const excludedDriverIds = input.prevExcluded.map(String).filter((x) => knownIds.has(x));
@@ -307,6 +310,11 @@ export async function upsertMovingOrderFromIngest(
     customValues,
     prevManual,
     prevExcluded: prevExcluded,
+    orderStatus: prev.exists ? coerceStatus(prevData.status) : "pending",
+    sentMatchCount:
+      prev.exists && Array.isArray(prevData.sentMatchDriverIds)
+        ? (prevData.sentMatchDriverIds as unknown[]).length
+        : 0,
   });
 
   if (prev.exists) {
@@ -408,6 +416,8 @@ export async function createMovingOrderManual(
     customValues,
     prevManual: [],
     prevExcluded: [],
+    orderStatus: "pending",
+    sentMatchCount: 0,
   });
 
   const now = FieldValue.serverTimestamp();
@@ -551,6 +561,10 @@ export async function updateMovingOrder(
       customValues: resolvedCustom,
       prevManual: effManual,
       prevExcluded: effExcludedBefore,
+      orderStatus: coerceStatus(existing.status),
+      sentMatchCount: Array.isArray(existing.sentMatchDriverIds)
+        ? (existing.sentMatchDriverIds as unknown[]).length
+        : 0,
     });
     payload.matchedDriverIds = r.matchedDriverIds;
     payload.optionalDriverIds = r.optionalDriverIds;

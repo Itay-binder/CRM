@@ -26,8 +26,9 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
-      icon: "/favicon.ico",
-      badge: "/favicon.ico",
+      /** נתיב אייקון מהאפליקציה (Next `app/icon.tsx`) — לא תלוי ב־favicon.ico */
+      icon: "/icon",
+      badge: "/icon",
       tag: uniqueTag,
       renotify: true,
       requireInteraction: true,

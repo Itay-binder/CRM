@@ -15,6 +15,21 @@ type ReviewForm = {
   text: string;
 };
 
+function toWhatsAppPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("972")) return digits;
+  if (digits.startsWith("0")) return `972${digits.slice(1)}`;
+  return digits;
+}
+
+function WhatsAppIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+    </svg>
+  );
+}
+
 export default function MoverProfileView({ data }: Props) {
   const [reviews, setReviews] = useState<MoverReview[]>(data.reviews);
   const [photos, setPhotos] = useState<MoverPhoto[]>(data.photos);
@@ -39,7 +54,10 @@ export default function MoverProfileView({ data }: Props) {
       });
       if (res.ok) {
         const json = await res.json();
-        if (json.review) setReviews((prev) => [json.review, ...prev]);
+        if (json.review) {
+          setReviews((prev) => [json.review, ...prev]);
+          setActiveReviewIdx(0);
+        }
         setShowReviewForm(false);
         setReviewSuccess(true);
         setReviewForm({ reviewerName: "", rating: 5, text: "" });
@@ -53,32 +71,15 @@ export default function MoverProfileView({ data }: Props) {
   async function uploadPhoto(file: File) {
     setPhotoUploading(true);
     try {
-      // Get signed upload URL from server
-      const presignRes = await fetch(`/api/movers/${data.slug}/photos`, {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/movers/${data.slug}/photos`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileName: file.name, fileType: file.type }),
+        body: formData,
       });
-      if (!presignRes.ok) return;
-      const { uploadUrl, photoUrl, photoId } = await presignRes.json();
-
-      // Upload to Firebase Storage via signed URL
-      await fetch(uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": file.type },
-        body: file,
-      });
-
-      // Confirm upload
-      const confirmRes = await fetch(`/api/movers/${data.slug}/photos`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ photoId }),
-      });
-      if (confirmRes.ok) {
-        const json = await confirmRes.json();
-        if (json.photo) setPhotos((prev) => [json.photo, ...prev]);
-      }
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json.photo) setPhotos((prev) => [json.photo, ...prev]);
     } finally {
       setPhotoUploading(false);
     }
@@ -97,6 +98,7 @@ export default function MoverProfileView({ data }: Props) {
   }
 
   const visibleReviews = reviews.filter((r) => !r.isHidden);
+  const waPhone = toWhatsAppPhone(data.phone);
 
   return (
     <div
@@ -180,7 +182,7 @@ export default function MoverProfileView({ data }: Props) {
               )}
             </div>
 
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <div
                 style={{
                   display: "inline-flex",
@@ -202,9 +204,22 @@ export default function MoverProfileView({ data }: Props) {
               <div style={{ fontWeight: 900, fontSize: 22, color: "#f9fafb", lineHeight: 1.2 }}>
                 {data.name}
               </div>
-              <div style={{ color: "#9ca3af", fontSize: 13, marginTop: 4 }}>
-                מוביל מקצועי
-              </div>
+
+              {/* Rating inline with name */}
+              {data.reviewCount > 0 ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 5 }}>
+                  <StarRating rating={data.rating} size={14} />
+                  <span style={{ fontWeight: 700, fontSize: 13, color: "#f9fafb" }}>
+                    {data.rating.toFixed(1)}
+                  </span>
+                  <span style={{ fontSize: 12, color: "#9ca3af" }}>
+                    ({data.reviewCount} המלצות)
+                  </span>
+                </div>
+              ) : (
+                <div style={{ color: "#9ca3af", fontSize: 13, marginTop: 4 }}>מוביל מקצועי</div>
+              )}
+
               {data.coverArea && (
                 <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 6, color: "#9ca3af", fontSize: 13 }}>
                   <span>📍</span>
@@ -232,14 +247,7 @@ export default function MoverProfileView({ data }: Props) {
 
           {/* Services */}
           {data.services.length > 0 && (
-            <div
-              style={{
-                display: "flex",
-                gap: 10,
-                marginTop: 16,
-                flexWrap: "wrap",
-              }}
-            >
+            <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
               {data.services.map((svc) => (
                 <div
                   key={svc}
@@ -266,7 +274,7 @@ export default function MoverProfileView({ data }: Props) {
           )}
         </div>
 
-        {/* Rating */}
+        {/* Rating breakdown */}
         {data.reviewCount > 0 && (
           <div
             style={{
@@ -333,7 +341,7 @@ export default function MoverProfileView({ data }: Props) {
           </div>
         )}
 
-        {/* Reviews */}
+        {/* Reviews carousel */}
         {visibleReviews.length > 0 && (
           <div
             style={{
@@ -350,48 +358,83 @@ export default function MoverProfileView({ data }: Props) {
               💬 המלצות מלקוחות
             </div>
 
-            {/* Single review display with navigation */}
+            {/* Review card */}
             <div
               style={{
                 background: "rgba(124,58,237,0.1)",
                 border: "1px solid rgba(124,58,237,0.2)",
                 borderRadius: 16,
-                padding: 16,
+                padding: "14px 16px",
               }}
             >
-              <div style={{ fontSize: 28, color: "#7c3aed", lineHeight: 1, marginBottom: 8 }}>&ldquo;</div>
-              <div style={{ color: "#e5e7eb", fontSize: 14, lineHeight: 1.6, minHeight: 60 }}>
-                {visibleReviews[activeReviewIdx]?.text}
-              </div>
-              <div style={{ marginTop: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              {/* Reviewer name + stars at top */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: "#c4b5fd" }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: "#c4b5fd", marginBottom: 3 }}>
                     {visibleReviews[activeReviewIdx]?.reviewerName}
                   </div>
                   <StarRating rating={visibleReviews[activeReviewIdx]?.rating ?? 5} size={14} />
                 </div>
+                <div style={{ fontSize: 28, color: "#7c3aed", lineHeight: 1, opacity: 0.7 }}>&ldquo;</div>
+              </div>
+
+              {/* Review text */}
+              <div style={{ color: "#e5e7eb", fontSize: 14, lineHeight: 1.6, minHeight: 54 }}>
+                {visibleReviews[activeReviewIdx]?.text}
               </div>
             </div>
 
-            {/* Dots navigation */}
+            {/* Navigation */}
             {visibleReviews.length > 1 && (
-              <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
-                {visibleReviews.slice(0, 6).map((_, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setActiveReviewIdx(i)}
-                    style={{
-                      width: i === activeReviewIdx ? 20 : 8,
-                      height: 8,
-                      borderRadius: 4,
-                      background: i === activeReviewIdx ? "#7c3aed" : "rgba(139,92,246,0.3)",
-                      border: "none",
-                      cursor: "pointer",
-                      transition: "all 0.3s ease",
-                      padding: 0,
-                    }}
-                  />
-                ))}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginTop: 14,
+                }}
+              >
+                <button
+                  onClick={() =>
+                    setActiveReviewIdx((i) => (i + 1) % visibleReviews.length)
+                  }
+                  style={navBtnStyle}
+                  aria-label="הקודם"
+                >
+                  ›
+                </button>
+
+                <div style={{ display: "flex", gap: 6 }}>
+                  {visibleReviews.slice(0, 8).map((_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setActiveReviewIdx(i)}
+                      style={{
+                        width: i === activeReviewIdx ? 20 : 8,
+                        height: 8,
+                        borderRadius: 4,
+                        background:
+                          i === activeReviewIdx ? "#7c3aed" : "rgba(139,92,246,0.3)",
+                        border: "none",
+                        cursor: "pointer",
+                        transition: "all 0.3s ease",
+                        padding: 0,
+                      }}
+                    />
+                  ))}
+                </div>
+
+                <button
+                  onClick={() =>
+                    setActiveReviewIdx(
+                      (i) => (i - 1 + visibleReviews.length) % visibleReviews.length
+                    )
+                  }
+                  style={navBtnStyle}
+                  aria-label="הבא"
+                >
+                  ‹
+                </button>
               </div>
             )}
           </div>
@@ -412,13 +455,7 @@ export default function MoverProfileView({ data }: Props) {
             <div style={{ fontWeight: 800, fontSize: 14, color: "#c4b5fd", marginBottom: 14 }}>
               📸 תמונות מהובלות
             </div>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(3, 1fr)",
-                gap: 8,
-              }}
-            >
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
               {photos
                 .filter((p) => !p.isHidden)
                 .slice(0, 6)
@@ -444,7 +481,7 @@ export default function MoverProfileView({ data }: Props) {
           </div>
         )}
 
-        {/* Add review */}
+        {/* Add review + customer photo upload */}
         <div
           style={{
             background: "rgba(255,255,255,0.04)",
@@ -538,7 +575,10 @@ export default function MoverProfileView({ data }: Props) {
                   {submittingReview ? "שולח…" : "שלח המלצה"}
                 </button>
                 <button
-                  onClick={() => { setShowReviewForm(false); setReviewForm({ reviewerName: "", rating: 5, text: "" }); }}
+                  onClick={() => {
+                    setShowReviewForm(false);
+                    setReviewForm({ reviewerName: "", rating: 5, text: "" });
+                  }}
                   style={{
                     padding: "12px 16px",
                     borderRadius: 12,
@@ -571,6 +611,7 @@ export default function MoverProfileView({ data }: Props) {
                 cursor: photoUploading ? "not-allowed" : "pointer",
                 textAlign: "center",
                 fontFamily: "inherit",
+                boxSizing: "border-box",
               }}
             >
               {photoUploading ? "מעלה תמונה…" : "📷 הוסף תמונה מההובלה"}
@@ -622,7 +663,6 @@ export default function MoverProfileView({ data }: Props) {
               justifyContent: "center",
               gap: 8,
               fontFamily: "inherit",
-              position: "relative",
             }}
           >
             🔗 {shareTooltip ? "הועתק!" : "שיתוף הכרטיס"}
@@ -646,7 +686,7 @@ export default function MoverProfileView({ data }: Props) {
             📞
           </a>
           <a
-            href={`https://wa.me/${data.phone.replace(/\D/g, "")}`}
+            href={`https://wa.me/${waPhone}`}
             target="_blank"
             rel="noopener noreferrer"
             style={{
@@ -663,13 +703,30 @@ export default function MoverProfileView({ data }: Props) {
               gap: 6,
             }}
           >
-            💬
+            <WhatsAppIcon />
           </a>
         </div>
       </div>
     </div>
   );
 }
+
+const navBtnStyle: React.CSSProperties = {
+  width: 32,
+  height: 32,
+  borderRadius: "50%",
+  border: "1px solid rgba(139,92,246,0.3)",
+  background: "rgba(124,58,237,0.1)",
+  color: "#c4b5fd",
+  fontSize: 20,
+  lineHeight: 1,
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontFamily: "inherit",
+  padding: 0,
+};
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
@@ -681,4 +738,5 @@ const inputStyle: React.CSSProperties = {
   fontSize: 14,
   outline: "none",
   fontFamily: "var(--font-rubik), Rubik, sans-serif",
+  boxSizing: "border-box",
 };

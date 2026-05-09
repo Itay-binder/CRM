@@ -21,6 +21,7 @@ export default function ManagePageClient({ data: initial }: Props) {
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
   const [photoUploading, setPhotoUploading] = useState(false);
+  const [profileImageUploading, setProfileImageUploading] = useState(false);
 
   // Editable profile fields
   const [name, setName] = useState(initial.name);
@@ -85,31 +86,34 @@ export default function ManagePageClient({ data: initial }: Props) {
   async function uploadPhoto(file: File) {
     setPhotoUploading(true);
     try {
-      const presignRes = await fetch(`/api/movers/${profile.slug}/photos`, {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/movers/${profile.slug}/photos`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileName: file.name, fileType: file.type }),
+        body: formData,
       });
-      if (!presignRes.ok) return;
-      const { uploadUrl, photoId } = await presignRes.json();
-
-      await fetch(uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": file.type },
-        body: file,
-      });
-
-      const confirmRes = await fetch(`/api/movers/${profile.slug}/photos`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ photoId }),
-      });
-      if (confirmRes.ok) {
-        const json = await confirmRes.json();
-        if (json.photo) setPhotos((prev) => [json.photo, ...prev]);
-      }
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json.photo) setPhotos((prev) => [json.photo, ...prev]);
     } finally {
       setPhotoUploading(false);
+    }
+  }
+
+  async function uploadProfileImage(file: File) {
+    setProfileImageUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/movers/${profile.slug}/manage/profile-image`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) return;
+      const { imageUrl } = await res.json();
+      if (imageUrl) setProfileImageUrl(imageUrl);
+    } finally {
+      setProfileImageUploading(false);
     }
   }
 
@@ -267,14 +271,71 @@ export default function ManagePageClient({ data: initial }: Props) {
               />
             </FieldBlock>
 
-            <FieldBlock label="תמונת פרופיל (URL)">
-              <input
-                type="url"
-                value={profileImageUrl}
-                onChange={(e) => setProfileImageUrl(e.target.value)}
-                placeholder="https://..."
-                style={inputStyle}
-              />
+            <FieldBlock label="תמונת פרופיל">
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <div
+                  style={{
+                    width: 80,
+                    height: 80,
+                    borderRadius: "50%",
+                    background: "rgba(255,255,255,0.07)",
+                    border: "2px solid rgba(139,92,246,0.35)",
+                    overflow: "hidden",
+                    flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {profileImageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={profileImageUrl}
+                      alt="תמונת פרופיל"
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  ) : (
+                    <span style={{ fontSize: 28 }}>👤</span>
+                  )}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label
+                    style={{
+                      display: "inline-block",
+                      padding: "10px 18px",
+                      borderRadius: 10,
+                      border: "1px solid rgba(139,92,246,0.4)",
+                      background: profileImageUploading
+                        ? "rgba(124,58,237,0.08)"
+                        : "rgba(124,58,237,0.15)",
+                      color: profileImageUploading ? "#9ca3af" : "#c4b5fd",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: profileImageUploading ? "not-allowed" : "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    {profileImageUploading ? "מעלה תמונה…" : "בחר תמונה"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ display: "none" }}
+                      disabled={profileImageUploading}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) uploadProfileImage(file);
+                      }}
+                    />
+                  </label>
+                  {profileImageUrl && (
+                    <div
+                      style={{ fontSize: 11, color: "#6b7280", marginTop: 6, wordBreak: "break-all" }}
+                    >
+                      {profileImageUrl.split("/").pop()}
+                    </div>
+                  )}
+                </div>
+              </div>
             </FieldBlock>
 
             <FieldBlock label="שירותים">

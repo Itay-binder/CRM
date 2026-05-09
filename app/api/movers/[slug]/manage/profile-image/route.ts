@@ -1,22 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getMoverProfilesDb } from "@/movers-profile/firestore";
-import { getMoverProfileBySlug, addPhoto } from "@/movers-profile/repo";
-import { getAdminStorageBucket } from "@/lib/firebase/admin";
+import { getMoverProfileBySlug } from "@/movers-profile/repo";
 import { getMoverSession, normalizePhoneForAuth } from "@/movers-profile/session";
+import { getAdminStorageBucket } from "@/lib/firebase/admin";
 
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ slug: string }> };
 
-const MAX_BYTES = 15 * 1024 * 1024;
+const MAX_BYTES = 10 * 1024 * 1024;
 
 export async function POST(req: NextRequest, { params }: Ctx) {
   const { slug } = await params;
   const db = getMoverProfilesDb();
   const profile = await getMoverProfileBySlug(db, slug);
-  if (!profile || !profile.isActive) {
-    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
-  }
+  if (!profile) return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+
+  const session = await getMoverSession();
+  const authed =
+    session &&
+    normalizePhoneForAuth(session.phone) === normalizePhoneForAuth(profile.phone);
+  if (!authed) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
   try {
     const form = await req.formData();
@@ -25,42 +29,32 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       return NextResponse.json({ ok: false, error: "file is required" }, { status: 400 });
     }
     if (file.size > MAX_BYTES) {
-      return NextResponse.json({ ok: false, error: "קובץ גדול מדי (מקסימום 15MB)" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "קובץ גדול מדי (מקסימום 10MB)" }, { status: 400 });
     }
-
-    const session = await getMoverSession();
-    const isMover =
-      session &&
-      normalizePhoneForAuth(session.phone) === normalizePhoneForAuth(profile.phone);
 
     const bucket = getAdminStorageBucket();
     const ext = (file.name.split(".").pop() ?? "jpg").toLowerCase();
-    const filePath = `mover-photos/${profile.id}/${Date.now()}.${ext}`;
+    const filePath = `mover-profile-images/${profile.id}/profile.${ext}`;
     const gcsFile = bucket.file(filePath);
 
     const buf = Buffer.from(await file.arrayBuffer());
     await gcsFile.save(buf, { metadata: { contentType: file.type || "image/jpeg" } });
 
-    let photoUrl: string;
+    let imageUrl: string;
     try {
       await gcsFile.makePublic();
       const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
-      photoUrl = `https://storage.googleapis.com/${bucket.name}/${encodedPath}`;
+      imageUrl = `https://storage.googleapis.com/${bucket.name}/${encodedPath}`;
     } catch {
       const [signed] = await gcsFile.getSignedUrl({
         version: "v4",
         action: "read",
         expires: Date.now() + 365 * 24 * 60 * 60 * 1000,
       });
-      photoUrl = signed;
+      imageUrl = signed;
     }
 
-    const photo = await addPhoto(db, profile.id, {
-      url: photoUrl,
-      uploadedBy: isMover ? "mover" : "customer",
-    });
-
-    return NextResponse.json({ ok: true, photo });
+    return NextResponse.json({ ok: true, imageUrl });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "העלאה נכשלה" },

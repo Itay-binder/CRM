@@ -71,6 +71,9 @@ export default function CrmShell({
           {isMovingOrdersTenant(currentTenantId) ? (
             <CrmNavLink href="/orders" label="ניהול הזמנות" />
           ) : null}
+          {isMovingOrdersTenant(currentTenantId) ? (
+            <CrmNavLink href="/mover-profiles" label="פרופיל מוביל" />
+          ) : null}
           {!isHotAfikTenant ? <CrmNavLink href="/billing" label="סליקה" /> : null}
           {!isHotAfikTenant ? (
             <CrmNavLink href="/whatsapp-automations" label="אוטומציות ווצאפ" />

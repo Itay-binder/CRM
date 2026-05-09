@@ -63,6 +63,17 @@ function serializeOpportunity(opp: OpportunityRecord): NonNullable<MatchWebhookM
   };
 }
 
+function readNumericCustomField(cv: Record<string, unknown> | undefined, key: string): number {
+  if (!cv) return 0;
+  const v = cv[key];
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v.trim()) {
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
+}
+
 /** שדות שטוחים לזיפייר/מייק — בנוסף למערך movers */
 export function flatMatchSendOpportunityFields(movers: MatchWebhookMover[]): Record<string, string | number> {
   const count = movers.length;
@@ -70,6 +81,7 @@ export function flatMatchSendOpportunityFields(movers: MatchWebhookMover[]): Rec
     opportunities_sent_count: count,
     "כמות הזדמנויות": count,
   };
+  const F = MOVER_OPPORTUNITY_FIELD_IDS;
   movers.forEach((m, idx) => {
     const i = idx + 1;
     const opp = m.opportunity;
@@ -82,6 +94,18 @@ export function flatMatchSendOpportunityFields(movers: MatchWebhookMover[]): Rec
     flat[`שם הזדמנות ${i}`] = name;
     flat[`מספר פלאפון הזדמנות ${i}`] = phone;
     flat[`מזהה הזדמנות ${i}`] = id;
+    if (opp?.customValues && typeof opp.customValues === "object") {
+      const cv = opp.customValues as Record<string, unknown>;
+      const totalLeads = readNumericCustomField(cv, F.leadsCount);
+      const packagePurchased = readNumericCustomField(cv, F.currentPackageLeadsCount);
+      const packageSent = readNumericCustomField(cv, F.currentPackageSentLeadsCount);
+      flat[`opportunity_total_leads_count_${i}`] = totalLeads;
+      flat[`opportunity_package_current_leads_purchased_${i}`] = packagePurchased;
+      flat[`opportunity_package_current_leads_sent_${i}`] = packageSent;
+      flat[`כמות פניות כללית למוביל ${i}`] = totalLeads;
+      flat[`כמות לידים בחבילה הנוכחית (שנרכשה) ${i}`] = packagePurchased;
+      flat[`כמות לידים בחבילה הנוכחית (נשלחו) ${i}`] = packageSent;
+    }
   });
   return flat;
 }

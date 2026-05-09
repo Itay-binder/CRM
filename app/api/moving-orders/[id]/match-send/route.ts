@@ -75,8 +75,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
   }
 
-  const webhookOk = await postMatchSendWebhookForDrivers(g.db, order, newDriverIds, notifyCustomer);
-
   const on = orderCustomerName(order);
   const pl = order.payload;
   const cv = order.customValues ?? {};
@@ -94,6 +92,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     orderId: order.orderId,
     transportNoteLines,
   });
+
+  const webhookOk = await postMatchSendWebhookForDrivers(g.db, order, newDriverIds, notifyCustomer);
 
   const dispatchedAt = new Date().toISOString();
   await enqueueMatchSendFollowupWebhook({

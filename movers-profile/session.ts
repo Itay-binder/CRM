@@ -46,10 +46,15 @@ export function parseMoverSessionValue(value: string): { phone: string } | null 
 }
 
 export async function getMoverSession(): Promise<{ phone: string } | null> {
-  const cookieStore = await cookies();
-  const value = cookieStore.get(MOVER_SESSION_COOKIE)?.value;
-  if (!value) return null;
-  return parseMoverSessionValue(value);
+  try {
+    const cookieStore = await cookies();
+    const value = cookieStore.get(MOVER_SESSION_COOKIE)?.value;
+    if (!value) return null;
+    return parseMoverSessionValue(value);
+  } catch {
+    // Secret not configured or cookie invalid — treat as unauthenticated
+    return null;
+  }
 }
 
 export function moverSessionCookieSet(value: string) {

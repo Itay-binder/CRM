@@ -151,16 +151,14 @@ export async function getReviews(
   profileId: string,
   includeHidden = false
 ): Promise<MoverReview[]> {
-  let query: FirebaseFirestore.Query = db
+  const snap = await db
     .collection("moverProfiles")
     .doc(profileId)
     .collection("reviews")
-    .orderBy("createdAt", "desc");
-  if (!includeHidden) {
-    query = query.where("isHidden", "==", false);
-  }
-  const snap = await query.get();
-  return snap.docs.map(docToReview);
+    .orderBy("createdAt", "desc")
+    .get();
+  const all = snap.docs.map(docToReview);
+  return includeHidden ? all : all.filter((r) => !r.isHidden);
 }
 
 export async function toggleReviewHidden(
@@ -205,16 +203,14 @@ export async function getPhotos(
   profileId: string,
   includeHidden = false
 ): Promise<MoverPhoto[]> {
-  let query: FirebaseFirestore.Query = db
+  const snap = await db
     .collection("moverProfiles")
     .doc(profileId)
     .collection("photos")
-    .orderBy("createdAt", "desc");
-  if (!includeHidden) {
-    query = query.where("isHidden", "==", false);
-  }
-  const snap = await query.get();
-  return snap.docs.map(docToPhoto);
+    .orderBy("createdAt", "desc")
+    .get();
+  const all = snap.docs.map(docToPhoto);
+  return includeHidden ? all : all.filter((p) => !p.isHidden);
 }
 
 export async function togglePhotoHidden(

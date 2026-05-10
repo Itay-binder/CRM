@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
 import { getMoverProfilesDb } from "@/movers-profile/firestore";
+import { normalizePhoneForAuth } from "@/movers-profile/phoneNormalize";
 import { listMoverProfiles, createMoverProfile } from "@/movers-profile/repo";
 
 export const dynamic = "force-dynamic";
@@ -29,15 +30,28 @@ export async function POST(req: NextRequest) {
 
   // Check slug uniqueness
   const { getMoverProfileBySlug } = await import("@/movers-profile/repo");
-  const existing = await getMoverProfileBySlug(db, String(slug));
+  const slugTrim = String(slug).trim().toLowerCase();
+  if (!/^[a-z0-9_-]+$/.test(slugTrim) || slugTrim.length > 64) {
+    return NextResponse.json(
+      { ok: false, error: "סלאג לא תקין (אנגלית קטנה, מקף, קו תחתון, ספרות)" },
+      { status: 400 }
+    );
+  }
+
+  const existing = await getMoverProfileBySlug(db, slugTrim);
   if (existing) {
     return NextResponse.json({ ok: false, error: "סלאג זה כבר קיים" }, { status: 409 });
   }
 
+  const phoneNorm = normalizePhoneForAuth(String(phone));
+  if (!phoneNorm || phoneNorm.replace(/\D/g, "").length < 11) {
+    return NextResponse.json({ ok: false, error: "מספר טלפון לא תקין" }, { status: 400 });
+  }
+
   const profile = await createMoverProfile(db, {
-    name: String(name),
-    phone: String(phone),
-    slug: String(slug),
+    name: String(name).trim(),
+    phone: phoneNorm,
+    slug: slugTrim,
     bio: bio ? String(bio) : undefined,
     coverArea: coverArea ? String(coverArea) : undefined,
     services: Array.isArray(services) ? services : [],

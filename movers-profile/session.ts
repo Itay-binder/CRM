@@ -1,6 +1,8 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
 
+export { normalizePhoneForAuth } from "./phoneNormalize";
+
 export const MOVER_SESSION_COOKIE = "mover_session";
 const MAX_AGE_SEC = 7 * 24 * 60 * 60; // 7 days
 
@@ -67,17 +69,4 @@ export function moverSessionCookieSet(value: string) {
     maxAge: MAX_AGE_SEC,
     path: "/",
   };
-}
-
-/** Normalize phone for comparison with Firebase Phone Auth result (+972...) */
-export function normalizePhoneForAuth(raw: string): string {
-  // Strip everything except digits and leading +
-  const cleaned = raw.replace(/[^\d+]/g, "");
-  if (cleaned.startsWith("+")) {
-    return cleaned.slice(1); // remove leading +, store as "972XXXXXXXXX"
-  }
-  if (cleaned.startsWith("972")) return cleaned;
-  if (cleaned.startsWith("0")) return `972${cleaned.slice(1)}`;
-  if (cleaned.length === 9 && /^5/.test(cleaned)) return `972${cleaned}`;
-  return cleaned;
 }

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import type { MoverProfile, MoverService } from "@/movers-profile/types";
 import { SERVICE_LABELS } from "@/movers-profile/types";
+import { normalizePhoneForAuth } from "@/movers-profile/phoneNormalize";
 
 const ALL_SERVICES: MoverService[] = ["apartment", "small", "office", "loading"];
 
@@ -51,6 +52,11 @@ export default function MoverProfilesClient({ initialProfiles }: Props) {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<CreateForm | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Opportunity search state
   const [opportunities, setOpportunities] = useState<OpportunityHit[]>([]);
@@ -98,7 +104,8 @@ export default function MoverProfilesClient({ initialProfiles }: Props) {
 
   function selectOpportunity(opp: OpportunityHit) {
     const name = displayName(opp);
-    const phone = displayPhone(opp);
+    const rawPhone = displayPhone(opp);
+    const phone = rawPhone.trim() ? normalizePhoneForAuth(rawPhone) : "";
     setSelectedOpp(opp);
     setOppSearch(name);
     setShowOppDropdown(false);
@@ -149,6 +156,96 @@ export default function MoverProfilesClient({ initialProfiles }: Props) {
     setForm({ name: "", phone: "", slug: "", bio: "", coverArea: "פעיל בכל הארץ", services: [] });
   }
 
+  function openEdit(profile: MoverProfile) {
+    setShowCreate(false);
+    setEditingId(profile.id);
+    setEditError("");
+    setEditForm({
+      name: profile.name,
+      phone: profile.phone,
+      slug: profile.slug,
+      bio: profile.bio ?? "",
+      coverArea: profile.coverArea ?? "פעיל בכל הארץ",
+      services: [...(profile.services ?? [])],
+    });
+  }
+
+  function closeEdit() {
+    setEditingId(null);
+    setEditForm(null);
+    setEditError("");
+  }
+
+  async function saveEdit() {
+    if (!editingId || !editForm) return;
+    if (!editForm.name.trim() || !editForm.phone.trim() || !editForm.slug.trim()) {
+      setEditError("שם, טלפון וסלאג הם שדות חובה");
+      return;
+    }
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      const res = await fetch(`/api/mover-profiles/${editingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editForm.name.trim(),
+          phone: normalizePhoneForAuth(editForm.phone),
+          slug: editForm.slug.trim().toLowerCase(),
+          bio: editForm.bio,
+          coverArea: editForm.coverArea,
+          services: editForm.services,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setEditError(data.error ?? "שגיאה בשמירה");
+        return;
+      }
+      if (data.profile) {
+        setProfiles((prev) =>
+          prev.map((p) => (p.id === editingId ? { ...p, ...data.profile } : p))
+        );
+      }
+      closeEdit();
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  function toggleEditService(svc: MoverService) {
+    setEditForm((f) =>
+      f
+        ? {
+            ...f,
+            services: f.services.includes(svc)
+              ? f.services.filter((s) => s !== svc)
+              : [...f.services, svc],
+          }
+        : f
+    );
+  }
+
+  async function deleteProfile(profile: MoverProfile) {
+    if (
+      !confirm(
+        `למחוק לצמיתות את הפרופיל של «${profile.name}»?\nיימחקו גם כל ההמלצות והתמונות.`
+      )
+    ) {
+      return;
+    }
+    setDeletingId(profile.id);
+    try {
+      const res = await fetch(`/api/mover-profiles/${profile.id}`, { method: "DELETE" });
+      if (res.ok) {
+        setProfiles((prev) => prev.filter((p) => p.id !== profile.id));
+        if (editingId === profile.id) closeEdit();
+      }
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   async function toggleActive(profile: MoverProfile) {
     setTogglingId(profile.id);
     try {
@@ -195,7 +292,10 @@ export default function MoverProfilesClient({ initialProfiles }: Props) {
           </p>
         </div>
         <button
-          onClick={() => setShowCreate(true)}
+          onClick={() => {
+            closeEdit();
+            setShowCreate(true);
+          }}
           style={{
             padding: "10px 18px",
             borderRadius: 10,
@@ -398,7 +498,7 @@ export default function MoverProfilesClient({ initialProfiles }: Props) {
               />
             </div>
             <div>
-              <label style={labelStyle}>טלפון *</label>
+              <label style={labelStyle}>טלפון * (נשמר כ־972… לזיהוי SMS)</label>
               <input
                 type="tel"
                 value={form.phone}
@@ -511,6 +611,165 @@ export default function MoverProfilesClient({ initialProfiles }: Props) {
         </div>
       )}
 
+      {/* Edit profile */}
+      {editingId && editForm && (
+        <div
+          style={{
+            background: "#fff",
+            border: "1px solid #c4b5fd",
+            borderRadius: 16,
+            padding: 24,
+            marginBottom: 24,
+            boxShadow: "0 4px 20px rgba(124,58,237,0.12)",
+          }}
+        >
+          <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 18 }}>
+            עריכת פרופיל מוביל
+          </div>
+          {editError && (
+            <div
+              style={{
+                background: "#fef2f2",
+                border: "1px solid #fecaca",
+                borderRadius: 8,
+                padding: "10px 14px",
+                color: "#b91c1c",
+                fontSize: 13,
+                marginBottom: 16,
+              }}
+            >
+              {editError}
+            </div>
+          )}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 14,
+              marginBottom: 14,
+            }}
+          >
+            <div>
+              <label style={labelStyle}>שם המוביל *</label>
+              <input
+                type="text"
+                value={editForm.name}
+                onChange={(e) => setEditForm((f) => (f ? { ...f, name: e.target.value } : f))}
+                style={formInputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>טלפון * (972… לאימות SMS)</label>
+              <input
+                type="tel"
+                value={editForm.phone}
+                onChange={(e) =>
+                  setEditForm((f) => (f ? { ...f, phone: e.target.value } : f))
+                }
+                style={{ ...formInputStyle, direction: "ltr" }}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>סלאג (URL) *</label>
+              <input
+                type="text"
+                value={editForm.slug}
+                onChange={(e) =>
+                  setEditForm((f) => (f ? { ...f, slug: e.target.value.trim().toLowerCase() } : f))
+                }
+                style={{ ...formInputStyle, direction: "ltr" }}
+              />
+              {editForm.slug && (
+                <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+                  /movers/{editForm.slug}
+                </div>
+              )}
+            </div>
+            <div>
+              <label style={labelStyle}>אזור פעילות</label>
+              <input
+                type="text"
+                value={editForm.coverArea}
+                onChange={(e) =>
+                  setEditForm((f) => (f ? { ...f, coverArea: e.target.value } : f))
+                }
+                style={formInputStyle}
+              />
+            </div>
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={labelStyle}>ביו / תיאור</label>
+            <textarea
+              value={editForm.bio}
+              onChange={(e) => setEditForm((f) => (f ? { ...f, bio: e.target.value } : f))}
+              rows={2}
+              style={{ ...formInputStyle, resize: "vertical" as const }}
+            />
+          </div>
+          <div style={{ marginBottom: 18 }}>
+            <label style={labelStyle}>שירותים</label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {ALL_SERVICES.map((svc) => (
+                <button
+                  key={svc}
+                  type="button"
+                  onClick={() => toggleEditService(svc)}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    border: `1px solid ${editForm.services.includes(svc) ? "#7c3aed" : "#e5e7eb"}`,
+                    background: editForm.services.includes(svc) ? "#ede9fe" : "#fff",
+                    color: editForm.services.includes(svc) ? "#5b21b6" : "#374151",
+                    fontSize: 12,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {SERVICE_LABELS[svc]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              type="button"
+              onClick={saveEdit}
+              disabled={savingEdit}
+              style={{
+                padding: "10px 24px",
+                borderRadius: 10,
+                border: "none",
+                background: "#7c3aed",
+                color: "#fff",
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: savingEdit ? "not-allowed" : "pointer",
+                opacity: savingEdit ? 0.7 : 1,
+                fontFamily: "inherit",
+              }}
+            >
+              {savingEdit ? "שומר…" : "שמור שינויים"}
+            </button>
+            <button
+              type="button"
+              onClick={closeEdit}
+              style={{
+                padding: "10px 18px",
+                borderRadius: 10,
+                border: "1px solid #e5e7eb",
+                background: "#fff",
+                color: "#374151",
+                fontSize: 14,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              ביטול
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Profiles list */}
       {profiles.length === 0 ? (
         <div
@@ -600,7 +859,7 @@ export default function MoverProfilesClient({ initialProfiles }: Props) {
               </div>
 
               {/* Actions */}
-              <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
                 <a
                   href={`/movers/${profile.slug}`}
                   target="_blank"
@@ -636,6 +895,45 @@ export default function MoverProfilesClient({ initialProfiles }: Props) {
                   ניהול
                 </a>
                 <button
+                  type="button"
+                  onClick={() => openEdit(profile)}
+                  disabled={editingId === profile.id}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    border: "1px solid #bae6fd",
+                    background: "#e0f2fe",
+                    color: "#0369a1",
+                    fontSize: 12,
+                    cursor: editingId === profile.id ? "not-allowed" : "pointer",
+                    fontFamily: "inherit",
+                    fontWeight: 500,
+                    opacity: editingId === profile.id ? 0.6 : 1,
+                  }}
+                >
+                  ערוך
+                </button>
+                <button
+                  type="button"
+                  onClick={() => deleteProfile(profile)}
+                  disabled={deletingId === profile.id}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    border: "1px solid #fecaca",
+                    background: "#fef2f2",
+                    color: "#b91c1c",
+                    fontSize: 12,
+                    cursor: deletingId === profile.id ? "not-allowed" : "pointer",
+                    fontFamily: "inherit",
+                    fontWeight: 500,
+                    opacity: deletingId === profile.id ? 0.6 : 1,
+                  }}
+                >
+                  {deletingId === profile.id ? "מוחק…" : "מחק"}
+                </button>
+                <button
+                  type="button"
                   onClick={() => toggleActive(profile)}
                   disabled={togglingId === profile.id}
                   style={{

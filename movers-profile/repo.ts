@@ -1,5 +1,5 @@
 import type { MoverProfile, MoverReview, MoverPhoto, MoverService } from "./types";
-import type { Firestore, DocumentSnapshot } from "firebase-admin/firestore";
+import type { CollectionReference, DocumentSnapshot, Firestore } from "firebase-admin/firestore";
 import { FieldValue } from "firebase-admin/firestore";
 
 // ────────────── Profile CRUD ──────────────
@@ -74,6 +74,7 @@ export async function updateMoverProfile(
     Pick<
       MoverProfile,
       | "name"
+      | "slug"
       | "bio"
       | "services"
       | "profileImageUrl"
@@ -89,8 +90,25 @@ export async function updateMoverProfile(
     .update({ ...updates, updatedAt: FieldValue.serverTimestamp() });
 }
 
+async function deleteCollectionBatch(db: Firestore, col: CollectionReference): Promise<void> {
+  const snap = await col.limit(450).get();
+  if (snap.empty) return;
+  const batch = db.batch();
+  for (const d of snap.docs) {
+    batch.delete(d.ref);
+  }
+  await batch.commit();
+  if (snap.size >= 450) {
+    await deleteCollectionBatch(db, col);
+  }
+}
+
+/** מוחק מסמך פרופיל וגם reviews + photos */
 export async function deleteMoverProfile(db: Firestore, id: string): Promise<void> {
-  await db.collection("moverProfiles").doc(id).delete();
+  const docRef = db.collection("moverProfiles").doc(id);
+  await deleteCollectionBatch(db, docRef.collection("reviews"));
+  await deleteCollectionBatch(db, docRef.collection("photos"));
+  await docRef.delete();
 }
 
 // ────────────── Reviews ──────────────

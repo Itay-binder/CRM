@@ -67,6 +67,8 @@ export default function TemplatesPageClient() {
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [headerMediaUploading, setHeaderMediaUploading] = useState(false);
   const [headerMediaUploadErr, setHeaderMediaUploadErr] = useState<string | null>(null);
+  /** null = טרם נטען / לא ידוע; משמש לאימות כותרת מדיה מול Meta App ID */
+  const [metaAppIdPresent, setMetaAppIdPresent] = useState<boolean | null>(null);
 
   const paramSlotCount = countBodyPlaceholders(tplBodyText);
 
@@ -92,12 +94,23 @@ export default function TemplatesPageClient() {
       validateTemplateDraft({
         bodyText: tplBodyText,
         footerText: tplFooterText,
+        category: tplCategory,
         headerFormat: tplHeaderFormat,
         headerText: tplHeaderText,
         headerMediaUrl: tplHeaderMediaUrl,
         buttonRows: buttonRowsForValidation,
+        metaAppIdPresent,
       }),
-    [tplBodyText, tplFooterText, tplHeaderFormat, tplHeaderText, tplHeaderMediaUrl, buttonRowsForValidation]
+    [
+      tplBodyText,
+      tplFooterText,
+      tplCategory,
+      tplHeaderFormat,
+      tplHeaderText,
+      tplHeaderMediaUrl,
+      buttonRowsForValidation,
+      metaAppIdPresent,
+    ]
   );
 
   const hasBlockingValidation = validationIssues.some((i) => i.level === "error");
@@ -196,12 +209,25 @@ export default function TemplatesPageClient() {
     setLoading(true);
     setErr(null);
     try {
-      const res = await fetch("/api/whatsapp/templates", { credentials: "include", cache: "no-store" });
-      if (res.status === 401) {
+      const [tRes, sRes] = await Promise.all([
+        fetch("/api/whatsapp/templates", { credentials: "include", cache: "no-store" }),
+        fetch("/api/whatsapp/settings", { credentials: "include", cache: "no-store" }),
+      ]);
+      if (tRes.status === 401) {
         window.location.href = `/login?returnTo=${encodeURIComponent("/whatsapp-automations/templates")}`;
         return;
       }
-      const j = await parseJson<{ ok?: boolean; templates?: TemplateVm[]; error?: string }>(res);
+      if (sRes.ok) {
+        const sj = await parseJson<{ ok?: boolean; config?: { appId?: string } | null }>(sRes);
+        if (sj.ok && sj.config) {
+          setMetaAppIdPresent(Boolean(String(sj.config.appId ?? "").trim()));
+        } else {
+          setMetaAppIdPresent(null);
+        }
+      } else {
+        setMetaAppIdPresent(null);
+      }
+      const j = await parseJson<{ ok?: boolean; templates?: TemplateVm[]; error?: string }>(tRes);
       if (!j.ok) throw new Error(j.error || "שגיאה בטעינה");
       setTemplates(j.templates ?? []);
     } catch (e) {
@@ -395,7 +421,7 @@ export default function TemplatesPageClient() {
           >
             <option value="MARKETING">Marketing</option>
             <option value="UTILITY">Utility</option>
-            <option value="AUTHENTICATION">Authentication</option>
+            <option value="AUTHENTICATION">Authentication (לא נתמך בשליחה מהמסך)</option>
           </select>
           <input
             value={tplLanguage}
@@ -408,7 +434,12 @@ export default function TemplatesPageClient() {
           <div style={{ fontWeight: 700, fontSize: 13 }}>כותרת (אופציונלי)</div>
           <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>
             תמונה / וידאו / מסמך — אפשר <strong>להעלות קובץ</strong> (נשמר ב־Firebase Storage של ה־CRM) או להדביק קישור HTTPS
-            ציבורי. הקישור/Sample נדרש לאישור במטא. לשמע: בחרו &quot;מסמך&quot; וקובץ mp3 או קישור ישיר.
+            ציבורי. הקישור/Sample נדרש לאישור במטא. לשמע: בחרו &quot;מסמך&quot; וקובץ mp3 או קישור ישיר.{" "}
+            <strong>לכותרת מדיה</strong> חובה גם <strong>Meta App ID</strong> ב
+            <Link href="/whatsapp-automations/account" style={{ color: "#2563eb", fontWeight: 700 }}>
+              חשבון WhatsApp
+            </Link>{" "}
+            — המערכת מעלה את הקובץ ל־Meta לפני האישור.
           </p>
           <select
             value={tplHeaderFormat}

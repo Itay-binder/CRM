@@ -1,7 +1,12 @@
 export type MoverDisplayTheme = "light" | "dark";
 
-export function normalizeMoverDisplayTheme(raw: unknown): MoverDisplayTheme {
-  return raw === "dark" ? "dark" : "light";
+export function normalizeMoverDisplayTheme(
+  raw: unknown,
+  opts?: { ifMissing: MoverDisplayTheme }
+): MoverDisplayTheme {
+  if (raw === "dark") return "dark";
+  if (raw === "light") return "light";
+  return opts?.ifMissing ?? "light";
 }
 
 /** צבעים לדף תצוגת פרופיל ציבורי — בהיר (ברירת מחדל מותג) או כהה (קלאסי) */

@@ -349,7 +349,7 @@ function docToProfile(doc: DocumentSnapshot): MoverProfile {
     rating: d.rating ?? 0,
     reviewCount: d.reviewCount ?? 0,
     ratingBreakdown: d.ratingBreakdown ?? { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
-    displayTheme: normalizeMoverDisplayTheme(d.displayTheme),
+    displayTheme: normalizeMoverDisplayTheme(d.displayTheme, { ifMissing: "dark" }),
   };
 }
 

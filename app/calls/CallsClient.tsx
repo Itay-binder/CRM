@@ -47,6 +47,51 @@ type GCalOpt = { id: string; summary?: string; primary?: boolean };
 
 type Tab = "today" | "manage";
 
+type ContactPreviewNote = {
+  id: string;
+  text: string;
+  createdAt: string;
+  createdBy?: string;
+  attachments?: Array<{ id: string; fileName: string; url: string }>;
+};
+
+type ContactPreviewTask = {
+  id: string;
+  title: string;
+  dueAt: string;
+  done: boolean;
+  reminderAt?: string;
+  status?: string;
+  createdAt: string;
+};
+
+type ContactPreviewLead = {
+  id: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  contactCode?: string;
+  stage?: string;
+  status?: string;
+  source?: string;
+  assignedRep?: string;
+  pipelineId?: string;
+  customFields?: Record<string, unknown>;
+  notes?: ContactPreviewNote[];
+  tasks?: ContactPreviewTask[];
+};
+
+type ContactPreviewOpp = {
+  id: string;
+  name: string;
+  pipelineId: string;
+  pipelineName?: string;
+  stage: string;
+  status?: string;
+};
+
+type ContactPreviewTab = "details" | "notes" | "tasks";
+
 function toLocalInput(iso: string | null | undefined): string {
   return utcIsoToJerusalemDatetimeLocal(String(iso ?? ""));
 }
@@ -117,6 +162,16 @@ export default function CallsClient() {
 
   const [followCalSync, setFollowCalSync] = useState(false);
   const [followCalIdPick, setFollowCalIdPick] = useState("primary");
+
+  /** תצוגת איש קשר (קריאה בלבד) — כמו כרטיס באנשי קשר, בלי לעזוב את ניהול השיחות */
+  const [contactPreviewId, setContactPreviewId] = useState<string | null>(null);
+  const [contactPreviewTab, setContactPreviewTab] = useState<ContactPreviewTab>("details");
+  const [contactPreviewLoading, setContactPreviewLoading] = useState(false);
+  const [contactPreviewErr, setContactPreviewErr] = useState<string | null>(null);
+  const [contactPreviewLead, setContactPreviewLead] = useState<ContactPreviewLead | null>(null);
+  const [contactPreviewOpps, setContactPreviewOpps] = useState<ContactPreviewOpp[]>([]);
+  const [contactPreviewAggNotes, setContactPreviewAggNotes] = useState<ContactPreviewNote[]>([]);
+  const [contactPreviewAggTasks, setContactPreviewAggTasks] = useState<ContactPreviewTask[]>([]);
 
   // Done / follow-up modal
   const [completing, setCompleting] = useState<SalesCall | null>(null);
@@ -414,6 +469,54 @@ export default function CallsClient() {
     }
   }
 
+  function closeContactPreview() {
+    setContactPreviewId(null);
+    setContactPreviewErr(null);
+    setContactPreviewLead(null);
+    setContactPreviewOpps([]);
+    setContactPreviewAggNotes([]);
+    setContactPreviewAggTasks([]);
+    setContactPreviewTab("details");
+  }
+
+  async function openContactPreview(contactId: string) {
+    const id = contactId.trim();
+    if (!id) return;
+    setContactPreviewId(id);
+    setContactPreviewTab("details");
+    setContactPreviewLead(null);
+    setContactPreviewOpps([]);
+    setContactPreviewAggNotes([]);
+    setContactPreviewAggTasks([]);
+    setContactPreviewErr(null);
+    setContactPreviewLoading(true);
+    try {
+      const res = await fetch(`/api/contacts/${encodeURIComponent(id)}`, {
+        credentials: "include",
+        cache: "no-store",
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        lead?: ContactPreviewLead;
+        opportunities?: ContactPreviewOpp[];
+        aggregatedNotes?: ContactPreviewNote[];
+        aggregatedTasks?: ContactPreviewTask[];
+      };
+      if (!res.ok || !j.ok || !j.lead) {
+        throw new Error(j.error ?? "טעינת איש קשר נכשלה");
+      }
+      setContactPreviewLead(j.lead);
+      setContactPreviewOpps(Array.isArray(j.opportunities) ? j.opportunities : []);
+      setContactPreviewAggNotes(Array.isArray(j.aggregatedNotes) ? j.aggregatedNotes : []);
+      setContactPreviewAggTasks(Array.isArray(j.aggregatedTasks) ? j.aggregatedTasks : []);
+    } catch (e) {
+      setContactPreviewErr(e instanceof Error ? e.message : "טעינת איש קשר נכשלה");
+    } finally {
+      setContactPreviewLoading(false);
+    }
+  }
+
   async function cancelCall(call: SalesCall) {
     if (!window.confirm("לבטל את השיחה?")) return;
     try {
@@ -564,26 +667,44 @@ export default function CallsClient() {
             {visibleCalls.map((c) => (
               <tr key={c.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
                 <td style={{ padding: 10, fontWeight: 700 }}>
-                  <a
-                    href={`/contacts?openContactId=${encodeURIComponent(c.contactId)}`}
-                    style={{ color: "#4c1d95", fontWeight: 800 }}
-                  >
-                    {c.contactName || c.contactId}
-                  </a>
-                  {c.followUpOfId ? (
-                    <span
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <a
+                      href={`/contacts?openContactId=${encodeURIComponent(c.contactId)}`}
+                      style={{ color: "#4c1d95", fontWeight: 800 }}
+                    >
+                      {c.contactName || c.contactId}
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => void openContactPreview(c.contactId)}
                       style={{
-                        marginInlineStart: 6,
-                        fontSize: 11,
-                        background: "#ede9fe",
+                        padding: "4px 10px",
+                        borderRadius: 8,
+                        border: "1px solid #c4b5fd",
+                        background: "#f5f3ff",
                         color: "#5b21b6",
-                        padding: "2px 6px",
-                        borderRadius: 6,
+                        fontWeight: 800,
+                        fontSize: 12,
+                        cursor: "pointer",
+                        fontFamily: "inherit",
                       }}
                     >
-                      פולואפ
-                    </span>
-                  ) : null}
+                      פרטים
+                    </button>
+                    {c.followUpOfId ? (
+                      <span
+                        style={{
+                          fontSize: 11,
+                          background: "#ede9fe",
+                          color: "#5b21b6",
+                          padding: "2px 6px",
+                          borderRadius: 6,
+                        }}
+                      >
+                        פולואפ
+                      </span>
+                    ) : null}
+                  </div>
                 </td>
                 <td style={{ padding: 10, color: "#374151" }}>{c.contactPhone || "—"}</td>
                 <td style={{ padding: 10 }}>{c.repName || "—"}</td>
@@ -882,6 +1003,340 @@ export default function CallsClient() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {contactPreviewId ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 110,
+            background: "rgba(0,0,0,0.35)",
+            display: "grid",
+            placeItems: "center",
+            padding: 16,
+          }}
+          onMouseDown={() => {
+            if (contactPreviewLoading) return;
+            closeContactPreview();
+          }}
+        >
+          <div
+            style={{
+              width: "min(920px, 96vw)",
+              maxHeight: "92vh",
+              overflow: "auto",
+              background: "#fff",
+              borderRadius: 16,
+              border: "1px solid #e5e7eb",
+              padding: 16,
+              boxShadow: "0 20px 50px rgba(0,0,0,0.12)",
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 900 }}>
+                {contactPreviewLead
+                  ? contactPreviewLead.name ||
+                    contactPreviewLead.email ||
+                    contactPreviewLead.phone ||
+                    contactPreviewLead.id
+                  : "פרטי איש קשר"}
+              </h3>
+              <div style={{ flex: 1 }} />
+              <a
+                href={`/contacts?openContactId=${encodeURIComponent(contactPreviewId)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 10,
+                  border: "1px solid #e5e7eb",
+                  background: "#fff",
+                  fontWeight: 700,
+                  fontSize: 12,
+                  color: "#4c1d95",
+                  textDecoration: "none",
+                }}
+              >
+                פתח באנשי קשר
+              </a>
+              <button
+                type="button"
+                onClick={closeContactPreview}
+                disabled={contactPreviewLoading}
+                style={{
+                  border: "1px solid #e5e7eb",
+                  background: "#fff",
+                  borderRadius: 10,
+                  padding: "6px 10px",
+                  cursor: contactPreviewLoading ? "wait" : "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                סגור
+              </button>
+            </div>
+
+            {contactPreviewErr ? (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: 10,
+                  borderRadius: 10,
+                  background: "#fef2f2",
+                  color: "#b91c1c",
+                  fontSize: 13,
+                }}
+              >
+                {contactPreviewErr}
+              </div>
+            ) : null}
+
+            {contactPreviewLoading ? (
+              <div style={{ marginTop: 20, color: "#6b7280", fontWeight: 700 }}>טוען פרטים…</div>
+            ) : contactPreviewLead ? (
+              <>
+                <div
+                  style={{
+                    marginTop: 10,
+                    display: "inline-flex",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 10,
+                    overflow: "hidden",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {(
+                    [
+                      ["details", "פרטים"],
+                      ["notes", "פתקים"],
+                      ["tasks", "משימות"],
+                    ] as const
+                  ).map(([t, label]) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setContactPreviewTab(t)}
+                      style={{
+                        border: "none",
+                        background: contactPreviewTab === t ? "#ede9fe" : "#fff",
+                        padding: "8px 10px",
+                        cursor: "pointer",
+                        fontWeight: 800,
+                        fontFamily: "inherit",
+                        fontSize: 13,
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {contactPreviewTab === "details" && (
+                  <div style={{ marginTop: 12, display: "grid", gap: 10, fontSize: 13 }}>
+                    <p style={{ margin: 0, color: "#6b7280", fontSize: 12, lineHeight: 1.5 }}>
+                      תצוגה לקריאה בלבד — לעדכון שדות עברו ל«אנשי קשר».
+                    </p>
+                    <dl style={{ margin: 0, display: "grid", gap: 8 }}>
+                      {(
+                        [
+                          ["שם", contactPreviewLead.name],
+                          ["טלפון", contactPreviewLead.phone],
+                          ["אימייל", contactPreviewLead.email],
+                          ["קוד איש קשר", contactPreviewLead.contactCode],
+                          ["שלב", contactPreviewLead.stage],
+                          ["סטטוס מכירה", contactPreviewLead.status],
+                          ["מקור", contactPreviewLead.source],
+                          ["נציג", contactPreviewLead.assignedRep],
+                          ["Pipeline", contactPreviewLead.pipelineId],
+                        ] as const
+                      ).map(([label, val]) =>
+                        val ? (
+                          <div key={label}>
+                            <dt style={{ color: "#6b7280", fontSize: 11, marginBottom: 2 }}>{label}</dt>
+                            <dd style={{ margin: 0, fontWeight: 700 }} dir={label === "טלפון" || label === "אימייל" ? "ltr" : undefined}>
+                              {String(val)}
+                            </dd>
+                          </div>
+                        ) : null
+                      )}
+                    </dl>
+                    {contactPreviewLead.customFields &&
+                    Object.keys(contactPreviewLead.customFields).length > 0 ? (
+                      <div style={{ border: "1px solid #f3f4f6", borderRadius: 10, padding: 10 }}>
+                        <div style={{ fontWeight: 800, marginBottom: 8, fontSize: 12 }}>שדות מותאמים</div>
+                        <div style={{ display: "grid", gap: 6, maxHeight: 160, overflow: "auto" }}>
+                          {Object.entries(contactPreviewLead.customFields).map(([k, v]) => (
+                            <div key={k} style={{ fontSize: 12, borderBottom: "1px solid #f3f4f6", paddingBottom: 4 }}>
+                              <div style={{ color: "#6b7280", fontSize: 10 }}>{k}</div>
+                              <div style={{ fontWeight: 600, wordBreak: "break-word" }}>
+                                {typeof v === "object" ? JSON.stringify(v) : String(v)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    <div style={{ border: "1px solid #f3f4f6", borderRadius: 10, padding: 10 }}>
+                      <div style={{ fontWeight: 800, marginBottom: 6 }}>הזדמנויות</div>
+                      {contactPreviewOpps.length === 0 ? (
+                        <span style={{ color: "#6b7280", fontSize: 12 }}>אין הזדמנויות מקושרות</span>
+                      ) : (
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          {contactPreviewOpps.map((o) => (
+                            <a
+                              key={o.id}
+                              href={`/pipeline?openOpportunityId=${encodeURIComponent(o.id)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                border: "1px solid #e5e7eb",
+                                borderRadius: 12,
+                                padding: "6px 10px",
+                                fontSize: 12,
+                                fontWeight: 700,
+                                background: "#fff",
+                                color: "#4c1d95",
+                                textDecoration: "none",
+                              }}
+                            >
+                              {o.name} · {o.pipelineName || o.pipelineId} · {o.stage}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {contactPreviewTab === "notes" && (
+                  <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+                    {(contactPreviewLead.notes ?? []).map((n) => (
+                      <div
+                        key={n.id}
+                        style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, background: "#fff" }}
+                      >
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 6 }}>
+                          <span dir="ltr">{formatIsraelDateTime(n.createdAt)}</span>
+                          <span style={{ color: "#6b7280", fontWeight: 500 }}>
+                            {" "}
+                            · {n.createdBy ?? "משתמש CRM"}
+                          </span>
+                        </div>
+                        <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{n.text}</div>
+                        {(n.attachments ?? []).length > 0 ? (
+                          <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 8 }}>
+                            {(n.attachments ?? []).map((a) => (
+                              <a
+                                key={a.id}
+                                href={a.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ fontSize: 12, fontWeight: 800, color: "#4c1d95" }}
+                              >
+                                📎 {a.fileName}
+                              </a>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                    {contactPreviewAggNotes.map((n) => (
+                      <div
+                        key={`agg-${n.id}`}
+                        style={{
+                          border: "1px dashed #cbd5e1",
+                          borderRadius: 10,
+                          padding: 10,
+                          background: "#f8fafc",
+                        }}
+                      >
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 6 }}>
+                          <span dir="ltr">{formatIsraelDateTime(n.createdAt)}</span>
+                          <span style={{ color: "#6b7280", fontWeight: 500 }}>
+                            {" "}
+                            · {n.createdBy ?? "משתמש CRM"}
+                          </span>
+                          <span style={{ fontSize: 11, color: "#94a3b8" }}> · מהזדמנות</span>
+                        </div>
+                        <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{n.text}</div>
+                        {(n.attachments ?? []).length > 0 ? (
+                          <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 8 }}>
+                            {(n.attachments ?? []).map((a) => (
+                              <a
+                                key={a.id}
+                                href={a.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ fontSize: 12, fontWeight: 800, color: "#4c1d95" }}
+                              >
+                                📎 {a.fileName}
+                              </a>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                    {(contactPreviewLead.notes ?? []).length === 0 && contactPreviewAggNotes.length === 0 ? (
+                      <div style={{ color: "#6b7280", fontSize: 13 }}>אין פתקים.</div>
+                    ) : null}
+                  </div>
+                )}
+
+                {contactPreviewTab === "tasks" && (
+                  <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+                    {(contactPreviewLead.tasks ?? []).map((t) => (
+                      <div
+                        key={t.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "8px 10px",
+                          borderRadius: 10,
+                          border: "1px solid #e5e7eb",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <input type="checkbox" checked={Boolean(t.done || t.status === "done")} readOnly />
+                        <span style={{ fontWeight: 700, flex: 1, minWidth: 120 }}>{t.title}</span>
+                        <span style={{ color: "#6b7280", fontSize: 12 }}>
+                          {t.dueAt ? formatIsraelDateTime(t.dueAt) : "—"}
+                        </span>
+                      </div>
+                    ))}
+                    {contactPreviewAggTasks.map((t) => (
+                      <div
+                        key={`agg-${t.id}`}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "8px 10px",
+                          borderRadius: 10,
+                          border: "1px dashed #cbd5e1",
+                          background: "#f8fafc",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <input type="checkbox" checked={Boolean(t.done || t.status === "done")} readOnly />
+                        <span style={{ fontWeight: 700 }}>{t.title}</span>
+                        <span style={{ color: "#6b7280", fontSize: 12 }}>
+                          {t.dueAt ? formatIsraelDateTime(t.dueAt) : "—"}
+                        </span>
+                        <span style={{ fontSize: 11, color: "#94a3b8" }}>מהזדמנות</span>
+                      </div>
+                    ))}
+                    {(contactPreviewLead.tasks ?? []).length === 0 && contactPreviewAggTasks.length === 0 ? (
+                      <div style={{ color: "#6b7280", fontSize: 13 }}>אין משימות.</div>
+                    ) : null}
+                  </div>
+                )}
+              </>
+            ) : null}
           </div>
         </div>
       ) : null}

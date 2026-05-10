@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
+import { getFirebaseAuth, getGoogleProvider } from "@/lib/firebase/client";
 import StarRating from "./StarRating";
 import type { PublicMoverData, MoverReview, MoverPhoto } from "../types";
 import { SERVICE_LABELS, SERVICE_ICONS } from "../types";
@@ -9,10 +11,11 @@ type Props = {
   data: PublicMoverData;
 };
 
-type ReviewForm = {
-  reviewerName: string;
-  rating: number;
-  text: string;
+type GoogleUser = {
+  uid: string;
+  name: string;
+  photo: string | null;
+  idToken: string;
 };
 
 function toWhatsAppPhone(raw: string): string {
@@ -30,38 +33,111 @@ function WhatsAppIcon() {
   );
 }
 
+function GoogleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+    </svg>
+  );
+}
+
 export default function MoverProfileView({ data }: Props) {
   const [reviews, setReviews] = useState<MoverReview[]>(data.reviews);
   const [photos, setPhotos] = useState<MoverPhoto[]>(data.photos);
+  const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
+  const [googleSigningIn, setGoogleSigningIn] = useState(false);
   const [showReviewForm, setShowReviewForm] = useState(false);
-  const [reviewForm, setReviewForm] = useState<ReviewForm>({ reviewerName: "", rating: 5, text: "" });
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewText, setReviewText] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
   const [reviewSuccess, setReviewSuccess] = useState(false);
+  const [reviewError, setReviewError] = useState("");
   const [photoUploading, setPhotoUploading] = useState(false);
   const [activeReviewIdx, setActiveReviewIdx] = useState(0);
   const [shareTooltip, setShareTooltip] = useState(false);
 
   const ratingMax = Math.max(1, ...Object.values(data.ratingBreakdown));
+  const visibleReviews = reviews.filter((r) => !r.isHidden);
+  const waPhone = toWhatsAppPhone(data.phone);
+
+  // Restore Google auth state on mount
+  useEffect(() => {
+    const auth = getFirebaseAuth();
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (user && user.providerData.some((p) => p.providerId === "google.com")) {
+        try {
+          const idToken = await user.getIdToken();
+          setGoogleUser({
+            uid: user.uid,
+            name: user.displayName || user.email?.split("@")[0] || "משתמש Google",
+            photo: user.photoURL,
+            idToken,
+          });
+        } catch {
+          // token refresh failed
+        }
+      } else {
+        setGoogleUser(null);
+      }
+    });
+    return unsub;
+  }, []);
+
+  async function signInWithGoogle() {
+    setGoogleSigningIn(true);
+    try {
+      const auth = getFirebaseAuth();
+      const provider = getGoogleProvider();
+      const result = await signInWithPopup(auth, provider);
+      const idToken = await result.user.getIdToken();
+      setGoogleUser({
+        uid: result.user.uid,
+        name: result.user.displayName || result.user.email?.split("@")[0] || "משתמש Google",
+        photo: result.user.photoURL,
+        idToken,
+      });
+      setShowReviewForm(true);
+    } catch {
+      // user cancelled popup
+    } finally {
+      setGoogleSigningIn(false);
+    }
+  }
+
+  async function signOutGoogle() {
+    await signOut(getFirebaseAuth());
+    setGoogleUser(null);
+    setShowReviewForm(false);
+  }
 
   async function submitReview() {
-    if (!reviewForm.reviewerName.trim() || !reviewForm.text.trim()) return;
+    if (!googleUser || !reviewText.trim()) return;
     setSubmittingReview(true);
+    setReviewError("");
     try {
+      // Refresh token in case it expired
+      const auth = getFirebaseAuth();
+      const freshToken = await auth.currentUser?.getIdToken(true) ?? googleUser.idToken;
+
       const res = await fetch(`/api/movers/${data.slug}/reviews`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(reviewForm),
+        body: JSON.stringify({ googleIdToken: freshToken, rating: reviewRating, text: reviewText }),
       });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.review) {
-          setReviews((prev) => [json.review, ...prev]);
-          setActiveReviewIdx(0);
-        }
+      const json = await res.json();
+      if (res.ok && json.review) {
+        setReviews((prev) => [json.review, ...prev]);
+        setActiveReviewIdx(0);
         setShowReviewForm(false);
+        setReviewText("");
+        setReviewRating(5);
         setReviewSuccess(true);
-        setReviewForm({ reviewerName: "", rating: 5, text: "" });
         setTimeout(() => setReviewSuccess(false), 4000);
+      } else {
+        setReviewError(json.error ?? "שגיאה בשליחה");
       }
     } finally {
       setSubmittingReview(false);
@@ -96,9 +172,6 @@ export default function MoverProfileView({ data }: Props) {
       });
     }
   }
-
-  const visibleReviews = reviews.filter((r) => !r.isHidden);
-  const waPhone = toWhatsAppPhone(data.phone);
 
   return (
     <div
@@ -140,7 +213,6 @@ export default function MoverProfileView({ data }: Props) {
         </div>
       </div>
 
-      {/* Main card */}
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "0 16px" }}>
         {/* Profile header */}
         <div
@@ -154,7 +226,6 @@ export default function MoverProfileView({ data }: Props) {
           }}
         >
           <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-            {/* Profile image */}
             <div
               style={{
                 width: 80,
@@ -172,14 +243,8 @@ export default function MoverProfileView({ data }: Props) {
             >
               {data.profileImageUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={data.profileImageUrl}
-                  alt={data.name}
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
-              ) : (
-                "👤"
-              )}
+                <img src={data.profileImageUrl} alt={data.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              ) : "👤"}
             </div>
 
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -198,72 +263,44 @@ export default function MoverProfileView({ data }: Props) {
                   marginBottom: 8,
                 }}
               >
-                <span>✓</span>
-                <span>מוביל מאומת LiftyGo</span>
+                <span>✓</span><span>מוביל מאומת LiftyGo</span>
               </div>
               <div style={{ fontWeight: 900, fontSize: 22, color: "#f9fafb", lineHeight: 1.2 }}>
                 {data.name}
               </div>
-
-              {/* Rating inline with name */}
               {data.reviewCount > 0 ? (
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 5 }}>
                   <StarRating rating={data.rating} size={14} />
-                  <span style={{ fontWeight: 700, fontSize: 13, color: "#f9fafb" }}>
-                    {data.rating.toFixed(1)}
-                  </span>
-                  <span style={{ fontSize: 12, color: "#9ca3af" }}>
-                    ({data.reviewCount} המלצות)
-                  </span>
+                  <span style={{ fontWeight: 700, fontSize: 13, color: "#f9fafb" }}>{data.rating.toFixed(1)}</span>
+                  <span style={{ fontSize: 12, color: "#9ca3af" }}>({data.reviewCount} המלצות)</span>
                 </div>
               ) : (
                 <div style={{ color: "#9ca3af", fontSize: 13, marginTop: 4 }}>מוביל מקצועי</div>
               )}
-
               {data.coverArea && (
                 <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 6, color: "#9ca3af", fontSize: 13 }}>
-                  <span>📍</span>
-                  <span>{data.coverArea}</span>
+                  <span>📍</span><span>{data.coverArea}</span>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Bio */}
           {data.bio && (
-            <div
-              style={{
-                marginTop: 16,
-                color: "#d1d5db",
-                fontSize: 14,
-                lineHeight: 1.6,
-                borderTop: "1px solid rgba(139,92,246,0.15)",
-                paddingTop: 14,
-              }}
-            >
+            <div style={{ marginTop: 16, color: "#d1d5db", fontSize: 14, lineHeight: 1.6, borderTop: "1px solid rgba(139,92,246,0.15)", paddingTop: 14 }}>
               {data.bio}
             </div>
           )}
 
-          {/* Services */}
           {data.services.length > 0 && (
             <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
               {data.services.map((svc) => (
                 <div
                   key={svc}
                   style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    gap: 4,
-                    background: "rgba(124,58,237,0.12)",
-                    border: "1px solid rgba(124,58,237,0.25)",
-                    borderRadius: 12,
-                    padding: "8px 12px",
-                    fontSize: 11,
-                    color: "#c4b5fd",
-                    flex: "1 1 70px",
-                    textAlign: "center",
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                    background: "rgba(124,58,237,0.12)", border: "1px solid rgba(124,58,237,0.25)",
+                    borderRadius: 12, padding: "8px 12px", fontSize: 11, color: "#c4b5fd",
+                    flex: "1 1 70px", textAlign: "center",
                   }}
                 >
                   <span style={{ fontSize: 20 }}>{SERVICE_ICONS[svc]}</span>
@@ -276,63 +313,25 @@ export default function MoverProfileView({ data }: Props) {
 
         {/* Rating breakdown */}
         {data.reviewCount > 0 && (
-          <div
-            style={{
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(139,92,246,0.25)",
-              backdropFilter: "blur(20px)",
-              borderRadius: 20,
-              padding: "20px",
-              marginTop: 16,
-            }}
-          >
-            <div style={{ fontWeight: 800, fontSize: 14, color: "#c4b5fd", marginBottom: 14 }}>
-              הדירוג שלי
-            </div>
+          <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(139,92,246,0.25)", backdropFilter: "blur(20px)", borderRadius: 20, padding: "20px", marginTop: 16 }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: "#c4b5fd", marginBottom: 14 }}>הדירוג שלי</div>
             <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
               <div style={{ textAlign: "center" }}>
-                <div style={{ fontWeight: 900, fontSize: 48, color: "#f9fafb", lineHeight: 1 }}>
-                  {data.rating.toFixed(1)}
-                </div>
+                <div style={{ fontWeight: 900, fontSize: 48, color: "#f9fafb", lineHeight: 1 }}>{data.rating.toFixed(1)}</div>
                 <StarRating rating={data.rating} size={18} />
-                <div style={{ color: "#9ca3af", fontSize: 11, marginTop: 4 }}>
-                  מבוסס על {data.reviewCount} דירוגים
-                </div>
+                <div style={{ color: "#9ca3af", fontSize: 11, marginTop: 4 }}>מבוסס על {data.reviewCount} דירוגים</div>
               </div>
               <div style={{ flex: 1 }}>
                 {[5, 4, 3, 2, 1].map((star) => {
                   const count = data.ratingBreakdown[star] ?? 0;
                   const pct = ratingMax > 0 ? (count / ratingMax) * 100 : 0;
                   return (
-                    <div
-                      key={star}
-                      style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}
-                    >
-                      <span style={{ color: "#f59e0b", fontSize: 12, width: 14, textAlign: "center" }}>
-                        {star}★
-                      </span>
-                      <div
-                        style={{
-                          flex: 1,
-                          height: 6,
-                          borderRadius: 3,
-                          background: "rgba(255,255,255,0.1)",
-                          overflow: "hidden",
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: `${pct}%`,
-                            height: "100%",
-                            background: "linear-gradient(90deg, #7c3aed, #a855f7)",
-                            borderRadius: 3,
-                            transition: "width 0.6s ease",
-                          }}
-                        />
+                    <div key={star} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+                      <span style={{ color: "#f59e0b", fontSize: 12, width: 14, textAlign: "center" }}>{star}★</span>
+                      <div style={{ flex: 1, height: 6, borderRadius: 3, background: "rgba(255,255,255,0.1)", overflow: "hidden" }}>
+                        <div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg, #7c3aed, #a855f7)", borderRadius: 3, transition: "width 0.6s ease" }} />
                       </div>
-                      <span style={{ color: "#9ca3af", fontSize: 11, width: 24, textAlign: "center" }}>
-                        {count}
-                      </span>
+                      <span style={{ color: "#9ca3af", fontSize: 11, width: 24, textAlign: "center" }}>{count}</span>
                     </div>
                   );
                 })}
@@ -343,98 +342,38 @@ export default function MoverProfileView({ data }: Props) {
 
         {/* Reviews carousel */}
         {visibleReviews.length > 0 && (
-          <div
-            style={{
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(139,92,246,0.25)",
-              backdropFilter: "blur(20px)",
-              borderRadius: 20,
-              padding: "20px",
-              marginTop: 16,
-              overflow: "hidden",
-            }}
-          >
-            <div style={{ fontWeight: 800, fontSize: 14, color: "#c4b5fd", marginBottom: 14 }}>
-              💬 המלצות מלקוחות
-            </div>
-
-            {/* Review card */}
-            <div
-              style={{
-                background: "rgba(124,58,237,0.1)",
-                border: "1px solid rgba(124,58,237,0.2)",
-                borderRadius: 16,
-                padding: "14px 16px",
-              }}
-            >
-              {/* Reviewer name + stars at top */}
+          <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(139,92,246,0.25)", backdropFilter: "blur(20px)", borderRadius: 20, padding: "20px", marginTop: 16, overflow: "hidden" }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: "#c4b5fd", marginBottom: 14 }}>💬 המלצות מלקוחות</div>
+            <div style={{ background: "rgba(124,58,237,0.1)", border: "1px solid rgba(124,58,237,0.2)", borderRadius: 16, padding: "14px 16px" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: "#c4b5fd", marginBottom: 3 }}>
-                    {visibleReviews[activeReviewIdx]?.reviewerName}
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {visibleReviews[activeReviewIdx]?.reviewerPhoto && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={visibleReviews[activeReviewIdx].reviewerPhoto} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover" }} />
+                  )}
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: "#c4b5fd", marginBottom: 3 }}>
+                      {visibleReviews[activeReviewIdx]?.reviewerName}
+                    </div>
+                    <StarRating rating={visibleReviews[activeReviewIdx]?.rating ?? 5} size={14} />
                   </div>
-                  <StarRating rating={visibleReviews[activeReviewIdx]?.rating ?? 5} size={14} />
                 </div>
                 <div style={{ fontSize: 28, color: "#7c3aed", lineHeight: 1, opacity: 0.7 }}>&ldquo;</div>
               </div>
-
-              {/* Review text */}
               <div style={{ color: "#e5e7eb", fontSize: 14, lineHeight: 1.6, minHeight: 54 }}>
                 {visibleReviews[activeReviewIdx]?.text}
               </div>
             </div>
 
-            {/* Navigation */}
             {visibleReviews.length > 1 && (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  marginTop: 14,
-                }}
-              >
-                <button
-                  onClick={() =>
-                    setActiveReviewIdx((i) => (i + 1) % visibleReviews.length)
-                  }
-                  style={navBtnStyle}
-                  aria-label="הקודם"
-                >
-                  ›
-                </button>
-
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14 }}>
+                <button onClick={() => setActiveReviewIdx((i) => (i + 1) % visibleReviews.length)} style={navBtnStyle}>›</button>
                 <div style={{ display: "flex", gap: 6 }}>
                   {visibleReviews.slice(0, 8).map((_, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setActiveReviewIdx(i)}
-                      style={{
-                        width: i === activeReviewIdx ? 20 : 8,
-                        height: 8,
-                        borderRadius: 4,
-                        background:
-                          i === activeReviewIdx ? "#7c3aed" : "rgba(139,92,246,0.3)",
-                        border: "none",
-                        cursor: "pointer",
-                        transition: "all 0.3s ease",
-                        padding: 0,
-                      }}
-                    />
+                    <button key={i} onClick={() => setActiveReviewIdx(i)} style={{ width: i === activeReviewIdx ? 20 : 8, height: 8, borderRadius: 4, background: i === activeReviewIdx ? "#7c3aed" : "rgba(139,92,246,0.3)", border: "none", cursor: "pointer", transition: "all 0.3s ease", padding: 0 }} />
                   ))}
                 </div>
-
-                <button
-                  onClick={() =>
-                    setActiveReviewIdx(
-                      (i) => (i - 1 + visibleReviews.length) % visibleReviews.length
-                    )
-                  }
-                  style={navBtnStyle}
-                  aria-label="הבא"
-                >
-                  ‹
-                </button>
+                <button onClick={() => setActiveReviewIdx((i) => (i - 1 + visibleReviews.length) % visibleReviews.length)} style={navBtnStyle}>‹</button>
               </div>
             )}
           </div>
@@ -442,153 +381,95 @@ export default function MoverProfileView({ data }: Props) {
 
         {/* Photos */}
         {photos.filter((p) => !p.isHidden).length > 0 && (
-          <div
-            style={{
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(139,92,246,0.25)",
-              backdropFilter: "blur(20px)",
-              borderRadius: 20,
-              padding: "20px",
-              marginTop: 16,
-            }}
-          >
-            <div style={{ fontWeight: 800, fontSize: 14, color: "#c4b5fd", marginBottom: 14 }}>
-              📸 תמונות מהובלות
-            </div>
+          <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(139,92,246,0.25)", backdropFilter: "blur(20px)", borderRadius: 20, padding: "20px", marginTop: 16 }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: "#c4b5fd", marginBottom: 14 }}>📸 תמונות מהובלות</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-              {photos
-                .filter((p) => !p.isHidden)
-                .slice(0, 6)
-                .map((photo) => (
-                  <div
-                    key={photo.id}
-                    style={{
-                      aspectRatio: "1",
-                      borderRadius: 12,
-                      overflow: "hidden",
-                      background: "rgba(124,58,237,0.15)",
-                    }}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={photo.url}
-                      alt=""
-                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    />
-                  </div>
-                ))}
+              {photos.filter((p) => !p.isHidden).slice(0, 6).map((photo) => (
+                <div key={photo.id} style={{ aspectRatio: "1", borderRadius: 12, overflow: "hidden", background: "rgba(124,58,237,0.15)" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={photo.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                </div>
+              ))}
             </div>
           </div>
         )}
 
-        {/* Add review + customer photo upload */}
-        <div
-          style={{
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid rgba(139,92,246,0.25)",
-            backdropFilter: "blur(20px)",
-            borderRadius: 20,
-            padding: "20px",
-            marginTop: 16,
-          }}
-        >
-          <div style={{ fontWeight: 800, fontSize: 14, color: "#c4b5fd", marginBottom: 14 }}>
-            דרג ✍️ שתף חוויה
-          </div>
+        {/* Review section */}
+        <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(139,92,246,0.25)", backdropFilter: "blur(20px)", borderRadius: 20, padding: "20px", marginTop: 16 }}>
+          <div style={{ fontWeight: 800, fontSize: 14, color: "#c4b5fd", marginBottom: 14 }}>דרג ✍️ שתף חוויה</div>
 
           {reviewSuccess && (
-            <div
-              style={{
-                background: "rgba(16,185,129,0.15)",
-                border: "1px solid rgba(16,185,129,0.4)",
-                borderRadius: 10,
-                padding: "10px 14px",
-                color: "#6ee7b7",
-                fontSize: 13,
-                marginBottom: 14,
-              }}
-            >
+            <div style={{ background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.4)", borderRadius: 10, padding: "10px 14px", color: "#6ee7b7", fontSize: 13, marginBottom: 14 }}>
               תודה! ההמלצה שלך נשלחה בהצלחה 🎉
             </div>
           )}
 
-          {!showReviewForm ? (
+          {/* Google user bar */}
+          {googleUser && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, background: "rgba(255,255,255,0.04)", borderRadius: 12, padding: "10px 14px", marginBottom: 12 }}>
+              {googleUser.photo && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={googleUser.photo} alt="" style={{ width: 32, height: 32, borderRadius: "50%" }} />
+              )}
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#f9fafb" }}>{googleUser.name}</div>
+                <div style={{ fontSize: 11, color: "#9ca3af" }}>מחובר עם Google</div>
+              </div>
+              <button onClick={signOutGoogle} style={{ background: "none", border: "1px solid rgba(139,92,246,0.3)", borderRadius: 8, color: "#9ca3af", fontSize: 11, cursor: "pointer", padding: "4px 10px", fontFamily: "inherit" }}>
+                התנתק
+              </button>
+            </div>
+          )}
+
+          {!googleUser && !showReviewForm && (
+            <button
+              onClick={signInWithGoogle}
+              disabled={googleSigningIn}
+              style={{ width: "100%", padding: "12px", borderRadius: 12, border: "1px solid rgba(139,92,246,0.4)", background: "rgba(255,255,255,0.06)", color: "#f9fafb", fontSize: 14, cursor: googleSigningIn ? "not-allowed" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, opacity: googleSigningIn ? 0.7 : 1 }}
+            >
+              <GoogleIcon />
+              {googleSigningIn ? "מתחבר…" : "התחבר עם Google להוספת המלצה"}
+            </button>
+          )}
+
+          {googleUser && !showReviewForm && (
             <button
               onClick={() => setShowReviewForm(true)}
-              style={{
-                width: "100%",
-                padding: "12px",
-                borderRadius: 12,
-                border: "1px solid rgba(139,92,246,0.4)",
-                background: "rgba(124,58,237,0.1)",
-                color: "#c4b5fd",
-                fontSize: 14,
-                cursor: "pointer",
-                fontFamily: "inherit",
-              }}
+              style={{ width: "100%", padding: "12px", borderRadius: 12, border: "1px solid rgba(139,92,246,0.4)", background: "rgba(124,58,237,0.1)", color: "#c4b5fd", fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}
             >
               + הוסף המלצה ודירוג
             </button>
-          ) : (
+          )}
+
+          {googleUser && showReviewForm && (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <input
-                type="text"
-                placeholder="השם שלך"
-                value={reviewForm.reviewerName}
-                onChange={(e) => setReviewForm((f) => ({ ...f, reviewerName: e.target.value }))}
-                style={inputStyle}
-              />
               <div>
                 <div style={{ color: "#9ca3af", fontSize: 12, marginBottom: 6 }}>הדירוג שלך</div>
-                <StarRating
-                  rating={reviewForm.rating}
-                  size={32}
-                  interactive
-                  onRate={(r) => setReviewForm((f) => ({ ...f, rating: r }))}
-                />
+                <StarRating rating={reviewRating} size={32} interactive onRate={setReviewRating} />
               </div>
               <textarea
                 placeholder="ספר על החוויה שלך עם המוביל..."
-                value={reviewForm.text}
-                onChange={(e) => setReviewForm((f) => ({ ...f, text: e.target.value }))}
+                value={reviewText}
+                onChange={(e) => setReviewText(e.target.value)}
                 rows={3}
                 style={{ ...inputStyle, resize: "vertical" as const }}
               />
+              {reviewError && (
+                <div style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 10, padding: "8px 12px", color: "#fca5a5", fontSize: 13 }}>
+                  {reviewError}
+                </div>
+              )}
               <div style={{ display: "flex", gap: 8 }}>
                 <button
                   onClick={submitReview}
-                  disabled={submittingReview || !reviewForm.reviewerName.trim() || !reviewForm.text.trim()}
-                  style={{
-                    flex: 1,
-                    padding: "12px",
-                    borderRadius: 12,
-                    border: "none",
-                    background: "linear-gradient(135deg, #7c3aed, #6d28d9)",
-                    color: "#fff",
-                    fontSize: 14,
-                    fontWeight: 700,
-                    cursor: submittingReview ? "not-allowed" : "pointer",
-                    opacity: submittingReview ? 0.6 : 1,
-                    fontFamily: "inherit",
-                  }}
+                  disabled={submittingReview || !reviewText.trim()}
+                  style={{ flex: 1, padding: "12px", borderRadius: 12, border: "none", background: "linear-gradient(135deg, #7c3aed, #6d28d9)", color: "#fff", fontSize: 14, fontWeight: 700, cursor: submittingReview ? "not-allowed" : "pointer", opacity: submittingReview ? 0.6 : 1, fontFamily: "inherit" }}
                 >
                   {submittingReview ? "שולח…" : "שלח המלצה"}
                 </button>
                 <button
-                  onClick={() => {
-                    setShowReviewForm(false);
-                    setReviewForm({ reviewerName: "", rating: 5, text: "" });
-                  }}
-                  style={{
-                    padding: "12px 16px",
-                    borderRadius: 12,
-                    border: "1px solid rgba(139,92,246,0.3)",
-                    background: "transparent",
-                    color: "#9ca3af",
-                    fontSize: 14,
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                  }}
+                  onClick={() => { setShowReviewForm(false); setReviewText(""); setReviewRating(5); setReviewError(""); }}
+                  style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid rgba(139,92,246,0.3)", background: "transparent", color: "#9ca3af", fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}
                 >
                   ביטול
                 </button>
@@ -598,111 +479,27 @@ export default function MoverProfileView({ data }: Props) {
 
           {/* Customer photo upload */}
           <div style={{ marginTop: 12 }}>
-            <label
-              style={{
-                display: "block",
-                width: "100%",
-                padding: "10px",
-                borderRadius: 12,
-                border: "1px dashed rgba(139,92,246,0.3)",
-                background: "transparent",
-                color: "#9ca3af",
-                fontSize: 13,
-                cursor: photoUploading ? "not-allowed" : "pointer",
-                textAlign: "center",
-                fontFamily: "inherit",
-                boxSizing: "border-box",
-              }}
-            >
+            <label style={{ display: "block", width: "100%", padding: "10px", borderRadius: 12, border: "1px dashed rgba(139,92,246,0.3)", background: "transparent", color: "#9ca3af", fontSize: 13, cursor: photoUploading ? "not-allowed" : "pointer", textAlign: "center", fontFamily: "inherit", boxSizing: "border-box" }}>
               {photoUploading ? "מעלה תמונה…" : "📷 הוסף תמונה מההובלה"}
-              <input
-                type="file"
-                accept="image/*"
-                style={{ display: "none" }}
-                disabled={photoUploading}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) uploadPhoto(file);
-                }}
+              <input type="file" accept="image/*" style={{ display: "none" }} disabled={photoUploading}
+                onChange={(e) => { const file = e.target.files?.[0]; if (file) uploadPhoto(file); }}
               />
             </label>
           </div>
         </div>
 
         {/* Bottom action bar */}
-        <div
-          style={{
-            position: "fixed",
-            bottom: 0,
-            left: 0,
-            right: 0,
-            background: "rgba(13,13,26,0.95)",
-            backdropFilter: "blur(20px)",
-            borderTop: "1px solid rgba(139,92,246,0.2)",
-            padding: "14px 16px",
-            display: "flex",
-            gap: 10,
-            maxWidth: 480,
-            margin: "0 auto",
-          }}
-        >
+        <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "rgba(13,13,26,0.95)", backdropFilter: "blur(20px)", borderTop: "1px solid rgba(139,92,246,0.2)", padding: "14px 16px", display: "flex", gap: 10, maxWidth: 480, margin: "0 auto" }}>
           <button
             onClick={handleShare}
-            style={{
-              flex: 1,
-              padding: "12px",
-              borderRadius: 12,
-              border: "none",
-              background: "linear-gradient(135deg, #7c3aed, #6d28d9)",
-              color: "#fff",
-              fontSize: 14,
-              fontWeight: 700,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
-              fontFamily: "inherit",
-            }}
+            style={{ flex: 1, padding: "12px", borderRadius: 12, border: "none", background: "linear-gradient(135deg, #7c3aed, #6d28d9)", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "inherit" }}
           >
             🔗 {shareTooltip ? "הועתק!" : "שיתוף הכרטיס"}
           </button>
-          <a
-            href={`tel:${data.phone}`}
-            style={{
-              padding: "12px 16px",
-              borderRadius: 12,
-              border: "1px solid rgba(139,92,246,0.4)",
-              background: "rgba(124,58,237,0.1)",
-              color: "#c4b5fd",
-              fontSize: 14,
-              fontWeight: 700,
-              textDecoration: "none",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
+          <a href={`tel:${data.phone}`} style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid rgba(139,92,246,0.4)", background: "rgba(124,58,237,0.1)", color: "#c4b5fd", fontSize: 14, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 6 }}>
             📞
           </a>
-          <a
-            href={`https://wa.me/${waPhone}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              padding: "12px 16px",
-              borderRadius: 12,
-              border: "none",
-              background: "#25d366",
-              color: "#fff",
-              fontSize: 14,
-              fontWeight: 700,
-              textDecoration: "none",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
+          <a href={`https://wa.me/${waPhone}`} target="_blank" rel="noopener noreferrer" style={{ padding: "12px 16px", borderRadius: 12, border: "none", background: "#25d366", color: "#fff", fontSize: 14, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 6 }}>
             <WhatsAppIcon />
           </a>
         </div>
@@ -712,31 +509,19 @@ export default function MoverProfileView({ data }: Props) {
 }
 
 const navBtnStyle: React.CSSProperties = {
-  width: 32,
-  height: 32,
-  borderRadius: "50%",
+  width: 32, height: 32, borderRadius: "50%",
   border: "1px solid rgba(139,92,246,0.3)",
-  background: "rgba(124,58,237,0.1)",
-  color: "#c4b5fd",
-  fontSize: 20,
-  lineHeight: 1,
-  cursor: "pointer",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontFamily: "inherit",
-  padding: 0,
+  background: "rgba(124,58,237,0.1)", color: "#c4b5fd",
+  fontSize: 20, lineHeight: 1, cursor: "pointer",
+  display: "flex", alignItems: "center", justifyContent: "center",
+  fontFamily: "inherit", padding: 0,
 };
 
 const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "12px 14px",
-  borderRadius: 10,
+  width: "100%", padding: "12px 14px", borderRadius: 10,
   border: "1px solid rgba(139,92,246,0.3)",
-  background: "rgba(255,255,255,0.06)",
-  color: "#f9fafb",
-  fontSize: 14,
-  outline: "none",
+  background: "rgba(255,255,255,0.06)", color: "#f9fafb",
+  fontSize: 14, outline: "none",
   fontFamily: "var(--font-rubik), Rubik, sans-serif",
   boxSizing: "border-box",
 };

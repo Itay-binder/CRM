@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getMoverProfilesDb } from "@/movers-profile/firestore";
 import { getMoverProfileBySlug } from "@/movers-profile/repo";
-import { getMoverSession, normalizePhoneForAuth } from "@/movers-profile/session";
+import { isAuthorisedForManage } from "@/movers-profile/manageAuth";
 import { getAdminStorageBucket } from "@/lib/firebase/admin";
 
 export const dynamic = "force-dynamic";
@@ -16,11 +16,9 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   const profile = await getMoverProfileBySlug(db, slug);
   if (!profile) return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
 
-  const session = await getMoverSession();
-  const authed =
-    session &&
-    normalizePhoneForAuth(session.phone) === normalizePhoneForAuth(profile.phone);
-  if (!authed) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  if (!(await isAuthorisedForManage(profile))) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
 
   try {
     const form = await req.formData();

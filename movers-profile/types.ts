@@ -38,6 +38,8 @@ export type MoverReview = {
   text: string;
   isHidden: boolean;
   createdAt: Date;
+  googleUid?: string;
+  reviewerPhoto?: string;
 };
 
 export type MoverPhoto = {

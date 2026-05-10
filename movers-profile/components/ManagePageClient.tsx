@@ -7,8 +7,12 @@ import { SERVICE_LABELS, SERVICE_ICONS } from "../types";
 
 const ALL_SERVICES: MoverService[] = ["apartment", "small", "office", "loading"];
 
+type AdminProfileRef = { id: string; slug: string; name: string; profileImageUrl: string };
+
 type Props = {
   data: PublicMoverData;
+  isAdmin?: boolean;
+  allProfiles?: AdminProfileRef[] | null;
 };
 
 type Tab = "profile" | "reviews" | "photos";
@@ -226,7 +230,7 @@ function ProfileImageCropModal({
 
 // ─── Main component ────────────────────────────────────────────────────────
 
-export default function ManagePageClient({ data: initial }: Props) {
+export default function ManagePageClient({ data: initial, isAdmin = false, allProfiles }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("profile");
   const [profile, setProfile] = useState(initial);
   const [reviews, setReviews] = useState<MoverReview[]>(initial.reviews);
@@ -365,6 +369,78 @@ export default function ManagePageClient({ data: initial }: Props) {
           color: "#f9fafb",
         }}
       >
+        {/* Admin switcher bar */}
+        {isAdmin && allProfiles && allProfiles.length > 1 && (
+          <div
+            style={{
+              background: "rgba(234,179,8,0.12)",
+              borderBottom: "1px solid rgba(234,179,8,0.3)",
+              padding: "10px 16px",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              direction: "rtl",
+            }}
+          >
+            <span style={{ fontSize: 12, color: "#fbbf24", fontWeight: 700, whiteSpace: "nowrap" }}>
+              👑 מצב אדמין
+            </span>
+            <select
+              defaultValue={initial.slug}
+              onChange={(e) => {
+                window.location.href = `/movers/${e.target.value}/manage`;
+              }}
+              style={{
+                flex: 1,
+                padding: "6px 10px",
+                borderRadius: 8,
+                border: "1px solid rgba(234,179,8,0.4)",
+                background: "rgba(0,0,0,0.4)",
+                color: "#fbbf24",
+                fontSize: 13,
+                fontFamily: "inherit",
+                outline: "none",
+                cursor: "pointer",
+              }}
+            >
+              {allProfiles.map((p) => (
+                <option key={p.id} value={p.slug} style={{ background: "#1a0a3b", color: "#f9fafb" }}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <a
+              href="/mover-profiles"
+              style={{
+                fontSize: 11,
+                color: "#fbbf24",
+                textDecoration: "none",
+                whiteSpace: "nowrap",
+                opacity: 0.8,
+              }}
+            >
+              ← חזור ל-CRM
+            </a>
+          </div>
+        )}
+        {isAdmin && !allProfiles && (
+          <div
+            style={{
+              background: "rgba(234,179,8,0.12)",
+              borderBottom: "1px solid rgba(234,179,8,0.3)",
+              padding: "8px 16px",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
+            <span style={{ fontSize: 12, color: "#fbbf24", fontWeight: 700 }}>👑 מצב אדמין CRM</span>
+            <a href="/mover-profiles" style={{ fontSize: 11, color: "#fbbf24", opacity: 0.8, textDecoration: "none" }}>
+              ← חזור ל-CRM
+            </a>
+          </div>
+        )}
+
         {/* Header */}
         <div
           style={{

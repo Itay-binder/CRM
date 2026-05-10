@@ -95,10 +95,25 @@ export async function deleteMoverProfile(db: Firestore, id: string): Promise<voi
 
 // ────────────── Reviews ──────────────
 
+export async function hasGoogleReviewed(
+  db: Firestore,
+  profileId: string,
+  googleUid: string
+): Promise<boolean> {
+  const snap = await db
+    .collection("moverProfiles")
+    .doc(profileId)
+    .collection("reviews")
+    .where("googleUid", "==", googleUid)
+    .limit(1)
+    .get();
+  return !snap.empty;
+}
+
 export async function addReview(
   db: Firestore,
   profileId: string,
-  review: { reviewerName: string; rating: number; text: string }
+  review: { reviewerName: string; rating: number; text: string; googleUid?: string; reviewerPhoto?: string }
 ): Promise<MoverReview> {
   const ref = db
     .collection("moverProfiles")
@@ -112,6 +127,8 @@ export async function addReview(
     text: review.text,
     isHidden: false,
     createdAt: now,
+    ...(review.googleUid ? { googleUid: review.googleUid } : {}),
+    ...(review.reviewerPhoto ? { reviewerPhoto: review.reviewerPhoto } : {}),
   });
 
   // Update aggregate stats in a transaction
@@ -258,6 +275,8 @@ function docToReview(doc: DocumentSnapshot): MoverReview {
     text: d.text ?? "",
     isHidden: d.isHidden ?? false,
     createdAt: d.createdAt?.toDate() ?? new Date(),
+    ...(d.googleUid ? { googleUid: d.googleUid } : {}),
+    ...(d.reviewerPhoto ? { reviewerPhoto: d.reviewerPhoto } : {}),
   };
 }
 

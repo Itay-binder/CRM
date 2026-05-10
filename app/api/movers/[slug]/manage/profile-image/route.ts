@@ -3,7 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getMoverProfilesDb } from "@/movers-profile/firestore";
 import { getMoverProfileBySlug, updateMoverProfile } from "@/movers-profile/repo";
 import { isAuthorisedForManage } from "@/movers-profile/manageAuth";
-import { getAdminStorageBucket } from "@/lib/firebase/admin";
+import {
+  formatFirebaseStorageClientError,
+  getAdminStorageBucketAsync,
+} from "@/lib/firebase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +34,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       return NextResponse.json({ ok: false, error: "קובץ גדול מדי (מקסימום 10MB)" }, { status: 400 });
     }
 
-    const bucket = getAdminStorageBucket();
+    const bucket = await getAdminStorageBucketAsync();
     const ext = (file.name.split(".").pop() ?? "jpg").toLowerCase();
     const filePath = `mover-profile-images/${profile.id}/profile.${ext}`;
     const gcsFile = bucket.file(filePath);
@@ -53,7 +56,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     return NextResponse.json({ ok: true, imageUrl });
   } catch (e) {
     return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : "העלאה נכשלה" },
+      { ok: false, error: formatFirebaseStorageClientError(e) },
       { status: 500 }
     );
   }

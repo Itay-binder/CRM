@@ -1,7 +1,10 @@
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { requireApprovedUser } from "@/lib/auth/guard";
-import { getAdminStorageBucket } from "@/lib/firebase/admin";
+import {
+  formatFirebaseStorageClientError,
+  getAdminStorageBucketAsync,
+} from "@/lib/firebase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +36,7 @@ export async function POST(req: NextRequest) {
     const path = `crm-note-attachments/${id}-${safeName}`;
 
     const buf = Buffer.from(await file.arrayBuffer());
-    const bucket = getAdminStorageBucket();
+    const bucket = await getAdminStorageBucketAsync();
     const gcsFile = bucket.file(path);
     await gcsFile.save(buf, {
       metadata: {
@@ -72,7 +75,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (e) {
     return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : "העלאה נכשלה" } satisfies ApiErr,
+      { ok: false, error: formatFirebaseStorageClientError(e) } satisfies ApiErr,
       { status: 500 }
     );
   }

@@ -39,7 +39,8 @@ function ensureAdmin() {
   if (!admin.apps.length) {
     // Prefer explicit FIREBASE_STORAGE_BUCKET; fall back to the client-side bucket
     // (NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET is always set when the Firebase web SDK is configured)
-    // then derive from project_id as a last resort.
+    // then derive from project_id — try classic appspot.com (Storage uses getAdminStorageBucketAsync
+    // at runtime to pick the bucket that actually exists, including *.firebasestorage.app).
     const storageBucket =
       process.env.FIREBASE_STORAGE_BUCKET?.trim() ||
       process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET?.trim() ||
@@ -113,12 +114,86 @@ export function getFirestoreForWhatsAppWebhook(): admin.firestore.Firestore {
   return getFirestoreForDatabaseId(getWhatsAppWebhookDatabaseId());
 }
 
+let cachedResolvedStorageBucket: ReturnType<admin.storage.Storage["bucket"]> | undefined;
+
+/**
+ * בוחר בקט Storage קיים (בודק רשימת מועמדים כולל project.appspot.com ו-project.firebasestorage.app).
+ * מונע 404 כשמשתנה הסביבה מצביע על בקט שלא קיים בפרויקט.
+ */
+export async function getAdminStorageBucketAsync(): Promise<
+  ReturnType<admin.storage.Storage["bucket"]>
+> {
+  ensureAdmin();
+  if (cachedResolvedStorageBucket) return cachedResolvedStorageBucket;
+
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
+  if (!raw) throw new Error("Missing FIREBASE_SERVICE_ACCOUNT_JSON");
+  const cred = parseServiceAccountJson(raw);
+  const pid = typeof cred.project_id === "string" ? cred.project_id : null;
+
+  const candidates: string[] = [];
+  const push = (s?: string | null) => {
+    const t = s?.trim();
+    if (t && !candidates.includes(t)) candidates.push(t);
+  };
+
+  push(process.env.FIREBASE_STORAGE_BUCKET);
+  push(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET);
+  if (pid) {
+    push(`${pid}.appspot.com`);
+    push(`${pid}.firebasestorage.app`);
+  }
+
+  for (const name of candidates) {
+    const b = admin.storage().bucket(name);
+    try {
+      const [exists] = await b.exists();
+      if (exists) {
+        cachedResolvedStorageBucket = b;
+        return b;
+      }
+    } catch {
+      /* try next candidate */
+    }
+  }
+
+  try {
+    const def = admin.storage().bucket();
+    const [exists] = await def.exists();
+    if (exists) {
+      cachedResolvedStorageBucket = def;
+      return def;
+    }
+  } catch {
+    /* fall through */
+  }
+
+  const hint =
+    pid != null
+      ? `נסו למחוק או לעדכן את FIREBASE_STORAGE_BUCKET ב-Vercel (ב-Firebase Console > Storage מופיע שם הבקט — לעיתים ${pid}.firebasestorage.app במקום ...appspot.com).`
+      : "בדקו ב-Firebase Console > Storage את שם הבקט והגדירו FIREBASE_STORAGE_BUCKET ב-Vercel.";
+
+  throw new Error(`לא נמצא בקט אחסון תקף. ${hint}`);
+}
+
+/** @deprecated העדיפו getAdminStorageBucketAsync — שם בקט שגוי עלול להחזיר בקט שלא קיים */
 export function getAdminStorageBucket(): ReturnType<admin.storage.Storage["bucket"]> {
   ensureAdmin();
   const name =
     process.env.FIREBASE_STORAGE_BUCKET?.trim() ||
     process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET?.trim();
   if (name) return admin.storage().bucket(name);
-  // storageBucket was set in initializeApp (derived from project_id)
   return admin.storage().bucket();
+}
+
+/** הודעת שגיאה קריאה במקום JSON גולמי מ-GCS */
+export function formatFirebaseStorageClientError(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e);
+  if (/bucket does not exist|404/.test(raw) && /bucket|notFound/i.test(raw)) {
+    return "שירות האחסון לא מוגדר נכון: שם הבקט בשרת (למשל ב-Vercel) לא תואם לבקט ב-Firebase. פתחו Firebase Console > Storage והעתיקו את שם הבקט המדויק ל-FIREBASE_STORAGE_BUCKET, או הסירו את המשתנה כדי שהמערכת תזהה את הבקט אוטומטית.";
+  }
+  if (raw.length > 280 && raw.includes('"error"')) {
+    return "שגיאת אחסון — בדקו ש-FIREBASE_STORAGE_BUCKET ב-Vercel תואם לשם הבקט ב-Firebase Console > Storage.";
+  }
+  return raw.length > 400 ? raw.slice(0, 400) + "…" : raw;
 }

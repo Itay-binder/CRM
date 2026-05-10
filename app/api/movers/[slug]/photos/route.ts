@@ -2,7 +2,10 @@ import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getMoverProfilesDb } from "@/movers-profile/firestore";
 import { getMoverProfileBySlug, addPhoto } from "@/movers-profile/repo";
-import { getAdminStorageBucket } from "@/lib/firebase/admin";
+import {
+  formatFirebaseStorageClientError,
+  getAdminStorageBucketAsync,
+} from "@/lib/firebase/admin";
 import { getMoverSession, normalizePhoneForAuth } from "@/movers-profile/session";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +37,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       session &&
       normalizePhoneForAuth(session.phone) === normalizePhoneForAuth(profile.phone);
 
-    const bucket = getAdminStorageBucket();
+    const bucket = await getAdminStorageBucketAsync();
     const ext = (file.name.split(".").pop() ?? "jpg").toLowerCase();
     const filePath = `mover-photos/${profile.id}/${Date.now()}.${ext}`;
     const gcsFile = bucket.file(filePath);
@@ -61,7 +64,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     return NextResponse.json({ ok: true, photo });
   } catch (e) {
     return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : "העלאה נכשלה" },
+      { ok: false, error: formatFirebaseStorageClientError(e) },
       { status: 500 }
     );
   }

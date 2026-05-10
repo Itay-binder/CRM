@@ -65,6 +65,8 @@ export default function TemplatesPageClient() {
   const [tplHeaderMediaUrl, setTplHeaderMediaUrl] = useState("");
   const [tplFooterText, setTplFooterText] = useState("");
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [headerMediaUploading, setHeaderMediaUploading] = useState(false);
+  const [headerMediaUploadErr, setHeaderMediaUploadErr] = useState<string | null>(null);
 
   const paramSlotCount = countBodyPlaceholders(tplBodyText);
 
@@ -132,6 +134,7 @@ export default function TemplatesPageClient() {
     setTplHeaderMediaUrl("");
     setTplFooterText("");
     setEditingTemplateId(null);
+    setHeaderMediaUploadErr(null);
   }
 
   function startEditingTemplate(t: TemplateVm) {
@@ -152,6 +155,41 @@ export default function TemplatesPageClient() {
     setTplHeaderText(t.headerText ?? "");
     setTplHeaderMediaUrl(t.headerMediaUrl ?? "");
     setTplFooterText(t.footerText ?? "");
+    setHeaderMediaUploadErr(null);
+  }
+
+  const headerFileAccept = useMemo(() => {
+    if (tplHeaderFormat === "IMAGE") return "image/jpeg,image/png,image/webp";
+    if (tplHeaderFormat === "VIDEO") return "video/mp4";
+    if (tplHeaderFormat === "DOCUMENT") return "application/pdf,audio/mpeg,audio/mp3,.mp3,.pdf";
+    return "";
+  }, [tplHeaderFormat]);
+
+  async function uploadTemplateHeaderFile(file: File) {
+    if (tplHeaderFormat !== "IMAGE" && tplHeaderFormat !== "VIDEO" && tplHeaderFormat !== "DOCUMENT") {
+      return;
+    }
+    setHeaderMediaUploading(true);
+    setHeaderMediaUploadErr(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("kind", tplHeaderFormat);
+      const res = await fetch("/api/whatsapp/templates/header-media", {
+        method: "POST",
+        body: fd,
+        credentials: "include",
+      });
+      const j = await parseJson<{ ok?: boolean; url?: string; error?: string }>(res);
+      if (!res.ok || !j.ok || !j.url) {
+        throw new Error(j.error || "העלאת הקובץ נכשלה");
+      }
+      setTplHeaderMediaUrl(j.url);
+    } catch (e) {
+      setHeaderMediaUploadErr(e instanceof Error ? e.message : "העלאה נכשלה");
+    } finally {
+      setHeaderMediaUploading(false);
+    }
   }
 
   const load = useCallback(async () => {
@@ -369,8 +407,8 @@ export default function TemplatesPageClient() {
         <div style={{ display: "grid", gap: 8 }}>
           <div style={{ fontWeight: 700, fontSize: 13 }}>כותרת (אופציונלי)</div>
           <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>
-            תמונה / וידאו / מסמך — קישור HTTPS ציבורי (ישמש גם לדוגמה לאישור במטא). לשמע: בחרו &quot;מסמך&quot;
-            וקישור לקובץ אודיו (למשל mp3).
+            תמונה / וידאו / מסמך — אפשר <strong>להעלות קובץ</strong> (נשמר ב־Firebase Storage של ה־CRM) או להדביק קישור HTTPS
+            ציבורי. הקישור/Sample נדרש לאישור במטא. לשמע: בחרו &quot;מסמך&quot; וקובץ mp3 או קישור ישיר.
           </p>
           <select
             value={tplHeaderFormat}
@@ -401,13 +439,66 @@ export default function TemplatesPageClient() {
             </div>
           ) : null}
           {tplHeaderFormat === "IMAGE" || tplHeaderFormat === "VIDEO" || tplHeaderFormat === "DOCUMENT" ? (
-            <input
-              value={tplHeaderMediaUrl}
-              onChange={(e) => setTplHeaderMediaUrl(e.target.value)}
-              placeholder="https://... (קישור ישיר לקובץ)"
-              dir="ltr"
-              style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb" }}
-            />
+            <div style={{ display: "grid", gap: 10 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+                <label
+                  style={{
+                    padding: "10px 16px",
+                    borderRadius: 10,
+                    border: "1px solid #93c5fd",
+                    background: headerMediaUploading ? "#f1f5f9" : "#eff6ff",
+                    color: headerMediaUploading ? "#94a3b8" : "#1d4ed8",
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: headerMediaUploading ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {headerMediaUploading ? "מעלה…" : "📎 העלה קובץ מהמחשב"}
+                  <input
+                    type="file"
+                    accept={headerFileAccept}
+                    disabled={headerMediaUploading}
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = "";
+                      if (f) void uploadTemplateHeaderFile(f);
+                    }}
+                  />
+                </label>
+                <span style={{ fontSize: 12, color: "#9ca3af" }}>או הדביקו קישור:</span>
+              </div>
+              {headerMediaUploadErr ? (
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    background: "#fef2f2",
+                    color: "#991b1b",
+                    fontSize: 13,
+                  }}
+                >
+                  {headerMediaUploadErr}
+                </div>
+              ) : null}
+              <input
+                value={tplHeaderMediaUrl}
+                onChange={(e) => setTplHeaderMediaUrl(e.target.value)}
+                placeholder="https://... (קישור ישיר לקובץ — אופציונלי אם העליתם קובץ)"
+                dir="ltr"
+                style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+              />
+              {tplHeaderFormat === "IMAGE" && tplHeaderMediaUrl.trim().startsWith("http") ? (
+                <div style={{ marginTop: 4 }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={tplHeaderMediaUrl.trim()}
+                    alt=""
+                    style={{ maxHeight: 140, maxWidth: "100%", borderRadius: 10, border: "1px solid #e5e7eb" }}
+                  />
+                </div>
+              ) : null}
+            </div>
           ) : null}
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>

@@ -10,6 +10,12 @@ import { getMoverViewPalette, normalizeMoverDisplayTheme } from "../viewTheme";
 
 type Props = {
   data: PublicMoverData;
+  /** מוסתר כשמוצגים בתוך MoverProfileShell (סרגל לשוניות חיצוני) */
+  embedInShell?: boolean;
+  /** סרטון השקה / קריאייטיב — כרטיס liftygo-card */
+  creativeCampaignRibbon?: boolean;
+  /** כרטיס דמה — ללא שליחת המלצה / העלאת תמונה */
+  disablePublicActions?: boolean;
 };
 
 type GoogleUser = {
@@ -45,7 +51,12 @@ function GoogleIcon() {
   );
 }
 
-export default function MoverProfileView({ data }: Props) {
+export default function MoverProfileView({
+  data,
+  embedInShell = false,
+  creativeCampaignRibbon = false,
+  disablePublicActions = false,
+}: Props) {
   const [reviews, setReviews] = useState<MoverReview[]>(data.reviews);
   const [photos, setPhotos] = useState<MoverPhoto[]>(data.photos);
   const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
@@ -228,36 +239,59 @@ export default function MoverProfileView({ data }: Props) {
         paddingBottom: 100,
       }}
     >
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "20px 24px 16px",
-          borderBottom: `1px solid ${C.headerBorder}`,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 22, fontWeight: 900, color: C.brand }}>✦</span>
-          <span style={{ fontWeight: 900, fontSize: 18, color: C.text }}>LiftyGo</span>
-        </div>
+      {!embedInShell ? (
         <div
           style={{
-            background: C.headerPillBg,
-            border: `1px solid ${C.headerPillBorder}`,
-            borderRadius: 20,
-            padding: "4px 14px",
-            fontSize: 11,
-            color: C.headerPillText,
-            fontWeight: 600,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "20px 24px 16px",
+            borderBottom: `1px solid ${C.headerBorder}`,
           }}
         >
-          כרטיס מוביל דיגיטלי
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 22, fontWeight: 900, color: C.brand }}>✦</span>
+            <span style={{ fontWeight: 900, fontSize: 18, color: C.text }}>LiftyGo</span>
+          </div>
+          <div
+            style={{
+              background: C.headerPillBg,
+              border: `1px solid ${C.headerPillBorder}`,
+              borderRadius: 20,
+              padding: "4px 14px",
+              fontSize: 11,
+              color: C.headerPillText,
+              fontWeight: 600,
+            }}
+          >
+            כרטיס מוביל דיגיטלי
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "0 16px" }}>
+        {creativeCampaignRibbon ? (
+          <div
+            style={{
+              marginTop: embedInShell ? 16 : 20,
+              marginBottom: 4,
+              padding: "10px 14px",
+              borderRadius: 14,
+              background: "rgba(124,58,237,0.18)",
+              border: "1px solid rgba(167,139,250,0.45)",
+              fontSize: 12,
+              fontWeight: 700,
+              color: C.sectionTitle,
+              textAlign: "center",
+              lineHeight: 1.45,
+            }}
+          >
+            תצוגה לקריאייטיב · השקת «כרטיס המוביל של ליפטיגו»
+            <span style={{ display: "block", fontWeight: 600, opacity: 0.9, marginTop: 4 }}>
+              דירוג דמה 4.7 · 107 המלצות · 20 ביקורות מוצגות
+            </span>
+          </div>
+        ) : null}
         {/* Profile header */}
         <div
           style={{
@@ -443,14 +477,29 @@ export default function MoverProfileView({ data }: Props) {
         <div style={{ background: C.cardBg, border: `1px solid ${C.cardBorder}`, boxShadow: C.cardShadow, backdropFilter: "blur(20px)", borderRadius: 20, padding: "20px", marginTop: 16 }}>
           <div style={{ fontWeight: 800, fontSize: 14, color: C.sectionTitle, marginBottom: 14 }}>דרג ✍️ שתף חוויה</div>
 
-          {reviewSuccess && (
+          {disablePublicActions ? (
+            <div
+              style={{
+                padding: "12px 14px",
+                borderRadius: 12,
+                background: "rgba(124,58,237,0.12)",
+                border: `1px solid rgba(167,139,250,0.35)`,
+                fontSize: 13,
+                color: C.textMuted,
+                lineHeight: 1.5,
+              }}
+            >
+              בכרטיס דמה זה לא ניתן להוסיף המלצות או תמונות — מיועד לצילומים והשקה בלבד.
+            </div>
+          ) : null}
+
+          {!disablePublicActions && reviewSuccess && (
             <div style={{ background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.4)", borderRadius: 10, padding: "10px 14px", color: "#6ee7b7", fontSize: 13, marginBottom: 14 }}>
               תודה! ההמלצה שלך נשלחה בהצלחה 🎉
             </div>
           )}
 
-          {/* Google user bar */}
-          {googleUser && (
+          {!disablePublicActions && googleUser && (
             <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.subtleSurface, borderRadius: 12, padding: "10px 14px", marginBottom: 12 }}>
               {googleUser.photo && (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -466,7 +515,7 @@ export default function MoverProfileView({ data }: Props) {
             </div>
           )}
 
-          {!googleUser && !showReviewForm && (
+          {!disablePublicActions && !googleUser && !showReviewForm && (
             <button
               onClick={signInWithGoogle}
               disabled={googleSigningIn}
@@ -477,7 +526,7 @@ export default function MoverProfileView({ data }: Props) {
             </button>
           )}
 
-          {googleUser && !showReviewForm && (
+          {!disablePublicActions && googleUser && !showReviewForm && (
             <button
               onClick={() => setShowReviewForm(true)}
               style={{ width: "100%", padding: "12px", borderRadius: 12, border: `1px solid ${C.telBorder}`, background: C.telBg, color: C.telColor, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}
@@ -486,7 +535,7 @@ export default function MoverProfileView({ data }: Props) {
             </button>
           )}
 
-          {googleUser && showReviewForm && (
+          {!disablePublicActions && googleUser && showReviewForm && (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <div>
                 <div style={{ color: C.textMuted, fontSize: 12, marginBottom: 6 }}>הדירוג שלך</div>
@@ -523,19 +572,21 @@ export default function MoverProfileView({ data }: Props) {
           )}
 
           {/* Customer photo upload */}
-          <div style={{ marginTop: 12 }}>
-            <label style={{ display: "block", width: "100%", padding: "10px", borderRadius: 12, border: `1px dashed ${C.dashedUploadBorder}`, background: "transparent", color: C.secondaryBtnColor, fontSize: 13, cursor: photoUploading ? "not-allowed" : "pointer", textAlign: "center", fontFamily: "inherit", boxSizing: "border-box" }}>
-              {photoUploading ? "מעלה תמונה…" : "📷 הוסף תמונה מההובלה"}
-              <input type="file" accept="image/*" style={{ display: "none" }} disabled={photoUploading}
-                onChange={(e) => { const file = e.target.files?.[0]; if (file) uploadPhoto(file); }}
-              />
-            </label>
-            {photoUploadError ? (
-              <div style={{ marginTop: 8, fontSize: 12, color: "#fca5a5", textAlign: "center" }}>
-                {photoUploadError}
-              </div>
-            ) : null}
-          </div>
+          {!disablePublicActions ? (
+            <div style={{ marginTop: 12 }}>
+              <label style={{ display: "block", width: "100%", padding: "10px", borderRadius: 12, border: `1px dashed ${C.dashedUploadBorder}`, background: "transparent", color: C.secondaryBtnColor, fontSize: 13, cursor: photoUploading ? "not-allowed" : "pointer", textAlign: "center", fontFamily: "inherit", boxSizing: "border-box" }}>
+                {photoUploading ? "מעלה תמונה…" : "📷 הוסף תמונה מההובלה"}
+                <input type="file" accept="image/*" style={{ display: "none" }} disabled={photoUploading}
+                  onChange={(e) => { const file = e.target.files?.[0]; if (file) uploadPhoto(file); }}
+                />
+              </label>
+              {photoUploadError ? (
+                <div style={{ marginTop: 8, fontSize: 12, color: "#fca5a5", textAlign: "center" }}>
+                  {photoUploadError}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         {/* Bottom action bar */}

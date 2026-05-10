@@ -12,9 +12,11 @@ import {
 type Props = {
   slug: string;
   onSuccess?: () => void;
+  /** בתוך לשונית ניהול בדף מאוחד — בלי מסך מלא */
+  embedded?: boolean;
 };
 
-export default function SmsLoginClient({ slug, onSuccess }: Props) {
+export default function SmsLoginClient({ slug, onSuccess, embedded = false }: Props) {
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"phone" | "code">("phone");
@@ -90,7 +92,8 @@ export default function SmsLoginClient({ slug, onSuccess }: Props) {
   return (
     <div
       style={{
-        minHeight: "100vh",
+        minHeight: embedded ? "auto" : "100vh",
+        padding: embedded ? "24px 16px 48px" : undefined,
         background: "linear-gradient(135deg, #0d0d1a 0%, #130d2b 100%)",
         display: "flex",
         alignItems: "center",

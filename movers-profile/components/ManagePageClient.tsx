@@ -14,6 +14,8 @@ type Props = {
   data: PublicMoverData;
   isAdmin?: boolean;
   allProfiles?: AdminProfileRef[] | null;
+  /** בתוך דף מאוחד עם לשונית «ניהול» */
+  embedded?: boolean;
 };
 
 type Tab = "profile" | "reviews" | "photos";
@@ -231,7 +233,12 @@ function ProfileImageCropModal({
 
 // ─── Main component ────────────────────────────────────────────────────────
 
-export default function ManagePageClient({ data: initial, isAdmin = false, allProfiles }: Props) {
+export default function ManagePageClient({
+  data: initial,
+  isAdmin = false,
+  allProfiles,
+  embedded = false,
+}: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("profile");
   const [profile, setProfile] = useState(initial);
   const [reviews, setReviews] = useState<MoverReview[]>(initial.reviews);
@@ -419,11 +426,12 @@ export default function ManagePageClient({ data: initial, isAdmin = false, allPr
 
       <div
         style={{
-          minHeight: "100vh",
+          minHeight: embedded ? "auto" : "100vh",
           background: "linear-gradient(135deg, #0d0d1a 0%, #130d2b 100%)",
           fontFamily: "var(--font-rubik), Rubik, sans-serif",
           direction: "rtl",
           color: "#f9fafb",
+          paddingBottom: embedded ? 24 : undefined,
         }}
       >
         {/* Admin switcher bar */}
@@ -445,7 +453,7 @@ export default function ManagePageClient({ data: initial, isAdmin = false, allPr
             <select
               defaultValue={initial.slug}
               onChange={(e) => {
-                window.location.href = `/movers/${e.target.value}/manage`;
+                window.location.href = `/movers/${e.target.value}?tab=manage`;
               }}
               style={{
                 flex: 1,

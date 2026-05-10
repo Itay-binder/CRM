@@ -878,7 +878,7 @@ export default function MoverProfilesClient({ initialProfiles }: Props) {
                   צפה
                 </a>
                 <a
-                  href={`/movers/${profile.slug}/manage`}
+                  href={`/movers/${profile.slug}?tab=manage`}
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{

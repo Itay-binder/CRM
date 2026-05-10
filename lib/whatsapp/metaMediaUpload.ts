@@ -102,7 +102,9 @@ export async function uploadMediaHandleFromUrl(
     throw new Error("Meta לא החזיר מזהה העלאה (upload session).");
   }
 
-  const uploadUrl = `${base}/${encodeURIComponent(sessionId)}`;
+  // Meta's resumable upload step must use the base host WITHOUT the API version prefix.
+  const graphHost = base.replace(/\/v\d+\.\d+$/, "");
+  const uploadUrl = `${graphHost}/${sessionId}`;
   const up = await fetch(uploadUrl, {
     method: "POST",
     headers: {

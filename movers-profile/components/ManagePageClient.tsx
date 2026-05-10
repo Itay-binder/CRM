@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import StarRating from "./StarRating";
 import type { PublicMoverData, MoverReview, MoverPhoto, MoverService } from "../types";
 import { SERVICE_LABELS, SERVICE_ICONS } from "../types";
+import type { MoverDisplayTheme } from "../viewTheme";
 
 const ALL_SERVICES: MoverService[] = ["apartment", "small", "office", "loading"];
 
@@ -249,6 +250,7 @@ export default function ManagePageClient({ data: initial, isAdmin = false, allPr
   const [coverArea, setCoverArea] = useState(initial.coverArea);
   const [services, setServices] = useState<MoverService[]>(initial.services);
   const [profileImageUrl, setProfileImageUrl] = useState(initial.profileImageUrl);
+  const [displayTheme, setDisplayTheme] = useState<MoverDisplayTheme>(initial.displayTheme);
 
   async function saveProfile() {
     setSaving(true);
@@ -257,10 +259,10 @@ export default function ManagePageClient({ data: initial, isAdmin = false, allPr
       const res = await fetch(`/api/movers/${profile.slug}/manage/profile`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, bio, coverArea, services, profileImageUrl }),
+        body: JSON.stringify({ name, bio, coverArea, services, profileImageUrl, displayTheme }),
       });
       if (res.ok) {
-        setProfile((p) => ({ ...p, name, bio, coverArea, services, profileImageUrl }));
+        setProfile((p) => ({ ...p, name, bio, coverArea, services, profileImageUrl, displayTheme }));
         setSaveMsg("נשמר בהצלחה ✓");
         setTimeout(() => setSaveMsg(""), 3000);
       } else {
@@ -631,6 +633,46 @@ export default function ManagePageClient({ data: initial, isAdmin = false, allPr
                   onChange={(e) => setCoverArea(e.target.value)}
                   style={inputStyle}
                 />
+              </FieldBlock>
+
+              <FieldBlock label="מראה כרטיס ציבורי (ללקוחות)">
+                <div style={{ display: "flex", gap: 8 }}>
+                  {(
+                    [
+                      { id: "light" as const, label: "בהיר (מותג)" },
+                      { id: "dark" as const, label: "כהה (קלאסי)" },
+                    ] as const
+                  ).map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setDisplayTheme(opt.id)}
+                      style={{
+                        flex: 1,
+                        padding: "10px 12px",
+                        borderRadius: 10,
+                        border:
+                          displayTheme === opt.id
+                            ? "1px solid #7c3aed"
+                            : "1px solid rgba(139,92,246,0.25)",
+                        background:
+                          displayTheme === opt.id
+                            ? "rgba(124,58,237,0.35)"
+                            : "rgba(255,255,255,0.04)",
+                        color: displayTheme === opt.id ? "#c4b5fd" : "#9ca3af",
+                        fontSize: 13,
+                        fontWeight: displayTheme === opt.id ? 700 : 400,
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ fontSize: 11, color: "#6b7280", marginTop: 6 }}>
+                  משפיע על דף הכרטיס הציבורי בלבד, לא על מסך הניהול
+                </div>
               </FieldBlock>
 
               {/* Profile image with circular crop */}

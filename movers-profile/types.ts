@@ -1,3 +1,5 @@
+import type { MoverDisplayTheme } from "./viewTheme";
+
 export type MoverService = "apartment" | "small" | "office" | "loading";
 
 export const SERVICE_LABELS: Record<MoverService, string> = {
@@ -23,6 +25,8 @@ export type MoverProfile = {
   services: MoverService[];
   profileImageUrl: string;
   coverArea: string;
+  /** תצוגת דף הכרטיס הציבורי: בהיר (ברירת מחדל) או כהה */
+  displayTheme: MoverDisplayTheme;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;

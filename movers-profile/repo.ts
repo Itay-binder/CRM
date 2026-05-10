@@ -1,4 +1,5 @@
 import type { MoverProfile, MoverReview, MoverPhoto, MoverService } from "./types";
+import { normalizeMoverDisplayTheme } from "./viewTheme";
 import type { CollectionReference, DocumentSnapshot, Firestore } from "firebase-admin/firestore";
 import { FieldValue } from "firebase-admin/firestore";
 
@@ -62,6 +63,7 @@ export async function createMoverProfile(
     rating: 0,
     reviewCount: 0,
     ratingBreakdown: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+    displayTheme: "light",
   });
   const doc = await ref.get();
   return docToProfile(doc);
@@ -81,6 +83,7 @@ export async function updateMoverProfile(
       | "coverArea"
       | "isActive"
       | "phone"
+      | "displayTheme"
     >
   >
 ): Promise<void> {
@@ -346,6 +349,7 @@ function docToProfile(doc: DocumentSnapshot): MoverProfile {
     rating: d.rating ?? 0,
     reviewCount: d.reviewCount ?? 0,
     ratingBreakdown: d.ratingBreakdown ?? { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+    displayTheme: normalizeMoverDisplayTheme(d.displayTheme),
   };
 }
 

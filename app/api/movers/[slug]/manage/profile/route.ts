@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getMoverProfilesDb } from "@/movers-profile/firestore";
 import { getMoverProfileBySlug, updateMoverProfile } from "@/movers-profile/repo";
 import { isAuthorisedForManage } from "@/movers-profile/manageAuth";
+import { normalizeMoverDisplayTheme } from "@/movers-profile/viewTheme";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   }
 
   const body = await req.json();
-  const { name, bio, coverArea, services, profileImageUrl } = body;
+  const { name, bio, coverArea, services, profileImageUrl, displayTheme } = body;
 
   await updateMoverProfile(db, profile.id, {
     name: name ? String(name) : undefined,
@@ -26,6 +27,9 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     coverArea: coverArea ? String(coverArea) : undefined,
     services: Array.isArray(services) ? services : undefined,
     profileImageUrl: profileImageUrl !== undefined ? String(profileImageUrl) : undefined,
+    ...(displayTheme !== undefined
+      ? { displayTheme: normalizeMoverDisplayTheme(displayTheme) }
+      : {}),
   });
 
   return NextResponse.json({ ok: true });

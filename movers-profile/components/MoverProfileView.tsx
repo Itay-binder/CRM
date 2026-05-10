@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
 import { getFirebaseAuth, getGoogleProvider } from "@/lib/firebase/client";
 import StarRating from "./StarRating";
 import type { PublicMoverData, MoverReview, MoverPhoto } from "../types";
 import { SERVICE_LABELS, SERVICE_ICONS } from "../types";
+import { getMoverViewPalette, normalizeMoverDisplayTheme } from "../viewTheme";
 
 type Props = {
   data: PublicMoverData;
@@ -63,6 +64,41 @@ export default function MoverProfileView({ data }: Props) {
   const ratingMax = Math.max(1, ...Object.values(data.ratingBreakdown));
   const visibleReviews = reviews.filter((r) => !r.isHidden);
   const waPhone = toWhatsAppPhone(data.phone);
+
+  const C = useMemo(
+    () => getMoverViewPalette(normalizeMoverDisplayTheme(data.displayTheme)),
+    [data.displayTheme]
+  );
+
+  const navBtnStyle: React.CSSProperties = {
+    width: 32,
+    height: 32,
+    borderRadius: "50%",
+    border: `1px solid ${C.navBtnBorder}`,
+    background: C.navBtnBg,
+    color: C.navBtnColor,
+    fontSize: 20,
+    lineHeight: 1,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontFamily: "inherit",
+    padding: 0,
+  };
+
+  const inputStyleThemed: React.CSSProperties = {
+    width: "100%",
+    padding: "12px 14px",
+    borderRadius: 10,
+    border: `1px solid ${C.inputBorder}`,
+    background: C.inputBg,
+    color: C.text,
+    fontSize: 14,
+    outline: "none",
+    fontFamily: "var(--font-rubik), Rubik, sans-serif",
+    boxSizing: "border-box",
+  };
 
   // Restore Google auth state on mount
   useEffect(() => {
@@ -185,10 +221,10 @@ export default function MoverProfileView({ data }: Props) {
     <div
       style={{
         minHeight: "100vh",
-        background: "linear-gradient(135deg, #0d0d1a 0%, #130d2b 100%)",
+        background: C.pageBg,
         fontFamily: "var(--font-rubik), Rubik, sans-serif",
         direction: "rtl",
-        color: "#f9fafb",
+        color: C.text,
         paddingBottom: 100,
       }}
     >
@@ -199,21 +235,21 @@ export default function MoverProfileView({ data }: Props) {
           alignItems: "center",
           justifyContent: "space-between",
           padding: "20px 24px 16px",
-          borderBottom: "1px solid rgba(139,92,246,0.15)",
+          borderBottom: `1px solid ${C.headerBorder}`,
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 22, fontWeight: 900, color: "#a78bfa" }}>✦</span>
-          <span style={{ fontWeight: 900, fontSize: 18, color: "#f9fafb" }}>LiftyGo</span>
+          <span style={{ fontSize: 22, fontWeight: 900, color: C.brand }}>✦</span>
+          <span style={{ fontWeight: 900, fontSize: 18, color: C.text }}>LiftyGo</span>
         </div>
         <div
           style={{
-            background: "rgba(139,92,246,0.2)",
-            border: "1px solid rgba(139,92,246,0.4)",
+            background: C.headerPillBg,
+            border: `1px solid ${C.headerPillBorder}`,
             borderRadius: 20,
             padding: "4px 14px",
             fontSize: 11,
-            color: "#c4b5fd",
+            color: C.headerPillText,
             fontWeight: 600,
           }}
         >
@@ -225,8 +261,9 @@ export default function MoverProfileView({ data }: Props) {
         {/* Profile header */}
         <div
           style={{
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid rgba(139,92,246,0.25)",
+            background: C.cardBg,
+            border: `1px solid ${C.cardBorder}`,
+            boxShadow: C.cardShadow,
             backdropFilter: "blur(20px)",
             borderRadius: 20,
             padding: "24px 20px 20px",
@@ -239,10 +276,10 @@ export default function MoverProfileView({ data }: Props) {
                 width: 80,
                 height: 80,
                 borderRadius: "50%",
-                border: "3px solid #7c3aed",
+                border: `3px solid ${C.avatarBorder}`,
                 overflow: "hidden",
                 flexShrink: 0,
-                background: "rgba(124,58,237,0.3)",
+                background: C.avatarPlaceholderBg,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -261,32 +298,32 @@ export default function MoverProfileView({ data }: Props) {
                   display: "inline-flex",
                   alignItems: "center",
                   gap: 6,
-                  background: "rgba(124,58,237,0.25)",
-                  border: "1px solid rgba(124,58,237,0.5)",
+                  background: C.verifiedBg,
+                  border: `1px solid ${C.verifiedBorder}`,
                   borderRadius: 20,
                   padding: "3px 10px",
                   fontSize: 11,
-                  color: "#c4b5fd",
+                  color: C.verifiedText,
                   fontWeight: 700,
                   marginBottom: 8,
                 }}
               >
                 <span>✓</span><span>מוביל מאומת LiftyGo</span>
               </div>
-              <div style={{ fontWeight: 900, fontSize: 22, color: "#f9fafb", lineHeight: 1.2 }}>
+              <div style={{ fontWeight: 900, fontSize: 22, color: C.text, lineHeight: 1.2 }}>
                 {data.name}
               </div>
               {data.reviewCount > 0 ? (
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 5 }}>
                   <StarRating rating={data.rating} size={14} />
-                  <span style={{ fontWeight: 700, fontSize: 13, color: "#f9fafb" }}>{data.rating.toFixed(1)}</span>
-                  <span style={{ fontSize: 12, color: "#9ca3af" }}>({data.reviewCount} המלצות)</span>
+                  <span style={{ fontWeight: 700, fontSize: 13, color: C.text }}>{data.rating.toFixed(1)}</span>
+                  <span style={{ fontSize: 12, color: C.textMuted }}>({data.reviewCount} המלצות)</span>
                 </div>
               ) : (
-                <div style={{ color: "#9ca3af", fontSize: 13, marginTop: 4 }}>מוביל מקצועי</div>
+                <div style={{ color: C.textMuted, fontSize: 13, marginTop: 4 }}>מוביל מקצועי</div>
               )}
               {data.coverArea && (
-                <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 6, color: "#9ca3af", fontSize: 13 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 6, color: C.textMuted, fontSize: 13 }}>
                   <span>📍</span><span>{data.coverArea}</span>
                 </div>
               )}
@@ -294,7 +331,7 @@ export default function MoverProfileView({ data }: Props) {
           </div>
 
           {data.bio && (
-            <div style={{ marginTop: 16, color: "#d1d5db", fontSize: 14, lineHeight: 1.6, borderTop: "1px solid rgba(139,92,246,0.15)", paddingTop: 14 }}>
+            <div style={{ marginTop: 16, color: C.textBio, fontSize: 14, lineHeight: 1.6, borderTop: `1px solid ${C.headerBorder}`, paddingTop: 14 }}>
               {data.bio}
             </div>
           )}
@@ -306,8 +343,8 @@ export default function MoverProfileView({ data }: Props) {
                   key={svc}
                   style={{
                     display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-                    background: "rgba(124,58,237,0.12)", border: "1px solid rgba(124,58,237,0.25)",
-                    borderRadius: 12, padding: "8px 12px", fontSize: 11, color: "#c4b5fd",
+                    background: C.serviceChipBg, border: `1px solid ${C.serviceChipBorder}`,
+                    borderRadius: 12, padding: "8px 12px", fontSize: 11, color: C.serviceChipText,
                     flex: "1 1 70px", textAlign: "center",
                   }}
                 >
@@ -321,13 +358,13 @@ export default function MoverProfileView({ data }: Props) {
 
         {/* Rating breakdown */}
         {data.reviewCount > 0 && (
-          <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(139,92,246,0.25)", backdropFilter: "blur(20px)", borderRadius: 20, padding: "20px", marginTop: 16 }}>
-            <div style={{ fontWeight: 800, fontSize: 14, color: "#c4b5fd", marginBottom: 14 }}>הדירוג שלי</div>
+          <div style={{ background: C.cardBg, border: `1px solid ${C.cardBorder}`, boxShadow: C.cardShadow, backdropFilter: "blur(20px)", borderRadius: 20, padding: "20px", marginTop: 16 }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: C.sectionTitle, marginBottom: 14 }}>הדירוג שלי</div>
             <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
               <div style={{ textAlign: "center" }}>
-                <div style={{ fontWeight: 900, fontSize: 48, color: "#f9fafb", lineHeight: 1 }}>{data.rating.toFixed(1)}</div>
+                <div style={{ fontWeight: 900, fontSize: 48, color: C.breakdownNumber, lineHeight: 1 }}>{data.rating.toFixed(1)}</div>
                 <StarRating rating={data.rating} size={18} />
-                <div style={{ color: "#9ca3af", fontSize: 11, marginTop: 4 }}>מבוסס על {data.reviewCount} דירוגים</div>
+                <div style={{ color: C.textMuted, fontSize: 11, marginTop: 4 }}>מבוסס על {data.reviewCount} דירוגים</div>
               </div>
               <div style={{ flex: 1 }}>
                 {[5, 4, 3, 2, 1].map((star) => {
@@ -336,10 +373,10 @@ export default function MoverProfileView({ data }: Props) {
                   return (
                     <div key={star} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
                       <span style={{ color: "#f59e0b", fontSize: 12, width: 14, textAlign: "center" }}>{star}★</span>
-                      <div style={{ flex: 1, height: 6, borderRadius: 3, background: "rgba(255,255,255,0.1)", overflow: "hidden" }}>
+                      <div style={{ flex: 1, height: 6, borderRadius: 3, background: C.starBarTrack, overflow: "hidden" }}>
                         <div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg, #7c3aed, #a855f7)", borderRadius: 3, transition: "width 0.6s ease" }} />
                       </div>
-                      <span style={{ color: "#9ca3af", fontSize: 11, width: 24, textAlign: "center" }}>{count}</span>
+                      <span style={{ color: C.textMuted, fontSize: 11, width: 24, textAlign: "center" }}>{count}</span>
                     </div>
                   );
                 })}
@@ -350,9 +387,9 @@ export default function MoverProfileView({ data }: Props) {
 
         {/* Reviews carousel */}
         {visibleReviews.length > 0 && (
-          <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(139,92,246,0.25)", backdropFilter: "blur(20px)", borderRadius: 20, padding: "20px", marginTop: 16, overflow: "hidden" }}>
-            <div style={{ fontWeight: 800, fontSize: 14, color: "#c4b5fd", marginBottom: 14 }}>💬 המלצות מלקוחות</div>
-            <div style={{ background: "rgba(124,58,237,0.1)", border: "1px solid rgba(124,58,237,0.2)", borderRadius: 16, padding: "14px 16px" }}>
+          <div style={{ background: C.cardBg, border: `1px solid ${C.cardBorder}`, boxShadow: C.cardShadow, backdropFilter: "blur(20px)", borderRadius: 20, padding: "20px", marginTop: 16, overflow: "hidden" }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: C.sectionTitle, marginBottom: 14 }}>💬 המלצות מלקוחות</div>
+            <div style={{ background: C.reviewInnerBg, border: `1px solid ${C.reviewInnerBorder}`, borderRadius: 16, padding: "14px 16px" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {visibleReviews[activeReviewIdx]?.reviewerPhoto && (
@@ -360,15 +397,15 @@ export default function MoverProfileView({ data }: Props) {
                     <img src={visibleReviews[activeReviewIdx].reviewerPhoto} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover" }} />
                   )}
                   <div>
-                    <div style={{ fontWeight: 700, fontSize: 13, color: "#c4b5fd", marginBottom: 3 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: C.textSoft, marginBottom: 3 }}>
                       {visibleReviews[activeReviewIdx]?.reviewerName}
                     </div>
                     <StarRating rating={visibleReviews[activeReviewIdx]?.rating ?? 5} size={14} />
                   </div>
                 </div>
-                <div style={{ fontSize: 28, color: "#7c3aed", lineHeight: 1, opacity: 0.7 }}>&ldquo;</div>
+                <div style={{ fontSize: 28, color: C.reviewQuote, lineHeight: 1, opacity: 0.7 }}>&ldquo;</div>
               </div>
-              <div style={{ color: "#e5e7eb", fontSize: 14, lineHeight: 1.6, minHeight: 54 }}>
+              <div style={{ color: C.reviewBody, fontSize: 14, lineHeight: 1.6, minHeight: 54 }}>
                 {visibleReviews[activeReviewIdx]?.text}
               </div>
             </div>
@@ -378,7 +415,7 @@ export default function MoverProfileView({ data }: Props) {
                 <button onClick={() => setActiveReviewIdx((i) => (i + 1) % visibleReviews.length)} style={navBtnStyle}>›</button>
                 <div style={{ display: "flex", gap: 6 }}>
                   {visibleReviews.slice(0, 8).map((_, i) => (
-                    <button key={i} onClick={() => setActiveReviewIdx(i)} style={{ width: i === activeReviewIdx ? 20 : 8, height: 8, borderRadius: 4, background: i === activeReviewIdx ? "#7c3aed" : "rgba(139,92,246,0.3)", border: "none", cursor: "pointer", transition: "all 0.3s ease", padding: 0 }} />
+                    <button key={i} onClick={() => setActiveReviewIdx(i)} style={{ width: i === activeReviewIdx ? 20 : 8, height: 8, borderRadius: 4, background: i === activeReviewIdx ? C.brand : C.starBarTrack, border: "none", cursor: "pointer", transition: "all 0.3s ease", padding: 0 }} />
                   ))}
                 </div>
                 <button onClick={() => setActiveReviewIdx((i) => (i - 1 + visibleReviews.length) % visibleReviews.length)} style={navBtnStyle}>‹</button>
@@ -389,11 +426,11 @@ export default function MoverProfileView({ data }: Props) {
 
         {/* Photos */}
         {photos.filter((p) => !p.isHidden).length > 0 && (
-          <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(139,92,246,0.25)", backdropFilter: "blur(20px)", borderRadius: 20, padding: "20px", marginTop: 16 }}>
-            <div style={{ fontWeight: 800, fontSize: 14, color: "#c4b5fd", marginBottom: 14 }}>📸 תמונות מהובלות</div>
+          <div style={{ background: C.cardBg, border: `1px solid ${C.cardBorder}`, boxShadow: C.cardShadow, backdropFilter: "blur(20px)", borderRadius: 20, padding: "20px", marginTop: 16 }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: C.sectionTitle, marginBottom: 14 }}>📸 תמונות מהובלות</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
               {photos.filter((p) => !p.isHidden).slice(0, 6).map((photo) => (
-                <div key={photo.id} style={{ aspectRatio: "1", borderRadius: 12, overflow: "hidden", background: "rgba(124,58,237,0.15)" }}>
+                <div key={photo.id} style={{ aspectRatio: "1", borderRadius: 12, overflow: "hidden", background: C.photoCellBg }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={photo.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 </div>
@@ -403,8 +440,8 @@ export default function MoverProfileView({ data }: Props) {
         )}
 
         {/* Review section */}
-        <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(139,92,246,0.25)", backdropFilter: "blur(20px)", borderRadius: 20, padding: "20px", marginTop: 16 }}>
-          <div style={{ fontWeight: 800, fontSize: 14, color: "#c4b5fd", marginBottom: 14 }}>דרג ✍️ שתף חוויה</div>
+        <div style={{ background: C.cardBg, border: `1px solid ${C.cardBorder}`, boxShadow: C.cardShadow, backdropFilter: "blur(20px)", borderRadius: 20, padding: "20px", marginTop: 16 }}>
+          <div style={{ fontWeight: 800, fontSize: 14, color: C.sectionTitle, marginBottom: 14 }}>דרג ✍️ שתף חוויה</div>
 
           {reviewSuccess && (
             <div style={{ background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.4)", borderRadius: 10, padding: "10px 14px", color: "#6ee7b7", fontSize: 13, marginBottom: 14 }}>
@@ -414,16 +451,16 @@ export default function MoverProfileView({ data }: Props) {
 
           {/* Google user bar */}
           {googleUser && (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, background: "rgba(255,255,255,0.04)", borderRadius: 12, padding: "10px 14px", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.subtleSurface, borderRadius: 12, padding: "10px 14px", marginBottom: 12 }}>
               {googleUser.photo && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={googleUser.photo} alt="" style={{ width: 32, height: 32, borderRadius: "50%" }} />
               )}
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#f9fafb" }}>{googleUser.name}</div>
-                <div style={{ fontSize: 11, color: "#9ca3af" }}>מחובר עם Google</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{googleUser.name}</div>
+                <div style={{ fontSize: 11, color: C.textMuted }}>מחובר עם Google</div>
               </div>
-              <button onClick={signOutGoogle} style={{ background: "none", border: "1px solid rgba(139,92,246,0.3)", borderRadius: 8, color: "#9ca3af", fontSize: 11, cursor: "pointer", padding: "4px 10px", fontFamily: "inherit" }}>
+              <button onClick={signOutGoogle} style={{ background: "none", border: `1px solid ${C.secondaryBtnBorder}`, borderRadius: 8, color: C.secondaryBtnColor, fontSize: 11, cursor: "pointer", padding: "4px 10px", fontFamily: "inherit" }}>
                 התנתק
               </button>
             </div>
@@ -433,7 +470,7 @@ export default function MoverProfileView({ data }: Props) {
             <button
               onClick={signInWithGoogle}
               disabled={googleSigningIn}
-              style={{ width: "100%", padding: "12px", borderRadius: 12, border: "1px solid rgba(139,92,246,0.4)", background: "rgba(255,255,255,0.06)", color: "#f9fafb", fontSize: 14, cursor: googleSigningIn ? "not-allowed" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, opacity: googleSigningIn ? 0.7 : 1 }}
+              style={{ width: "100%", padding: "12px", borderRadius: 12, border: `1px solid ${C.telBorder}`, background: C.inputBg, color: C.text, fontSize: 14, cursor: googleSigningIn ? "not-allowed" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, opacity: googleSigningIn ? 0.7 : 1 }}
             >
               <GoogleIcon />
               {googleSigningIn ? "מתחבר…" : "התחבר עם Google להוספת המלצה"}
@@ -443,7 +480,7 @@ export default function MoverProfileView({ data }: Props) {
           {googleUser && !showReviewForm && (
             <button
               onClick={() => setShowReviewForm(true)}
-              style={{ width: "100%", padding: "12px", borderRadius: 12, border: "1px solid rgba(139,92,246,0.4)", background: "rgba(124,58,237,0.1)", color: "#c4b5fd", fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}
+              style={{ width: "100%", padding: "12px", borderRadius: 12, border: `1px solid ${C.telBorder}`, background: C.telBg, color: C.telColor, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}
             >
               + הוסף המלצה ודירוג
             </button>
@@ -452,7 +489,7 @@ export default function MoverProfileView({ data }: Props) {
           {googleUser && showReviewForm && (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <div>
-                <div style={{ color: "#9ca3af", fontSize: 12, marginBottom: 6 }}>הדירוג שלך</div>
+                <div style={{ color: C.textMuted, fontSize: 12, marginBottom: 6 }}>הדירוג שלך</div>
                 <StarRating rating={reviewRating} size={32} interactive onRate={setReviewRating} />
               </div>
               <textarea
@@ -460,7 +497,7 @@ export default function MoverProfileView({ data }: Props) {
                 value={reviewText}
                 onChange={(e) => setReviewText(e.target.value)}
                 rows={3}
-                style={{ ...inputStyle, resize: "vertical" as const }}
+                style={{ ...inputStyleThemed, resize: "vertical" as const }}
               />
               {reviewError && (
                 <div style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 10, padding: "8px 12px", color: "#fca5a5", fontSize: 13 }}>
@@ -477,7 +514,7 @@ export default function MoverProfileView({ data }: Props) {
                 </button>
                 <button
                   onClick={() => { setShowReviewForm(false); setReviewText(""); setReviewRating(5); setReviewError(""); }}
-                  style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid rgba(139,92,246,0.3)", background: "transparent", color: "#9ca3af", fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}
+                  style={{ padding: "12px 16px", borderRadius: 12, border: `1px solid ${C.secondaryBtnBorder}`, background: C.secondaryBtnBg, color: C.secondaryBtnColor, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}
                 >
                   ביטול
                 </button>
@@ -487,7 +524,7 @@ export default function MoverProfileView({ data }: Props) {
 
           {/* Customer photo upload */}
           <div style={{ marginTop: 12 }}>
-            <label style={{ display: "block", width: "100%", padding: "10px", borderRadius: 12, border: "1px dashed rgba(139,92,246,0.3)", background: "transparent", color: "#9ca3af", fontSize: 13, cursor: photoUploading ? "not-allowed" : "pointer", textAlign: "center", fontFamily: "inherit", boxSizing: "border-box" }}>
+            <label style={{ display: "block", width: "100%", padding: "10px", borderRadius: 12, border: `1px dashed ${C.dashedUploadBorder}`, background: "transparent", color: C.secondaryBtnColor, fontSize: 13, cursor: photoUploading ? "not-allowed" : "pointer", textAlign: "center", fontFamily: "inherit", boxSizing: "border-box" }}>
               {photoUploading ? "מעלה תמונה…" : "📷 הוסף תמונה מההובלה"}
               <input type="file" accept="image/*" style={{ display: "none" }} disabled={photoUploading}
                 onChange={(e) => { const file = e.target.files?.[0]; if (file) uploadPhoto(file); }}
@@ -502,14 +539,14 @@ export default function MoverProfileView({ data }: Props) {
         </div>
 
         {/* Bottom action bar */}
-        <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "rgba(13,13,26,0.95)", backdropFilter: "blur(20px)", borderTop: "1px solid rgba(139,92,246,0.2)", padding: "14px 16px", display: "flex", gap: 10, maxWidth: 480, margin: "0 auto" }}>
+        <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: C.barBg, backdropFilter: "blur(20px)", borderTop: `1px solid ${C.barBorder}`, padding: "14px 16px", display: "flex", gap: 10, maxWidth: 480, margin: "0 auto" }}>
           <button
             onClick={handleShare}
             style={{ flex: 1, padding: "12px", borderRadius: 12, border: "none", background: "linear-gradient(135deg, #7c3aed, #6d28d9)", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "inherit" }}
           >
             🔗 {shareTooltip ? "הועתק!" : "שיתוף הכרטיס"}
           </button>
-          <a href={`tel:${data.phone}`} style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid rgba(139,92,246,0.4)", background: "rgba(124,58,237,0.1)", color: "#c4b5fd", fontSize: 14, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 6 }}>
+          <a href={`tel:${data.phone}`} style={{ padding: "12px 16px", borderRadius: 12, border: `1px solid ${C.telBorder}`, background: C.telBg, color: C.telColor, fontSize: 14, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 6 }}>
             📞
           </a>
           <a href={`https://wa.me/${waPhone}`} target="_blank" rel="noopener noreferrer" style={{ padding: "12px 16px", borderRadius: 12, border: "none", background: "#25d366", color: "#fff", fontSize: 14, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 6 }}>
@@ -520,21 +557,3 @@ export default function MoverProfileView({ data }: Props) {
     </div>
   );
 }
-
-const navBtnStyle: React.CSSProperties = {
-  width: 32, height: 32, borderRadius: "50%",
-  border: "1px solid rgba(139,92,246,0.3)",
-  background: "rgba(124,58,237,0.1)", color: "#c4b5fd",
-  fontSize: 20, lineHeight: 1, cursor: "pointer",
-  display: "flex", alignItems: "center", justifyContent: "center",
-  fontFamily: "inherit", padding: 0,
-};
-
-const inputStyle: React.CSSProperties = {
-  width: "100%", padding: "12px 14px", borderRadius: 10,
-  border: "1px solid rgba(139,92,246,0.3)",
-  background: "rgba(255,255,255,0.06)", color: "#f9fafb",
-  fontSize: 14, outline: "none",
-  fontFamily: "var(--font-rubik), Rubik, sans-serif",
-  boxSizing: "border-box",
-};

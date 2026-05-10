@@ -9,6 +9,7 @@ import {
   updateMoverProfile,
   deleteMoverProfile,
 } from "@/movers-profile/repo";
+import { normalizeMoverDisplayTheme } from "@/movers-profile/viewTheme";
 
 export const dynamic = "force-dynamic";
 
@@ -97,6 +98,10 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       typeof s === "string" && SERVICE_SET.has(s as MoverService)
     );
     updates.services = services;
+  }
+
+  if (body.displayTheme !== undefined) {
+    updates.displayTheme = normalizeMoverDisplayTheme(body.displayTheme);
   }
 
   if (Object.keys(updates).length === 0) {

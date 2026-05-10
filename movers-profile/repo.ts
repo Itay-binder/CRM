@@ -192,6 +192,54 @@ export async function toggleReviewHidden(
     .update({ isHidden });
 }
 
+/** מחיקה קבועה + עדכון דירוג מצטבר בפרופיל — false אם אין מסמך */
+export async function deleteReview(
+  db: Firestore,
+  profileId: string,
+  reviewId: string
+): Promise<boolean> {
+  const reviewRef = db
+    .collection("moverProfiles")
+    .doc(profileId)
+    .collection("reviews")
+    .doc(reviewId);
+  const profileRef = db.collection("moverProfiles").doc(profileId);
+  let deleted = false;
+  await db.runTransaction(async (tx) => {
+    const reviewSnap = await tx.get(reviewRef);
+    if (!reviewSnap.exists) return;
+    deleted = true;
+    const profileSnap = await tx.get(profileRef);
+    const r = reviewSnap.data() ?? {};
+    const rating = Math.min(5, Math.max(1, Math.round(Number(r.rating) || 5)));
+    const d = profileSnap.data() ?? {};
+    const breakdown: Record<number, number> = {
+      1: 0,
+      2: 0,
+      3: 0,
+      4: 0,
+      5: 0,
+      ...(d.ratingBreakdown ?? {}),
+    };
+    breakdown[rating] = Math.max(0, (breakdown[rating] ?? 0) - 1);
+    const newCount = Math.max(0, (d.reviewCount ?? 0) - 1);
+    const totalStars = Object.entries(breakdown).reduce(
+      (sum, [stars, count]) => sum + Number(stars) * Number(count),
+      0
+    );
+    const newRating =
+      newCount > 0 ? Math.round((totalStars / newCount) * 10) / 10 : 0;
+    tx.delete(reviewRef);
+    tx.update(profileRef, {
+      reviewCount: newCount,
+      ratingBreakdown: breakdown,
+      rating: newRating,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+  return deleted;
+}
+
 // ────────────── Photos ──────────────
 
 export async function addPhoto(
@@ -242,6 +290,23 @@ export async function togglePhotoHidden(
     .collection("photos")
     .doc(photoId)
     .update({ isHidden });
+}
+
+export async function deletePhotoDoc(
+  db: Firestore,
+  profileId: string,
+  photoId: string
+): Promise<{ url: string } | null> {
+  const ref = db
+    .collection("moverProfiles")
+    .doc(profileId)
+    .collection("photos")
+    .doc(photoId);
+  const snap = await ref.get();
+  if (!snap.exists) return null;
+  const url = String((snap.data() as { url?: string })?.url ?? "");
+  await ref.delete();
+  return { url };
 }
 
 // ────────────── Converters ──────────────

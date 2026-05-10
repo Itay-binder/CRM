@@ -26,7 +26,7 @@ function parseServiceAccountJson(raw: string): Record<string, unknown> {
   }
 }
 
-function ensureAdmin() {
+export function ensureAdmin() {
   if (init) return;
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
   if (!raw) throw new Error("Missing FIREBASE_SERVICE_ACCOUNT_JSON");

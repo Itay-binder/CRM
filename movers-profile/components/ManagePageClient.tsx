@@ -287,6 +287,32 @@ export default function ManagePageClient({ data: initial, isAdmin = false, allPr
     }
   }
 
+  async function deleteReviewItem(reviewId: string) {
+    if (!confirm("למחוק את ההמלצה לצמיתות? פעולה זו לא ניתנת לביטול.")) return;
+    const res = await fetch(`/api/movers/${profile.slug}/manage/reviews/${reviewId}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) return;
+    setReviews((prev) => prev.filter((r) => r.id !== reviewId));
+    try {
+      const pr = await fetch(`/api/movers/${profile.slug}`);
+      const j = (await pr.json()) as {
+        ok?: boolean;
+        profile?: Pick<PublicMoverData, "rating" | "reviewCount" | "ratingBreakdown">;
+      };
+      if (j.ok && j.profile) {
+        setProfile((p) => ({
+          ...p,
+          rating: j.profile!.rating,
+          reviewCount: j.profile!.reviewCount,
+          ratingBreakdown: j.profile!.ratingBreakdown,
+        }));
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   async function togglePhoto(photoId: string, isHidden: boolean) {
     const res = await fetch(
       `/api/movers/${profile.slug}/manage/photos/${photoId}`,
@@ -300,6 +326,16 @@ export default function ManagePageClient({ data: initial, isAdmin = false, allPr
       setPhotos((prev) =>
         prev.map((p) => (p.id === photoId ? { ...p, isHidden } : p))
       );
+    }
+  }
+
+  async function deletePhotoItem(photoId: string) {
+    if (!confirm("למחוק את התמונה לצמיתות? הקובץ יוסר גם מהאחסון אם אפשר.")) return;
+    const res = await fetch(`/api/movers/${profile.slug}/manage/photos/${photoId}`, {
+      method: "DELETE",
+    });
+    if (res.ok) {
+      setPhotos((prev) => prev.filter((p) => p.id !== photoId));
     }
   }
 
@@ -800,24 +836,44 @@ export default function ManagePageClient({ data: initial, isAdmin = false, allPr
                       </div>
                       <StarRating rating={review.rating} size={14} />
                     </div>
-                    <button
-                      onClick={() => toggleReview(review.id, !review.isHidden)}
-                      style={{
-                        padding: "6px 12px",
-                        borderRadius: 8,
-                        border: `1px solid ${review.isHidden ? "rgba(16,185,129,0.4)" : "rgba(239,68,68,0.3)"}`,
-                        background: review.isHidden
-                          ? "rgba(16,185,129,0.1)"
-                          : "rgba(239,68,68,0.1)",
-                        color: review.isHidden ? "#6ee7b7" : "#fca5a5",
-                        fontSize: 12,
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {review.isHidden ? "הצג" : "הסתר"}
-                    </button>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "flex-end" }}>
+                      <button
+                        type="button"
+                        onClick={() => toggleReview(review.id, !review.isHidden)}
+                        style={{
+                          padding: "6px 12px",
+                          borderRadius: 8,
+                          border: `1px solid ${review.isHidden ? "rgba(16,185,129,0.4)" : "rgba(239,68,68,0.3)"}`,
+                          background: review.isHidden
+                            ? "rgba(16,185,129,0.1)"
+                            : "rgba(239,68,68,0.1)",
+                          color: review.isHidden ? "#6ee7b7" : "#fca5a5",
+                          fontSize: 12,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {review.isHidden ? "הצג" : "הסתר"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteReviewItem(review.id)}
+                        style={{
+                          padding: "6px 12px",
+                          borderRadius: 8,
+                          border: "1px solid rgba(239,68,68,0.45)",
+                          background: "rgba(239,68,68,0.12)",
+                          color: "#fca5a5",
+                          fontSize: 12,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        מחק
+                      </button>
+                    </div>
                   </div>
                   <div style={{ color: "#d1d5db", fontSize: 13, lineHeight: 1.5 }}>
                     {review.text}
@@ -910,29 +966,49 @@ export default function ManagePageClient({ data: initial, isAdmin = false, allPr
                         alignItems: "center",
                         justifyContent: "space-between",
                         gap: 6,
+                        flexWrap: "wrap",
                       }}
                     >
                       <span style={{ fontSize: 10, color: "#9ca3af" }}>
                         {photo.uploadedBy === "mover" ? "שלך" : "לקוח"}
                         {photo.isHidden && " • מוסתר"}
                       </span>
-                      <button
-                        onClick={() => togglePhoto(photo.id, !photo.isHidden)}
-                        style={{
-                          padding: "4px 10px",
-                          borderRadius: 6,
-                          border: `1px solid ${photo.isHidden ? "rgba(16,185,129,0.4)" : "rgba(239,68,68,0.3)"}`,
-                          background: photo.isHidden
-                            ? "rgba(16,185,129,0.1)"
-                            : "rgba(239,68,68,0.1)",
-                          color: photo.isHidden ? "#6ee7b7" : "#fca5a5",
-                          fontSize: 11,
-                          cursor: "pointer",
-                          fontFamily: "inherit",
-                        }}
-                      >
-                        {photo.isHidden ? "הצג" : "הסתר"}
-                      </button>
+                      <div style={{ display: "flex", gap: 6, marginInlineStart: "auto" }}>
+                        <button
+                          type="button"
+                          onClick={() => togglePhoto(photo.id, !photo.isHidden)}
+                          style={{
+                            padding: "4px 10px",
+                            borderRadius: 6,
+                            border: `1px solid ${photo.isHidden ? "rgba(16,185,129,0.4)" : "rgba(239,68,68,0.3)"}`,
+                            background: photo.isHidden
+                              ? "rgba(16,185,129,0.1)"
+                              : "rgba(239,68,68,0.1)",
+                            color: photo.isHidden ? "#6ee7b7" : "#fca5a5",
+                            fontSize: 11,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          {photo.isHidden ? "הצג" : "הסתר"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deletePhotoItem(photo.id)}
+                          style={{
+                            padding: "4px 10px",
+                            borderRadius: 6,
+                            border: "1px solid rgba(239,68,68,0.45)",
+                            background: "rgba(239,68,68,0.12)",
+                            color: "#fca5a5",
+                            fontSize: 11,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          מחק
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}

@@ -11,7 +11,7 @@ import {
 } from "@/lib/leads/repo";
 import type { AudienceCondition, AudienceLogic } from "@/lib/whatsapp/audienceFilter";
 import { filterLeadsByAudience } from "@/lib/whatsapp/audienceFilter";
-import { assertPhoneNumberBelongsToWaba, sendTemplateMessageViaMeta } from "@/lib/whatsapp/meta";
+import { assertWhatsAppMetaGraphIdsAndAccess, sendTemplateMessageViaMeta } from "@/lib/whatsapp/meta";
 import { buildTemplateParametersForLead } from "@/lib/whatsapp/templateParams";
 import {
   appendWhatsAppCampaign,
@@ -241,7 +241,7 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    await assertPhoneNumberBelongsToWaba(config);
+    await assertWhatsAppMetaGraphIdsAndAccess(config);
     const template = templates.find((t) => t.id === templateId);
     if (!template) {
       return NextResponse.json({ ok: false, error: "Template not found" }, { status: 404 });

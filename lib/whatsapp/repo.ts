@@ -6,6 +6,7 @@ import {
   normalizeParameterSources,
   type TemplateParamSource,
 } from "@/lib/whatsapp/templateParams";
+import { normalizeWhatsAppMetaConfigIds } from "@/lib/whatsapp/metaIds";
 
 const COLLECTION = "integrationSettings";
 const CONFIG_DOC_ID = "whatsappMetaConfig";
@@ -271,14 +272,14 @@ export async function getWhatsAppMetaConfig(db: Firestore): Promise<WhatsAppMeta
   const snap = await db.collection(COLLECTION).doc(CONFIG_DOC_ID).get();
   if (!snap.exists) return null;
   const d = (snap.data() ?? {}) as Record<string, unknown>;
-  return {
+  return normalizeWhatsAppMetaConfigIds({
     appId: asString(d.appId),
     businessAccountId: asString(d.businessAccountId),
     wabaId: asString(d.wabaId),
     phoneNumberId: asString(d.phoneNumberId),
     systemUserToken: asString(d.systemUserToken),
     updatedAt: asString(d.updatedAt),
-  };
+  });
 }
 
 export async function getGreenApiConfig(db: Firestore): Promise<GreenApiConfig | null> {
@@ -327,7 +328,7 @@ export async function saveWhatsAppMetaConfig(
 ): Promise<WhatsAppMetaConfig> {
   const prev = await getWhatsAppMetaConfig(db);
   const now = new Date().toISOString();
-  const next: WhatsAppMetaConfig = {
+  const next = normalizeWhatsAppMetaConfigIds({
     appId: input.appId?.trim() ?? prev?.appId ?? "",
     businessAccountId: input.businessAccountId?.trim() ?? prev?.businessAccountId ?? "",
     wabaId: input.wabaId.trim(),
@@ -337,7 +338,7 @@ export async function saveWhatsAppMetaConfig(
         ? input.systemUserToken.trim()
         : (prev?.systemUserToken ?? ""),
     updatedAt: now,
-  };
+  });
   await db.collection(COLLECTION).doc(CONFIG_DOC_ID).set(next, { merge: true });
   return next;
 }

@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getMoverProfilesDb } from "@/movers-profile/firestore";
-import { getMoverProfileBySlug } from "@/movers-profile/repo";
+import { getMoverProfileBySlug, updateMoverProfile } from "@/movers-profile/repo";
 import { isAuthorisedForManage } from "@/movers-profile/manageAuth";
 import { getAdminStorageBucket } from "@/lib/firebase/admin";
 
@@ -47,6 +47,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
     const encodedPath = encodeURIComponent(filePath);
     const imageUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodedPath}?alt=media&token=${downloadToken}`;
+
+    await updateMoverProfile(db, profile.id, { profileImageUrl: imageUrl });
 
     return NextResponse.json({ ok: true, imageUrl });
   } catch (e) {

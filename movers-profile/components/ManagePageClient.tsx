@@ -238,7 +238,9 @@ export default function ManagePageClient({ data: initial, isAdmin = false, allPr
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
   const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoUploadError, setPhotoUploadError] = useState("");
   const [profileImageUploading, setProfileImageUploading] = useState(false);
+  const [profileImageError, setProfileImageError] = useState("");
   const [cropFile, setCropFile] = useState<File | null>(null);
 
   // Editable profile fields
@@ -303,6 +305,7 @@ export default function ManagePageClient({ data: initial, isAdmin = false, allPr
 
   async function uploadPhoto(file: File) {
     setPhotoUploading(true);
+    setPhotoUploadError("");
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -310,9 +313,16 @@ export default function ManagePageClient({ data: initial, isAdmin = false, allPr
         method: "POST",
         body: formData,
       });
-      if (!res.ok) return;
-      const json = await res.json();
-      if (json.photo) setPhotos((prev) => [json.photo, ...prev]);
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        photo?: MoverPhoto;
+        error?: string;
+      };
+      if (!res.ok || !json.photo) {
+        setPhotoUploadError(json.error ?? "העלאת התמונה נכשלה");
+        return;
+      }
+      setPhotos((prev) => [json.photo!, ...prev]);
     } finally {
       setPhotoUploading(false);
     }
@@ -320,6 +330,7 @@ export default function ManagePageClient({ data: initial, isAdmin = false, allPr
 
   async function uploadProfileImage(blob: Blob) {
     setProfileImageUploading(true);
+    setProfileImageError("");
     try {
       const formData = new FormData();
       formData.append("file", blob, "profile.jpg");
@@ -327,9 +338,17 @@ export default function ManagePageClient({ data: initial, isAdmin = false, allPr
         method: "POST",
         body: formData,
       });
-      if (!res.ok) return;
-      const { imageUrl } = await res.json();
-      if (imageUrl) setProfileImageUrl(imageUrl);
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        imageUrl?: string;
+        error?: string;
+      };
+      if (!res.ok || !json.imageUrl) {
+        setProfileImageError(json.error ?? "העלאת תמונת הפרופיל נכשלה");
+        return;
+      }
+      setProfileImageUrl(json.imageUrl);
+      setProfile((p) => ({ ...p, profileImageUrl: json.imageUrl! }));
     } finally {
       setProfileImageUploading(false);
     }
@@ -641,6 +660,21 @@ export default function ManagePageClient({ data: initial, isAdmin = false, allPr
                     <div style={{ fontSize: 11, color: "#6b7280", marginTop: 5 }}>
                       ניתן לגרור ולהתאים את התמונה לפרופיל
                     </div>
+                    {profileImageError ? (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: "#fca5a5",
+                          marginTop: 8,
+                          background: "rgba(239,68,68,0.12)",
+                          border: "1px solid rgba(239,68,68,0.25)",
+                          borderRadius: 8,
+                          padding: "8px 10px",
+                        }}
+                      >
+                        {profileImageError}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </FieldBlock>
@@ -828,6 +862,22 @@ export default function ManagePageClient({ data: initial, isAdmin = false, allPr
                   }}
                 />
               </label>
+
+              {photoUploadError ? (
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: "#fca5a5",
+                    marginBottom: 12,
+                    background: "rgba(239,68,68,0.12)",
+                    border: "1px solid rgba(239,68,68,0.25)",
+                    borderRadius: 10,
+                    padding: "10px 12px",
+                  }}
+                >
+                  {photoUploadError}
+                </div>
+              ) : null}
 
               {photos.length === 0 && (
                 <div style={{ color: "#9ca3af", fontSize: 14, textAlign: "center", padding: 40 }}>

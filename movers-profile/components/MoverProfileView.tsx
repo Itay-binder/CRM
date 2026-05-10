@@ -56,6 +56,7 @@ export default function MoverProfileView({ data }: Props) {
   const [reviewSuccess, setReviewSuccess] = useState(false);
   const [reviewError, setReviewError] = useState("");
   const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoUploadError, setPhotoUploadError] = useState("");
   const [activeReviewIdx, setActiveReviewIdx] = useState(0);
   const [shareTooltip, setShareTooltip] = useState(false);
 
@@ -146,6 +147,7 @@ export default function MoverProfileView({ data }: Props) {
 
   async function uploadPhoto(file: File) {
     setPhotoUploading(true);
+    setPhotoUploadError("");
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -153,9 +155,15 @@ export default function MoverProfileView({ data }: Props) {
         method: "POST",
         body: formData,
       });
-      if (!res.ok) return;
-      const json = await res.json();
-      if (json.photo) setPhotos((prev) => [json.photo, ...prev]);
+      const json = (await res.json().catch(() => ({}))) as {
+        photo?: MoverPhoto;
+        error?: string;
+      };
+      if (!res.ok || !json.photo) {
+        setPhotoUploadError(json.error ?? "העלאת התמונה נכשלה");
+        return;
+      }
+      setPhotos((prev) => [json.photo!, ...prev]);
     } finally {
       setPhotoUploading(false);
     }
@@ -485,6 +493,11 @@ export default function MoverProfileView({ data }: Props) {
                 onChange={(e) => { const file = e.target.files?.[0]; if (file) uploadPhoto(file); }}
               />
             </label>
+            {photoUploadError ? (
+              <div style={{ marginTop: 8, fontSize: 12, color: "#fca5a5", textAlign: "center" }}>
+                {photoUploadError}
+              </div>
+            ) : null}
           </div>
         </div>
 

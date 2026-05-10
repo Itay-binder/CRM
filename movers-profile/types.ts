@@ -6,7 +6,7 @@ export const SERVICE_LABELS: Record<MoverService, string> = {
   apartment: "הובלת דירה",
   small: "הובלות קטנות",
   office: "הובלות משרדים",
-  loading: "פריקה והרכבה",
+  loading: "פירוק והרכבה",
 };
 
 export const SERVICE_ICONS: Record<MoverService, string> = {

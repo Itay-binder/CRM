@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getMoverProfilesDb } from "@/movers-profile/firestore";
 import { getMoverProfileBySlug, addPhoto } from "@/movers-profile/repo";
@@ -38,22 +39,19 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     const filePath = `mover-photos/${profile.id}/${Date.now()}.${ext}`;
     const gcsFile = bucket.file(filePath);
 
+    // Store a download token in the object metadata so the file is accessible
+    // via the Firebase Storage download URL — bypasses bucket ACL settings.
+    const downloadToken = randomUUID();
     const buf = Buffer.from(await file.arrayBuffer());
-    await gcsFile.save(buf, { metadata: { contentType: file.type || "image/jpeg" } });
+    await gcsFile.save(buf, {
+      metadata: {
+        contentType: file.type || "image/jpeg",
+        metadata: { firebaseStorageDownloadTokens: downloadToken },
+      },
+    });
 
-    let photoUrl: string;
-    try {
-      await gcsFile.makePublic();
-      const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
-      photoUrl = `https://storage.googleapis.com/${bucket.name}/${encodedPath}`;
-    } catch {
-      const [signed] = await gcsFile.getSignedUrl({
-        version: "v4",
-        action: "read",
-        expires: Date.now() + 365 * 24 * 60 * 60 * 1000,
-      });
-      photoUrl = signed;
-    }
+    const encodedPath = encodeURIComponent(filePath);
+    const photoUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodedPath}?alt=media&token=${downloadToken}`;
 
     const photo = await addPhoto(db, profile.id, {
       url: photoUrl,

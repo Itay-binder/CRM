@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getMoverProfilesDb } from "@/movers-profile/firestore";
 import { getMoverProfileBySlug } from "@/movers-profile/repo";
@@ -35,22 +36,17 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     const filePath = `mover-profile-images/${profile.id}/profile.${ext}`;
     const gcsFile = bucket.file(filePath);
 
+    const downloadToken = randomUUID();
     const buf = Buffer.from(await file.arrayBuffer());
-    await gcsFile.save(buf, { metadata: { contentType: file.type || "image/jpeg" } });
+    await gcsFile.save(buf, {
+      metadata: {
+        contentType: file.type || "image/jpeg",
+        metadata: { firebaseStorageDownloadTokens: downloadToken },
+      },
+    });
 
-    let imageUrl: string;
-    try {
-      await gcsFile.makePublic();
-      const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
-      imageUrl = `https://storage.googleapis.com/${bucket.name}/${encodedPath}`;
-    } catch {
-      const [signed] = await gcsFile.getSignedUrl({
-        version: "v4",
-        action: "read",
-        expires: Date.now() + 365 * 24 * 60 * 60 * 1000,
-      });
-      imageUrl = signed;
-    }
+    const encodedPath = encodeURIComponent(filePath);
+    const imageUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodedPath}?alt=media&token=${downloadToken}`;
 
     return NextResponse.json({ ok: true, imageUrl });
   } catch (e) {

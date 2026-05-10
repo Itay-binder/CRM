@@ -37,8 +37,16 @@ function ensureAdmin() {
   }
 
   if (!admin.apps.length) {
+    // Prefer explicit FIREBASE_STORAGE_BUCKET; fall back to the client-side bucket
+    // (NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET is always set when the Firebase web SDK is configured)
+    // then derive from project_id as a last resort.
+    const storageBucket =
+      process.env.FIREBASE_STORAGE_BUCKET?.trim() ||
+      process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET?.trim() ||
+      (typeof cred.project_id === "string" ? `${cred.project_id}.appspot.com` : undefined);
     admin.initializeApp({
       credential: admin.credential.cert(cred as admin.ServiceAccount),
+      ...(storageBucket ? { storageBucket } : {}),
     });
   }
 
@@ -105,10 +113,12 @@ export function getFirestoreForWhatsAppWebhook(): admin.firestore.Firestore {
   return getFirestoreForDatabaseId(getWhatsAppWebhookDatabaseId());
 }
 
-/** Default bucket resolves from project when FIREBASE_STORAGE_BUCKET is unset. */
 export function getAdminStorageBucket(): ReturnType<admin.storage.Storage["bucket"]> {
   ensureAdmin();
-  const name = process.env.FIREBASE_STORAGE_BUCKET?.trim();
+  const name =
+    process.env.FIREBASE_STORAGE_BUCKET?.trim() ||
+    process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET?.trim();
   if (name) return admin.storage().bucket(name);
+  // storageBucket was set in initializeApp (derived from project_id)
   return admin.storage().bucket();
 }

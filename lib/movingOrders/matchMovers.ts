@@ -28,6 +28,11 @@ import {
   readSmallMoverAnswerForSmallMoveOrder,
   triStateYesNo,
 } from "@/lib/movingOrders/moverFieldReaders";
+import {
+  isYanivShmuelPayingMover,
+  parseOrderApartmentRoomCount,
+  YANIV_SHMUEL_ROOM_PARTIAL_MATCH_ISSUE_HE,
+} from "@/lib/movingOrders/yanivShmuelRoomMatch";
 
 function combineFlags(a: DriverMatchFlag, b: DriverMatchFlag): DriverMatchFlag {
   if (a === "red" || b === "red") return "red";
@@ -318,11 +323,19 @@ function workAvailabilityOk(merged: Record<string, unknown> | undefined): boolea
   return triStateYesNo(raw) === true;
 }
 
+export type YanivShmuelRoomAlert = {
+  opportunityId: string;
+  contactId: string;
+  rooms: number;
+};
+
 export type MatchMoversDetailedResult = {
   matchedDriverIds: string[];
   optionalDriverIds: string[];
   driverMatchFlags: Record<string, DriverMatchFlag>;
   driverMatchIssues: Record<string, string[]>;
+  /** התראות לפתק אוטומטי על הזדמנות יניב שמואל (מעל 3 חדרים בהובלת דירה) */
+  yanivShmuelRoomAlerts?: YanivShmuelRoomAlert[];
 };
 
 /**
@@ -383,9 +396,11 @@ export function matchMoversForOrderDetailed(
     orderStatus: matchCtx.orderStatus,
     sentMatchCount: matchCtx.sentMatchCount,
   });
+  const apartmentRooms = parseOrderApartmentRoomCount(cv, payload);
 
   const rows: Array<{ id: string; flag: DriverMatchFlag; name: string }> = [];
   const driverMatchIssues: Record<string, string[]> = {};
+  const yanivShmuelRoomAlerts: YanivShmuelRoomAlert[] = [];
 
   for (const lead of toProcess) {
     const opp = oppByContact.get(lead.id);
@@ -468,6 +483,7 @@ export function matchMoversForOrderDetailed(
     optionalDriverIds: [],
     driverMatchFlags,
     driverMatchIssues,
+    yanivShmuelRoomAlerts: yanivShmuelRoomAlerts.length ? yanivShmuelRoomAlerts : undefined,
   };
 }
 

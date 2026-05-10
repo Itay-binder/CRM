@@ -9,6 +9,7 @@ import { rawCustomValuesFromPayload } from "@/lib/movingOrders/customValuesFromP
 import { ensureMovingOrdersIntakePipeline } from "@/lib/movingOrders/ensureIntakePipeline";
 import { getCityRegionMap } from "@/lib/movingOrders/cityRegionSettingsRepo";
 import { matchMoversForOrderDetailed } from "@/lib/movingOrders/matchMovers";
+import { appendYanivShmuelRoomMismatchOpportunityNoteIfNeeded } from "@/lib/movingOrders/yanivShmuelRoomMatch";
 import { driverIdsForOpportunitiesColumn } from "@/lib/movingOrders/driverIdsForOpportunityDisplay";
 import { MOVING_ORDERS_INTAKE_PIPELINE_ID, MOVING_ORDER_STAGES } from "@/lib/movingOrders/pipelineConstants";
 import { defaultStageForStatus, statusFromStage } from "@/lib/movingOrders/stageSync";
@@ -71,6 +72,8 @@ async function rematchMovingOrderDrivers(input: {
   prevExcluded: string[];
   orderStatus: MovingOrderStatus;
   sentMatchCount: number;
+  /** לרישום פתק על הזדמנות יניב שמואל כשמספר חדרים חורג מההגדרה */
+  orderNoteContext?: { firestoreDocId: string; humanOrderId: string };
 }): Promise<{
   matchedDriverIds: string[];
   optionalDriverIds: string[];
@@ -82,17 +85,33 @@ async function rematchMovingOrderDrivers(input: {
   const opportunities = await listOpportunities(PAYING_CUSTOMERS_PIPELINE_ID);
   const settlementRegionMap = await getCityRegionMap();
   const manualSet = new Set(input.prevManual.map((x) => String(x).trim()).filter(Boolean));
-  const { matchedDriverIds, optionalDriverIds, driverMatchFlags, driverMatchIssues } =
-    matchMoversForOrderDetailed(
-      PAYING_CUSTOMERS_PIPELINE_ID,
-      leads,
-      opportunities,
-      input.payload,
-      input.customValues,
-      settlementRegionMap,
-      manualSet,
-      { orderStatus: input.orderStatus, sentMatchCount: input.sentMatchCount }
-    );
+  const matchResult = matchMoversForOrderDetailed(
+    PAYING_CUSTOMERS_PIPELINE_ID,
+    leads,
+    opportunities,
+    input.payload,
+    input.customValues,
+    settlementRegionMap,
+    manualSet,
+    { orderStatus: input.orderStatus, sentMatchCount: input.sentMatchCount }
+  );
+  const { matchedDriverIds, optionalDriverIds, driverMatchFlags, driverMatchIssues } = matchResult;
+
+  const noteCtx = input.orderNoteContext;
+  if (noteCtx?.firestoreDocId && matchResult.yanivShmuelRoomAlerts?.length) {
+    for (const a of matchResult.yanivShmuelRoomAlerts) {
+      try {
+        await appendYanivShmuelRoomMismatchOpportunityNoteIfNeeded({
+          opportunityId: a.opportunityId,
+          orderFirestoreDocId: noteCtx.firestoreDocId,
+          humanOrderId: noteCtx.humanOrderId,
+          rooms: a.rooms,
+        });
+      } catch {
+        /* לא לחסום התאמה אם פתק נכשל */
+      }
+    }
+  }
   const knownIds = new Set<string>([...matchedDriverIds, ...optionalDriverIds, ...manualSet]);
   const excludedDriverIds = input.prevExcluded.map(String).filter((x) => knownIds.has(x));
   for (const id of matchedDriverIds) {
@@ -315,6 +334,7 @@ export async function upsertMovingOrderFromIngest(
       prev.exists && Array.isArray(prevData.sentMatchDriverIds)
         ? (prevData.sentMatchDriverIds as unknown[]).length
         : 0,
+    orderNoteContext: { firestoreDocId: docId, humanOrderId: orderId },
   });
 
   if (prev.exists) {
@@ -418,6 +438,7 @@ export async function createMovingOrderManual(
     prevExcluded: [],
     orderStatus: "pending",
     sentMatchCount: 0,
+    orderNoteContext: { firestoreDocId: docId, humanOrderId: orderId },
   });
 
   const now = FieldValue.serverTimestamp();
@@ -556,6 +577,7 @@ export async function updateMovingOrder(
     input.rematch === true;
 
   if (rematchNeeded) {
+    const humanOid = String(resolvedPayload.order_id ?? existing.orderId ?? id).trim() || id;
     const r = await rematchMovingOrderDrivers({
       payload: resolvedPayload,
       customValues: resolvedCustom,
@@ -565,6 +587,7 @@ export async function updateMovingOrder(
       sentMatchCount: Array.isArray(existing.sentMatchDriverIds)
         ? (existing.sentMatchDriverIds as unknown[]).length
         : 0,
+      orderNoteContext: { firestoreDocId: id, humanOrderId: humanOid },
     });
     payload.matchedDriverIds = r.matchedDriverIds;
     payload.optionalDriverIds = r.optionalDriverIds;

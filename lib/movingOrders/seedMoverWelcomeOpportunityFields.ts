@@ -19,6 +19,11 @@ export async function seedMoverWelcomeOpportunityFields(): Promise<{ fieldIds: s
       type: "number",
     },
     {
+      fieldId: "opportunity_daily_leads_count",
+      label: "כמות לידים יומית — התאמת הזמנות",
+      type: "number",
+    },
+    {
       fieldId: "package_current_leads_count",
       label: "כמות לידים שרכש (חבילה נוכחית)",
       type: "number",

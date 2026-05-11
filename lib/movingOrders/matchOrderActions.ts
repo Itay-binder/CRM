@@ -74,6 +74,23 @@ function readNumericCustomField(cv: Record<string, unknown> | undefined, key: st
   return 0;
 }
 
+function israelDayKeyNow(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" });
+}
+
+function nextDailyLeadsCount(
+  cv: Record<string, unknown>,
+  delta: 1 | -1
+): { nextCount: number; todayKey: string } {
+  const countKey = MOVER_OPPORTUNITY_FIELD_IDS.dailyLeadsCount;
+  const dayKeyField = MOVER_OPPORTUNITY_FIELD_IDS.dailyLeadsCountDayKey;
+  const todayKey = israelDayKeyNow();
+  const storedDay = String(cv[dayKeyField] ?? "").trim();
+  const base = storedDay === todayKey ? readNumericCustomField(cv, countKey) : 0;
+  const next = Math.max(0, base + delta);
+  return { nextCount: next, todayKey };
+}
+
 /** שדות שטוחים לזיפייר/מייק — בנוסף למערך movers */
 export function flatMatchSendOpportunityFields(movers: MatchWebhookMover[]): Record<string, string | number> {
   const count = movers.length;
@@ -176,6 +193,12 @@ export async function applyMatchSendSideEffects(params: {
       counterLines.push(
         `כמות לידים כוללת למוביל (כולל הזמנה זו): ${nextTotal}`
       );
+      const dailyCountKey = MOVER_OPPORTUNITY_FIELD_IDS.dailyLeadsCount;
+      const dailyDayKey = MOVER_OPPORTUNITY_FIELD_IDS.dailyLeadsCountDayKey;
+      const daily = nextDailyLeadsCount(cv, 1);
+      cv[dailyCountKey] = daily.nextCount;
+      cv[dailyDayKey] = daily.todayKey;
+      counterLines.push(`כמות לידים יומית (היום): ${daily.nextCount}`);
 
       const packageSize = Number(cv[sizeKey]) || 0;
       let nextSent = (Number(cv[sentKey]) || 0) + 1;
@@ -234,6 +257,11 @@ export async function applyMatchRemoveSideEffects(contactIds: string[]): Promise
 
     const nextTotal = Math.max(0, (Number(cv[totalKey]) || 0) - 1);
     cv[totalKey] = nextTotal;
+    const dailyCountKey = MOVER_OPPORTUNITY_FIELD_IDS.dailyLeadsCount;
+    const dailyDayKey = MOVER_OPPORTUNITY_FIELD_IDS.dailyLeadsCountDayKey;
+    const daily = nextDailyLeadsCount(cv, -1);
+    cv[dailyCountKey] = daily.nextCount;
+    cv[dailyDayKey] = daily.todayKey;
     const nextSent = Math.max(0, (Number(cv[sentKey]) || 0) - 1);
     cv[sentKey] = nextSent;
     const packageSize = Number(cv[sizeKey]) || 0;
@@ -250,6 +278,7 @@ export async function applyMatchRemoveSideEffects(contactIds: string[]): Promise
     const note = [
       "זיכוי ליד: הוסרה התאמת הזמנה שנשלחה למוביל.",
       `כמות לידים כוללת למוביל (לאחר הזיכוי): ${nextTotal}`,
+      `כמות לידים יומית (לאחר הזיכוי): ${daily.nextCount}`,
       sentLine,
     ].join("\n");
     try {

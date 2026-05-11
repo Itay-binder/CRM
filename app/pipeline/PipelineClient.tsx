@@ -1115,6 +1115,7 @@ export default function PipelineClient() {
       updatedAt: "עודכן",
       contactLastLeadAt: "ליד אחרון (איש קשר)",
       [MOVER_OPPORTUNITY_FIELD_IDS.leadsCount]: "מספר פניות (לידים)",
+      [MOVER_OPPORTUNITY_FIELD_IDS.dailyLeadsCount]: "כמות לידים יומית",
     };
     return labels[col] ?? oppCustomFieldLabelById[col] ?? col;
   }
@@ -1134,7 +1135,7 @@ export default function PipelineClient() {
     const out: Record<string, AdvFieldKind> = {};
     const rowsToInspect = oppForSelectedPipeline.slice(0, 120);
     for (const col of oppDisplayCols) {
-      if (col === MOVER_OPPORTUNITY_FIELD_IDS.leadsCount) {
+      if (col === MOVER_OPPORTUNITY_FIELD_IDS.leadsCount || col === MOVER_OPPORTUNITY_FIELD_IDS.dailyLeadsCount) {
         out[col] = "number";
         continue;
       }

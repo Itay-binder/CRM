@@ -69,6 +69,10 @@ export const MOVER_OPPORTUNITY_FIELD_IDS = {
   currentPackageLeadsCount: "opportunity_package_current_leads_count",
   currentPackageSentLeadsCount: "opportunity_package_current_leads_count_sent",
   leadsCount: "opportunity_leads_count",
+  /** קאונטר יומי להזמנות שנשלחו בהתאמה למוביל (מתאפס אוטומטית לפי יום ישראל) */
+  dailyLeadsCount: "opportunity_daily_leads_count",
+  /** שדה עזר פנימי לתאריך יום ישראל של הקאונטר היומי (YYYY-MM-DD) */
+  dailyLeadsCountDayKey: "opportunity_daily_leads_count_day_key",
 } as const;
 
 /** כל מזהי השדות ב־Firestore (למיזוג אחרי validate ולוידוא קליטה) */

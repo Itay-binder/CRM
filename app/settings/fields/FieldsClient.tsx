@@ -83,6 +83,15 @@ const OPPORTUNITY_SYSTEM_FIELDS: SystemField[] = [
     isRequired: false,
     isActive: true,
   },
+  {
+    kind: "system",
+    entityType: "opportunity",
+    label: "כמות לידים יומית (מתאפס ב־00:00 ישראל)",
+    fieldId: "opportunity_daily_leads_count",
+    type: "number",
+    isRequired: false,
+    isActive: true,
+  },
 ];
 
 const MOVING_ORDER_SYSTEM_FIELDS: SystemField[] = [
@@ -116,7 +125,11 @@ const MOVING_ORDER_SYSTEM_FIELDS: SystemField[] = [
 ];
 
 /** בטננט hot-afik לא מנהלים הזמנות הובלה ולא מציגים שני שדות מערכת בהזדמנות. */
-const HOT_AFIK_HIDDEN_OPPORTUNITY_SYSTEM_FIELD_IDS = new Set(["opportunity_last_lead_at", "opportunity_leads_count"]);
+const HOT_AFIK_HIDDEN_OPPORTUNITY_SYSTEM_FIELD_IDS = new Set([
+  "opportunity_last_lead_at",
+  "opportunity_leads_count",
+  "opportunity_daily_leads_count",
+]);
 
 const LABEL_SWATCHES = [
   "#2563eb",

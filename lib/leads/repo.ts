@@ -17,6 +17,7 @@ import { reconcileTasksGoogleCalendar } from "@/lib/googleCalendar/taskSync";
 import { fireServerWebhooks } from "@/lib/webhooks/dispatchServerWebhooks";
 import { listLabelsFromDb, normalizeIncomingLabelIds } from "@/lib/labels/repo";
 import { parseYmdBoundary } from "@/lib/datetime/ymdBoundary";
+import { isoCreatedAtInJerusalemCalendarDay } from "@/lib/datetime/taskTimestamps";
 
 export type LeadRecord = {
   id: string; // doc id = normalized unique key
@@ -339,6 +340,23 @@ export async function listLeadsFiltered(dateFrom?: string | null, dateTo?: strin
   const snap = await db.collection("leads").get();
   const leads = snap.docs.map((d) => mapDocToLead(d.id, d.data() as Record<string, unknown>));
   return leads;
+}
+
+/** ספירת לידים (אנשי קשר) שנוצרו ביום לוח ישראלי — סריקה עד maxFetch אחרונים לפי createdAt */
+export async function countLeadsCreatedInIsraelDay(
+  ymd: string,
+  opts: { maxFetch?: number } = {}
+): Promise<number> {
+  const db = await getAdminDb();
+  const maxFetch = Math.min(8000, Math.max(1, opts.maxFetch ?? 4000));
+  const snap = await db.collection("leads").orderBy("createdAt", "desc").limit(maxFetch).get();
+  let n = 0;
+  for (const doc of snap.docs) {
+    const lead = mapDocToLead(doc.id, doc.data() as Record<string, unknown>);
+    if (!lead.createdAt) continue;
+    if (isoCreatedAtInJerusalemCalendarDay(lead.createdAt.toISOString(), ymd)) n += 1;
+  }
+  return n;
 }
 
 /**

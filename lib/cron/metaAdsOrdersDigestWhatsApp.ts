@@ -2,10 +2,11 @@ import type { Firestore } from "firebase-admin/firestore";
 import { getGreenApiConfig } from "@/lib/whatsapp/repo";
 import { sendTextMessageViaGreenApi } from "@/lib/whatsapp/greenapi";
 import { getMetaAdsConfig } from "@/lib/metaAds/repo";
-import { listActiveMetaAdsCampaigns, type MetaAdsCampaignVm } from "@/lib/metaAds/graph";
+import { listActiveMetaAdsCampaignsWithCurrency, type MetaAdsCampaignVm } from "@/lib/metaAds/graph";
 import { listRecentMovingOrders } from "@/lib/movingOrders/repo";
 import type { MovingOrderRecord } from "@/lib/movingOrders/types";
 import { createdAtYmdInIsrael, israelCalendarYmd } from "@/lib/cron/israelYmd";
+import { countLeadsCreatedInIsraelDay } from "@/lib/leads/repo";
 
 export type MetaAdsOrdersDigestResult = {
   ok: boolean;
@@ -14,7 +15,7 @@ export type MetaAdsOrdersDigestResult = {
   /** יעד ווצאפ (ספרות בלבד) */
   targetPhone?: string;
   messagesSent?: number;
-  /** סיכום מטא — "today" לפי מטא (לרוב אזור זמן חשבון המודעות) */
+  /** סיכום מטא — "today" לפי מטא */
   metaDatePreset?: string;
   /** סיכום הזמנות — לפי תאריך יצירה בלוח שנה ישראל */
   ordersDayYmd?: string;
@@ -22,6 +23,7 @@ export type MetaAdsOrdersDigestResult = {
   totalSpend?: number;
   totalResults?: number;
   validOrdersCount?: number;
+  leadsTodayCount?: number;
 };
 
 const DEFAULT_PHONE = "972526660006";
@@ -37,44 +39,59 @@ function isValidSentOrder(o: MovingOrderRecord): boolean {
   return sent.length > 0;
 }
 
-function buildLines(
+/** מסיר תווים ששוברים הדגשה ב-WhatsApp (*). */
+function safeBoldSegment(s: string): string {
+  return s.replace(/\*/g, " ").trim() || "ללא שם";
+}
+
+function formatMoney(v: number, currency: string): string {
+  const ccy = currency.trim() || "ILS";
+  try {
+    return new Intl.NumberFormat("he-IL", { style: "currency", currency: ccy }).format(v || 0);
+  } catch {
+    return `${(v || 0).toFixed(2)} ${ccy}`;
+  }
+}
+
+function buildDigestText(
   campaigns: MetaAdsCampaignVm[],
-  validOrders: MovingOrderRecord[],
-  metaNote: string,
-  ordersDayYmd: string
-): string[] {
+  currency: string,
+  ordersCount: number,
+  leadsCount: number
+): string {
   const lines: string[] = [];
-  lines.push("📊 דוח מודעות + הזמנות (אוטומטי)");
-  lines.push(`הזמנות — יום לפי ישראל: ${ordersDayYmd}`);
-  lines.push(metaNote);
+  const active = campaigns.filter((c) => (c.effectiveStatus || "").toUpperCase() === "ACTIVE");
+  const totalDailyBudget = active.reduce((s, c) => s + (c.dailyBudget > 0 ? c.dailyBudget : 0), 0);
+
+  lines.push("**תוצאות קמפיינים:**");
   lines.push("");
-  lines.push("— קמפיינים מטא (היום) —");
-  if (!campaigns.length) {
-    lines.push("(אין קמפיינים או אין נתונים)");
-  } else {
+  lines.push("**סה״כ תקציב:**");
+  lines.push(formatMoney(totalDailyBudget, currency));
+  lines.push("");
+  lines.push("**קמפיינים פעילים ותקציב:**");
+  if (active.length) {
+    for (const c of active) {
+      lines.push(`${safeBoldSegment(c.name)}: ${formatMoney(c.dailyBudget, currency)}`);
+    }
+  }
+  lines.push("");
+  lines.push("**תוצאות לפי מטא:**");
+  if (campaigns.length) {
     for (const c of campaigns) {
-      lines.push(
-        `• ${c.name}\n  הוצאה: ${c.spend.toFixed(2)} | תוצאות: ${c.results} | חשיפות: ${c.impressions} | קליקים: ${c.clicks}`
-      );
+      const name = safeBoldSegment(c.name);
+      const r = c.results > 0 ? c.results : 0;
+      const cpr = r > 0 ? formatMoney(c.spend / r, currency) : "—";
+      lines.push(`**${name}:** ${r}, ${cpr}`);
     }
   }
-  const totalSpend = campaigns.reduce((s, c) => s + c.spend, 0);
-  const totalResults = campaigns.reduce((s, c) => s + c.results, 0);
   lines.push("");
-  lines.push(`סה״כ הוצאה (מטא): ${totalSpend.toFixed(2)}`);
-  lines.push(`סה״כ תוצאות (מטא): ${totalResults}`);
+  lines.push("**הזמנות במערכת:**");
+  lines.push(String(ordersCount));
   lines.push("");
-  lines.push("— הזמנות —");
-  lines.push(
-    `ספירה: נוצרו היום (ישראל), סטטוס לא מבוטל/לא נדחה, ונשלחה התאמה לפחות למוביל אחד (sentMatchDriverIds).`
-  );
-  lines.push(`מספר הזמנות תקינות: ${validOrders.length}`);
-  if (validOrders.length && validOrders.length <= 15) {
-    for (const o of validOrders) {
-      lines.push(`  · ${o.orderId} — ${o.payload?.name?.trim() || "ללא שם"}`);
-    }
-  }
-  return lines;
+  lines.push("**לידים במערכת:**");
+  lines.push(String(leadsCount));
+
+  return lines.join("\n");
 }
 
 function chunkForWhatsApp(full: string): string[] {
@@ -108,21 +125,27 @@ export async function runMetaAdsOrdersDigestWhatsApp(input: {
     Math.max(200, Number.parseInt(String(input.movingOrdersMaxFetch ?? process.env.DIGEST_MOVING_ORDERS_MAX_FETCH ?? "2500"), 10) || 2500)
   );
 
-  const [green, metaCfg] = await Promise.all([getGreenApiConfig(input.db), getMetaAdsConfig(input.db)]);
+  const ordersDayYmd = israelCalendarYmd();
+
+  const [green, metaCfg, orders, leadsToday] = await Promise.all([
+    getGreenApiConfig(input.db),
+    getMetaAdsConfig(input.db),
+    listRecentMovingOrders({ db: input.db, maxFetch }),
+    countLeadsCreatedInIsraelDay(ordersDayYmd, { maxFetch }),
+  ]);
 
   if (!green?.instanceId?.trim() || !green?.apiTokenInstance?.trim()) {
     return { ok: false, error: "GreenAPI לא מוגדר (integrationSettings/greenApiConfig).", targetPhone };
   }
 
-  const ordersDayYmd = israelCalendarYmd();
-
   let campaigns: MetaAdsCampaignVm[] = [];
-  let metaNote =
-    'מטא: תקופה "today" — לרוב לפי אזור זמן חשבון המודעות בפייסבוק (לא בהכרח חצות ישראל).';
+  let currency = "ILS";
 
   if (metaCfg?.adAccountId?.trim() && metaCfg?.accessToken?.trim()) {
     try {
-      campaigns = await listActiveMetaAdsCampaigns(metaCfg, "today");
+      const { rows, currency: c } = await listActiveMetaAdsCampaignsWithCurrency(metaCfg, "today");
+      campaigns = rows;
+      currency = c;
     } catch (e) {
       return {
         ok: false,
@@ -131,21 +154,13 @@ export async function runMetaAdsOrdersDigestWhatsApp(input: {
         ordersDayYmd,
       };
     }
-  } else {
-    metaNote = "מטא: לא הוגדר חיבור Meta Ads — דילוג על קמפיינים.";
   }
-
-  const orders = await listRecentMovingOrders({
-    db: input.db,
-    maxFetch,
-  });
 
   const validOrders = orders.filter(
     (o) => createdAtYmdInIsrael(o.createdAt) === ordersDayYmd && isValidSentOrder(o)
   );
 
-  const lines = buildLines(campaigns, validOrders, metaNote, ordersDayYmd);
-  const body = lines.join("\n");
+  const body = buildDigestText(campaigns, currency, validOrders.length, leadsToday);
 
   if (input.dryRun) {
     return {
@@ -158,6 +173,7 @@ export async function runMetaAdsOrdersDigestWhatsApp(input: {
       totalSpend: campaigns.reduce((s, c) => s + c.spend, 0),
       totalResults: campaigns.reduce((s, c) => s + c.results, 0),
       validOrdersCount: validOrders.length,
+      leadsTodayCount: leadsToday,
     };
   }
 
@@ -178,5 +194,6 @@ export async function runMetaAdsOrdersDigestWhatsApp(input: {
     totalSpend: campaigns.reduce((s, c) => s + c.spend, 0),
     totalResults: campaigns.reduce((s, c) => s + c.results, 0),
     validOrdersCount: validOrders.length,
+    leadsTodayCount: leadsToday,
   };
 }

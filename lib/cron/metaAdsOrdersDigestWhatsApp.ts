@@ -59,17 +59,23 @@ function buildDigestText(
 ): string {
   const lines: string[] = [];
   const active = campaigns.filter((c) => (c.effectiveStatus || "").toUpperCase() === "ACTIVE");
-  const totalDailyBudget = active.reduce((s, c) => s + (c.dailyBudget > 0 ? c.dailyBudget : 0), 0);
+
+  // Some campaigns use lifetime_budget instead of daily_budget — fall back to lifetime.
+  const effectiveBudget = (c: MetaAdsCampaignVm) =>
+    c.dailyBudget > 0 ? c.dailyBudget : c.lifetimeBudget;
+  const totalBudget = active.reduce((s, c) => s + effectiveBudget(c), 0);
 
   lines.push("**תוצאות קמפיינים:**");
   lines.push("");
   lines.push("**סה״כ תקציב:**");
-  lines.push(formatMoney(totalDailyBudget, currency));
+  lines.push(formatMoney(totalBudget, currency));
   lines.push("");
   lines.push("**קמפיינים פעילים ותקציב:**");
   if (active.length) {
     for (const c of active) {
-      lines.push(`${safeBoldSegment(c.name)}: ${formatMoney(c.dailyBudget, currency)}`);
+      const budget = effectiveBudget(c);
+      const budgetLabel = c.dailyBudget > 0 ? "" : " (lifetime)";
+      lines.push(`${safeBoldSegment(c.name)}: ${formatMoney(budget, currency)}${budgetLabel}`);
     }
   }
   lines.push("");

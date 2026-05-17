@@ -345,9 +345,9 @@ export async function listLeadsFiltered(dateFrom?: string | null, dateTo?: strin
 /** ספירת לידים (אנשי קשר) שנוצרו ביום לוח ישראלי — סריקה עד maxFetch אחרונים לפי createdAt */
 export async function countLeadsCreatedInIsraelDay(
   ymd: string,
-  opts: { maxFetch?: number } = {}
+  opts: { maxFetch?: number; db?: FirebaseFirestore.Firestore } = {}
 ): Promise<number> {
-  const db = await getAdminDb();
+  const db = opts.db ?? (await getAdminDb());
   const maxFetch = Math.min(8000, Math.max(1, opts.maxFetch ?? 4000));
   const snap = await db.collection("leads").orderBy("createdAt", "desc").limit(maxFetch).get();
   let n = 0;

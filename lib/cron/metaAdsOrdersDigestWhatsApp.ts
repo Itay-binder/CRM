@@ -33,10 +33,8 @@ function digitsOnly(raw: string): string {
   return raw.replace(/[^\d]/g, "");
 }
 
-function isValidSentOrder(o: MovingOrderRecord): boolean {
-  if (o.status === "cancelled" || o.status === "rejected") return false;
-  const sent = o.sentMatchDriverIds ?? [];
-  return sent.length > 0;
+function isCountableOrder(o: MovingOrderRecord): boolean {
+  return o.status !== "cancelled" && o.status !== "rejected";
 }
 
 /** מסיר תווים ששוברים הדגשה ב-WhatsApp (*). */
@@ -85,10 +83,10 @@ function buildDigestText(
     }
   }
   lines.push("");
-  lines.push("**הזמנות במערכת:**");
+  lines.push("**הזמנות היום:**");
   lines.push(String(ordersCount));
   lines.push("");
-  lines.push("**לידים במערכת:**");
+  lines.push("**לידים היום:**");
   lines.push(String(leadsCount));
 
   return lines.join("\n");
@@ -131,7 +129,7 @@ export async function runMetaAdsOrdersDigestWhatsApp(input: {
     getGreenApiConfig(input.db),
     getMetaAdsConfig(input.db),
     listRecentMovingOrders({ db: input.db, maxFetch }),
-    countLeadsCreatedInIsraelDay(ordersDayYmd, { maxFetch }),
+    countLeadsCreatedInIsraelDay(ordersDayYmd, { maxFetch, db: input.db }),
   ]);
 
   if (!green?.instanceId?.trim() || !green?.apiTokenInstance?.trim()) {
@@ -157,7 +155,7 @@ export async function runMetaAdsOrdersDigestWhatsApp(input: {
   }
 
   const validOrders = orders.filter(
-    (o) => createdAtYmdInIsrael(o.createdAt) === ordersDayYmd && isValidSentOrder(o)
+    (o) => createdAtYmdInIsrael(o.createdAt) === ordersDayYmd && isCountableOrder(o)
   );
 
   const body = buildDigestText(campaigns, currency, validOrders.length, leadsToday);

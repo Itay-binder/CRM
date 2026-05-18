@@ -16,11 +16,6 @@ import {
 } from "@/lib/movingOrders/matchMovers";
 import { buildMoverEnrichment } from "@/lib/movingOrders/moverFieldReaders";
 import { hebrewWeekdayMovingOrder } from "@/lib/movingOrders/orderMoveDate";
-import {
-  analyzeNotesConflicts,
-  buildOrderSummary,
-  type NotesConflictPair,
-} from "@/lib/movingOrders/notesConflictAnalyzer";
 import type {
   DriverSummary,
   MoverMatchEnrichment,
@@ -108,46 +103,6 @@ export async function GET(req: NextRequest) {
         moverEnrichment[cid] = buildMoverEnrichment(lead, opp);
       })
     );
-
-    // AI notes conflict analysis: flag mover orange when notes indicate a mismatch
-    const conflictPairs: NotesConflictPair[] = [];
-    for (const o of orders) {
-      const hints = orderMatchUi[o.id];
-      const orderSummary = buildOrderSummary(o.payload, hints);
-      const seen = new Set<string>();
-      const allDriverIds = [
-        ...o.matchedDriverIds,
-        ...o.optionalDriverIds,
-        ...o.manualDriverIds,
-        ...(o.sentMatchDriverIds ?? []),
-      ];
-      for (const driverId of allDriverIds) {
-        if (seen.has(driverId)) continue;
-        seen.add(driverId);
-        const notes = moverEnrichment[driverId]?.opportunityNotes?.trim();
-        if (!notes || notes.length < 5) continue;
-        conflictPairs.push({ orderId: o.id, driverId, moverNotes: notes, orderSummary });
-      }
-    }
-    const notesConflicts = await analyzeNotesConflicts(conflictPairs);
-    for (const key of notesConflicts) {
-      const sep = key.lastIndexOf("::");
-      if (sep === -1) continue;
-      const orderId = key.slice(0, sep);
-      const driverId = key.slice(sep + 2);
-      const order = orders.find((o) => o.id === orderId);
-      if (!order) continue;
-      const currentFlag = (order.driverMatchFlags ?? {})[driverId];
-      if (currentFlag === "red") continue;
-      order.driverMatchFlags = { ...(order.driverMatchFlags ?? {}), [driverId]: "orange" };
-      const existing = (order.driverMatchIssues ?? {})[driverId] ?? [];
-      if (!existing.includes("הערות מוביל")) {
-        order.driverMatchIssues = {
-          ...(order.driverMatchIssues ?? {}),
-          [driverId]: [...existing, "הערות מוביל"],
-        };
-      }
-    }
 
     function appendOpportunityForDriver(
       driverId: string,

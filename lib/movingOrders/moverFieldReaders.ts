@@ -297,6 +297,7 @@ export function opportunityLastLeadReceivedIso(opp: OpportunityRecord | undefine
 function latestOpportunityNoteText(opp: OpportunityRecord | undefined): string {
   if (!opp) return "";
   const custom = readStrFirst(opp.customValues as Record<string, unknown> | undefined, [
+    "opportunity_notes",
     MOVER_WELCOME_OPPORTUNITY_FIELD_IDS.notes,
     "opportunity_mover_notes",
     "opportunity_mover_note",
